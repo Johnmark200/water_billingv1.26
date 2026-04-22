@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block title %}Logged Out{% endblock %}
+{% block content %}
+<div class="auth-card">
+    <h2>You Have Been Logged Out</h2>
+    <p>Your session has ended. Continue to the login page to sign in again.</p>
+    <div class="btn-row">
+        <a href="{% url 'login' %}" class="btn">Go to Login</a>
+    </div>
+</div>
+{% endblock %}

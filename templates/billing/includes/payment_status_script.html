@@ -1,0 +1,92 @@
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const forms = document.querySelectorAll('.payment-status-form');
+    if (!forms.length) {
+        return;
+    }
+
+    const feedback = document.querySelector('[data-payment-status-feedback]');
+
+    const setFeedback = (message, isError) => {
+        if (!feedback) {
+            return;
+        }
+
+        feedback.hidden = false;
+        feedback.textContent = message;
+        feedback.classList.toggle('error', Boolean(isError));
+    };
+
+    const setText = (root, selector, value, prefix = '') => {
+        if (!root) {
+            return;
+        }
+
+        const node = root.querySelector(selector);
+        if (!node) {
+            return;
+        }
+
+        node.textContent = value === '-' ? '-' : `${prefix}${value}`;
+    };
+
+    const setMetric = (selector, value, prefix = '') => {
+        const node = document.querySelector(selector);
+        if (!node) {
+            return;
+        }
+
+        node.textContent = `${prefix}${value}`;
+    };
+
+    forms.forEach((form) => {
+        const select = form.querySelector('select[name="status"]');
+        if (!select) {
+            return;
+        }
+
+        select.dataset.previousValue = select.value;
+
+        select.addEventListener('change', async () => {
+            const row = form.closest('tr');
+            const previousValue = select.dataset.previousValue || select.value;
+            const formData = new FormData(form);
+            select.disabled = true;
+
+            try {
+                const response = await fetch(form.dataset.url, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: formData,
+                });
+                const payload = await response.json().catch(() => ({
+                    ok: false,
+                    message: 'The server returned an invalid response while updating the payment status.',
+                }));
+
+                if (!response.ok || !payload.ok) {
+                    throw new Error(payload.message || 'Unable to update the payment status.');
+                }
+
+                select.dataset.previousValue = payload.status;
+                setText(row, '.payment-status-display', payload.status_display);
+                setText(row, '.billing-paid-display', payload.billing_amount_paid, 'PHP ');
+                setText(row, '.billing-due-display', payload.billing_amount_due, 'PHP ');
+                setText(row, '.billing-status-display', payload.billing_status_display);
+                setText(row, '.email-notification-display', payload.email_notification_status);
+                setText(row, '.sms-notification-display', payload.sms_notification_status);
+                setMetric('[data-pending-payments-count]', payload.pending_payments);
+                setMetric('[data-monthly-collected-total]', payload.monthly_collected, 'PHP ');
+                setFeedback(payload.message, false);
+            } catch (error) {
+                select.value = previousValue;
+                setFeedback(error.message, true);
+            } finally {
+                select.disabled = false;
+            }
+        });
+    });
+});
+</script>

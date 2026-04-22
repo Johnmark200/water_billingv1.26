@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% block title %}Home | Tabuan Water Billing System{% endblock %}
+{% block content %}
+<section class="hero">
+    <h1>Water Billing System</h1>
+    <p class="lead">
+        Manage consumers, meter readings, payments, billing notices, and monthly reports from a single Django application.
+    </p>
+    {% if user.is_authenticated %}
+        <div class="toolbar" style="margin-top: 20px;">
+            <a href="{% url dashboard_url_name %}" class="btn">Open My Dashboard</a>
+        </div>
+    {% else %}
+        <div class="toolbar" style="margin-top: 20px;">
+            <a href="{% url 'login' %}" class="btn">Login</a>
+            <a href="{% url 'signup' %}" class="btn secondary">Create Consumer Account</a>
+        </div>
+    {% endif %}
+</section>
+
+<section class="page-wrap">
+    <div class="stats-grid">
+        <div class="mini-card">
+            <h3>Total Consumers</h3>
+            <p>{{ total_consumers }}</p>
+        </div>
+        <div class="mini-card">
+            <h3>Collection Efficiency</h3>
+            <p>{{ collection_efficiency }}%</p>
+        </div>
+        <div class="mini-card">
+            <h3>Panels</h3>
+            <p>5 Roles</p>
+        </div>
+        <div class="mini-card">
+            <h3>Notifications</h3>
+            <p>SMS + Email</p>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <h2>What This Build Covers</h2>
+    <div class="features">
+        <div class="feature-card">
+            <h3>Admin Controls</h3>
+            <p>Admin accounts can configure payment channels, send SMS or email campaigns, monitor transactions, and manage consumer records.</p>
+        </div>
+        <div class="feature-card">
+            <h3>Operational Panels</h3>
+            <p>Secretary, treasurer, and reading roles each get a focused workspace with only the actions they are allowed to perform.</p>
+        </div>
+        <div class="feature-card">
+            <h3>Consumer Portal</h3>
+            <p>Consumers can review their own bills, readings, receipts, notifications, and payment submissions without seeing admin controls.</p>
+        </div>
+    </div>
+</section>
+{% endblock %}

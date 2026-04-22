@@ -1,0 +1,80 @@
+{% extends 'base.html' %}
+{% block title %}Profile{% endblock %}
+{% block content %}
+<section class="page-wrap grid-2">
+    <div class="card">
+        <h2 class="page-title">Account Profile</h2>
+        <p><strong>Full name:</strong> {{ profile.full_name }}</p>
+        <p><strong>Username:</strong> {{ request.user.username }}</p>
+        <p><strong>Email:</strong> {{ profile.email|default:request.user.email|default:'-' }}</p>
+        <p><strong>Contact:</strong> {{ profile.contact|default:'-' }}</p>
+        <p><strong>Address:</strong> {{ profile.address|default:'-' }}</p>
+        <p><strong>Role:</strong> {{ profile.get_role_display }}</p>
+    </div>
+    <div class="card">
+        <h2 class="page-title">Linked Consumer Record</h2>
+        {% if consumer %}
+            <p><strong>Consumer ID:</strong> {{ consumer.id|stringformat:'03d' }}</p>
+            <p><strong>Status:</strong> {{ consumer.get_status_display }}</p>
+            <p><strong>Contact Number:</strong> {{ consumer.contact_number|default:'-' }}</p>
+            <p><strong>Address:</strong> {{ consumer.address|default:'-' }}</p>
+        {% else %}
+            <p class="empty-state">This account is not linked to a consumer record.</p>
+        {% endif %}
+    </div>
+</section>
+
+<section class="page-wrap grid-3">
+    <div class="table-card">
+        <h3>Recent Billing</h3>
+        <table>
+            <thead><tr><th>Month</th><th>Total</th><th>Status</th></tr></thead>
+            <tbody>
+                {% for bill in billing_records %}
+                    <tr>
+                        <td>{{ bill.billing_month|date:'F Y' }}</td>
+                        <td>&#8369;{{ bill.total_amount }}</td>
+                        <td>{{ bill.get_status_display }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="3" class="empty-state">No billing records available.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="table-card">
+        <h3>Recent Payments</h3>
+        <table>
+            <thead><tr><th>Date</th><th>Method</th><th>Amount</th></tr></thead>
+            <tbody>
+                {% for payment in payments %}
+                    <tr>
+                        <td>{{ payment.payment_date }}</td>
+                        <td>{{ payment.get_payment_method_display }}</td>
+                        <td>&#8369;{{ payment.amount_paid }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="3" class="empty-state">No payments available.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="table-card">
+        <h3>Recent Meter Readings</h3>
+        <table>
+            <thead><tr><th>Month</th><th>Current</th><th>Usage</th></tr></thead>
+            <tbody>
+                {% for reading in meter_readings %}
+                    <tr>
+                        <td>{{ reading.billing_month|date:'F Y' }}</td>
+                        <td>{{ reading.current_reading }}</td>
+                        <td>{{ reading.usage_m3 }} m3</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="3" class="empty-state">No meter readings available.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

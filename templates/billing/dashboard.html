@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<section class="page-wrap">
+    <h2 style="color:white; margin-bottom:20px;">System Analytics</h2>
+    <div class="stats-grid">
+        <div class="mini-card"><h3>Total Consumers</h3><p>{{ total_consumers }}</p></div>
+        <div class="mini-card"><h3>Pending Bills</h3><p>{{ pending_bills }}</p></div>
+        <div class="mini-card"><h3>Payments Collected</h3><p>₱{{ total_collected }}</p></div>
+        <div class="mini-card"><h3>Active Connections</h3><p>{{ active_connections }}</p></div>
+    </div>
+</section>
+
+<section class="page-wrap grid-2">
+    <div class="table-card">
+        <h3>Recent Billing Records</h3>
+        <table>
+            <thead><tr><th>Consumer</th><th>Month</th><th>Amount</th><th>Status</th></tr></thead>
+            <tbody>
+                {% for bill in recent_bills %}
+                <tr>
+                    <td>{{ bill.consumer.full_name }}</td>
+                    <td>{{ bill.billing_month|date:'M Y' }}</td>
+                    <td>₱{{ bill.total_amount }}</td>
+                    <td>{{ bill.get_status_display }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="4">No billing records yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="table-card">
+        <h3>Recent Payments</h3>
+        <table>
+            <thead><tr><th>Consumer</th><th>Method</th><th>Amount</th><th>Date</th></tr></thead>
+            <tbody>
+                {% for payment in recent_payments %}
+                <tr>
+                    <td>{{ payment.consumer.full_name }}</td>
+                    <td>{{ payment.get_payment_method_display }}</td>
+                    <td>₱{{ payment.amount_paid }}</td>
+                    <td>{{ payment.payment_date }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="4">No payments yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

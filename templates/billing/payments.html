@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+{% block title %}Payments{% endblock %}
+{% block content %}
+<section class="page-wrap grid-2">
+    <div class="form-card" style="margin: 0; max-width: none;">
+        <h2 class="page-title">Payment Monitoring</h2>
+        {% if can_edit %}
+            <p class="muted">Admin and treasurer accounts can record payments, update payment status, and sync linked billing balances.</p>
+            <form method="post">
+                {% csrf_token %}
+                {{ form.as_p }}
+                <button type="submit" class="btn">Save Payment</button>
+            </form>
+        {% else %}
+            <p class="muted">Secretary accounts can review transactions here but cannot create or edit payment records.</p>
+        {% endif %}
+    </div>
+    <div class="table-card">
+        <h2 class="page-title">Payment History</h2>
+        <p class="muted">Status changes save immediately, recalculate the linked bill, and send payment updates through the configured email and SMS services.</p>
+        <div class="status-feedback" data-payment-status-feedback hidden></div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Consumer</th>
+                    <th>Billing Month</th>
+                    <th>Method</th>
+                    <th>Amount</th>
+                    <th>Date</th>
+                    <th>Payment Status</th>
+                    <th>Bill Paid</th>
+                    <th>Bill Due</th>
+                    <th>Bill Status</th>
+                    <th>Email</th>
+                    <th>SMS</th>
+                    {% if can_edit %}<th>Update</th>{% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for payment in payments %}
+                    <tr>
+                        <td>{{ payment.consumer.full_name }}</td>
+                        <td>{% if payment.billing %}{{ payment.billing.billing_month|date:'F Y' }}{% else %}-{% endif %}</td>
+                        <td>{{ payment.get_payment_method_display }}</td>
+                        <td>&#8369;{{ payment.amount_paid }}</td>
+                        <td>{{ payment.payment_date }}</td>
+                        <td class="payment-status-display">{{ payment.get_status_display }}</td>
+                        <td class="billing-paid-display">{% if payment.billing %}PHP {{ payment.billing.amount_paid }}{% else %}-{% endif %}</td>
+                        <td class="billing-due-display">{% if payment.billing %}PHP {{ payment.billing.amount_due }}{% else %}-{% endif %}</td>
+                        <td class="billing-status-display">{% if payment.billing %}{{ payment.billing.get_status_display }}{% else %}-{% endif %}</td>
+                        <td class="email-notification-display">-</td>
+                        <td class="sms-notification-display">-</td>
+                        {% if can_edit %}
+                            <td>
+                                <form method="post" class="payment-status-form" data-url="{% url 'update_payment_status' payment.id %}">
+                                    {% csrf_token %}
+                                    <select name="status" class="status-select">
+                                        {% for value, label in payment_status_choices %}
+                                            <option value="{{ value }}" {% if payment.status == value %}selected{% endif %}>{{ label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </form>
+                            </td>
+                        {% endif %}
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="{% if can_edit %}12{% else %}11{% endif %}" class="empty-state">No payment transactions found.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}
+{% block extra_js %}
+    {% include 'billing/includes/payment_status_script.html' %}
+{% endblock %}

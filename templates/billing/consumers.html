@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+{% block title %}Consumers{% endblock %}
+{% block content %}
+<section class="page-wrap">
+    <div class="table-card">
+        <div class="toolbar" style="justify-content: space-between; margin-bottom: 18px;">
+            <div>
+                <h2 class="page-title">Consumer Management</h2>
+                <p class="muted">Admin-only access to consumer records and linked portal accounts.</p>
+            </div>
+            <form method="get" class="toolbar">
+                <input type="text" name="q" value="{{ query }}" placeholder="Search consumer name, address, or contact">
+                <button type="submit" class="btn secondary">Search</button>
+                <a href="{% url 'add_consumer' %}" class="btn">Add Consumer</a>
+            </form>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Linked Account</th>
+                    <th>Contact</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for consumer in consumers %}
+                    <tr>
+                        <td>{{ consumer.id|stringformat:'03d' }}</td>
+                        <td>
+                            <strong>{{ consumer.full_name }}</strong><br>
+                            <span class="muted">{{ consumer.address }}</span>
+                        </td>
+                        <td>
+                            {% if consumer.profile %}
+                                {{ consumer.profile.user.username }}<br>
+                                <span class="muted">{{ consumer.profile.get_role_display }}</span>
+                            {% else %}
+                                <span class="muted">No portal account linked</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ consumer.contact_number|default:'-' }}</td>
+                        <td>{{ consumer.get_status_display }}</td>
+                        <td><a href="{% url 'edit_consumer' consumer.id %}" class="btn secondary">Edit</a></td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="6" class="empty-state">No consumer records matched your search.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

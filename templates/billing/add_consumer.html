@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block title %}{{ page_title }}{% endblock %}
+{% block content %}
+<section class="page-wrap">
+    <div class="form-card">
+        <h2 class="page-title">{{ page_title }}</h2>
+        <p class="muted">Create or update consumer records and optionally link them to an existing consumer portal account.</p>
+        <form method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <div class="btn-row">
+                <button type="submit" class="btn">Save Consumer</button>
+                <a href="{% url 'consumers' %}" class="btn secondary">Back to Consumers</a>
+            </div>
+        </form>
+    </div>
+</section>
+{% endblock %}

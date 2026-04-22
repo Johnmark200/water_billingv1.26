@@ -1,0 +1,139 @@
+{% extends 'base.html' %}
+{% block title %}Consumer Portal{% endblock %}
+{% block content %}
+<section class="page-wrap">
+    <div class="toolbar" style="justify-content: space-between; margin-bottom: 20px;">
+        <div>
+            <h2 class="page-title">Consumer Portal</h2>
+            <p class="muted">Only your own billing, meter readings, payment submissions, receipts, and notifications are visible here.</p>
+        </div>
+        <a href="{% url 'notifications' %}" class="btn secondary">&#128276; Open Notifications</a>
+    </div>
+</section>
+
+{% if consumer %}
+<section class="page-wrap grid-3">
+    <div class="card">
+        <h3>Account</h3>
+        <p><strong>Name:</strong> {{ consumer.full_name }}</p>
+        <p><strong>Consumer ID:</strong> {{ consumer.id|stringformat:'03d' }}</p>
+        <p><strong>Status:</strong> {{ consumer.get_status_display }}</p>
+    </div>
+    <div class="card">
+        <h3>Available Payment Channels</h3>
+        <p><strong>Cash:</strong> {{ payment_settings.enable_cash_payments|yesno:'Enabled,Disabled' }}</p>
+        <p><strong>Online:</strong> {{ payment_settings.enable_online_payments|yesno:'Enabled,Disabled' }}</p>
+        <p class="muted">Only the admin can change these settings. This portal only shows channels currently allowed for your account.</p>
+    </div>
+    <div class="card">
+        <h3>Recent Alerts</h3>
+        {% for item in notification_feed %}
+            <p><strong>{{ item.title }}</strong><br><span class="muted">{{ item.created_at }}</span></p>
+        {% empty %}
+            <p class="empty-state">No recent in-app notifications.</p>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="page-wrap grid-2">
+    <div class="form-card" style="margin: 0; max-width: none;">
+        <h3>Submit Payment</h3>
+        {% if payment_form %}
+            <form method="post">
+                {% csrf_token %}
+                {{ payment_form.as_p }}
+                <button type="submit" class="btn">Submit Payment</button>
+            </form>
+        {% else %}
+            <p class="empty-state">No payment channels are currently available.</p>
+        {% endif %}
+    </div>
+    <div class="table-card">
+        <h3>Receipts</h3>
+        <table>
+            <thead><tr><th>Date</th><th>Method</th><th>Amount</th><th>Reference</th></tr></thead>
+            <tbody>
+                {% for payment in receipts %}
+                    <tr>
+                        <td>{{ payment.payment_date }}</td>
+                        <td>{{ payment.get_payment_method_display }}</td>
+                        <td>&#8369;{{ payment.amount_paid }}</td>
+                        <td>{{ payment.reference_number|default:'-' }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="4" class="empty-state">No completed receipts yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="page-wrap grid-2">
+    <div class="table-card">
+        <h3>Billing Records</h3>
+        <table>
+            <thead><tr><th>Month</th><th>Total</th><th>Paid</th><th>Status</th></tr></thead>
+            <tbody>
+                {% for bill in billing_records %}
+                    <tr>
+                        <td>{{ bill.billing_month|date:'F Y' }}</td>
+                        <td>&#8369;{{ bill.total_amount }}</td>
+                        <td>&#8369;{{ bill.amount_paid }}</td>
+                        <td>{{ bill.get_status_display }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="4" class="empty-state">No billing records available.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="table-card">
+        <h3>Meter Readings</h3>
+        <table>
+            <thead><tr><th>Month</th><th>Previous</th><th>Current</th><th>Usage</th></tr></thead>
+            <tbody>
+                {% for reading in meter_readings %}
+                    <tr>
+                        <td>{{ reading.billing_month|date:'F Y' }}</td>
+                        <td>{{ reading.previous_reading }}</td>
+                        <td>{{ reading.current_reading }}</td>
+                        <td>{{ reading.usage_m3 }} m3</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="4" class="empty-state">No meter readings available.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="table-card">
+        <h3>Payment Submissions</h3>
+        <table>
+            <thead><tr><th>Date</th><th>Method</th><th>Amount</th><th>Status</th></tr></thead>
+            <tbody>
+                {% for payment in payments %}
+                    <tr>
+                        <td>{{ payment.payment_date }}</td>
+                        <td>{{ payment.get_payment_method_display }}</td>
+                        <td>&#8369;{{ payment.amount_paid }}</td>
+                        <td>{{ payment.get_status_display }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="4" class="empty-state">No payment submissions available.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="card">
+        <h3>Portal Scope</h3>
+        <p>This consumer panel does not show admin configuration tools. Notification settings and payment channel setup are controlled separately by the administrator.</p>
+    </div>
+</section>
+{% else %}
+<section class="page-wrap">
+    <div class="card">
+        <h3>No Consumer Record Linked</h3>
+        <p>Your account is authenticated, but no consumer record is linked yet. Please contact the administrator to connect your login to your billing account.</p>
+    </div>
+</section>
+{% endif %}
+{% endblock %}

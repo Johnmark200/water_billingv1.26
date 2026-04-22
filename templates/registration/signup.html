@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block title %}Sign Up{% endblock %}
+{% block content %}
+<div class="auth-card">
+    <h2>Create Consumer Account</h2>
+    <p>Registration is for consumer access. Staff accounts should be created and assigned by the administrator.</p>
+    <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <div class="btn-row">
+            <button type="submit" class="btn">Create Account</button>
+            <a href="{% url 'login' %}" class="btn secondary">Back to Login</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+{% block title %}Reports{% endblock %}
+{% block content %}
+<section class="page-wrap">
+    <div class="toolbar" style="justify-content: space-between; margin-bottom: 20px;">
+        <div>
+            <h2 class="page-title">Monthly Reports</h2>
+            <p class="muted">Authorized roles can inspect billing, collection, and usage performance for the selected month.</p>
+        </div>
+        <form method="get" class="toolbar">
+            <input type="month" name="month" value="{{ selected_month|date:'Y-m' }}">
+            <button type="submit" class="btn secondary">Load Month</button>
+        </form>
+    </div>
+    <div class="stats-grid">
+        <div class="mini-card"><h3>Active Consumers</h3><p>{{ active_percent }}%</p></div>
+        <div class="mini-card"><h3>Paid Bills</h3><p>{{ paid_percent }}%</p></div>
+        <div class="mini-card"><h3>Overdue Bills</h3><p>{{ pending_percent }}%</p></div>
+        <div class="mini-card"><h3>Collection Rate</h3><p>{{ collection_rate }}%</p></div>
+    </div>
+</section>
+
+<section class="page-wrap grid-3">
+    <div class="card">
+        <h3>Total Consumers</h3>
+        <p>{{ total_consumers }}</p>
+    </div>
+    <div class="card">
+        <h3>Total Billed</h3>
+        <p>&#8369;{{ total_billed }}</p>
+    </div>
+    <div class="card">
+        <h3>Total Collected</h3>
+        <p>&#8369;{{ total_collected }}</p>
+    </div>
+    <div class="card">
+        <h3>Total Bills</h3>
+        <p>{{ total_bills }}</p>
+    </div>
+    <div class="card">
+        <h3>Total Usage</h3>
+        <p>{{ total_usage }} m3</p>
+    </div>
+    <div class="card">
+        <h3>Month</h3>
+        <p>{{ selected_month|date:'F Y' }}</p>
+    </div>
+</section>
+
+<section class="page-wrap grid-2">
+    <div class="table-card">
+        <h3>Recent Payments</h3>
+        <table>
+            <thead><tr><th>Consumer</th><th>Method</th><th>Amount</th><th>Status</th></tr></thead>
+            <tbody>
+                {% for payment in recent_payments %}
+                    <tr>
+                        <td>{{ payment.consumer.full_name }}</td>
+                        <td>{{ payment.get_payment_method_display }}</td>
+                        <td>&#8369;{{ payment.amount_paid }}</td>
+                        <td>{{ payment.get_status_display }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="4" class="empty-state">No payments in this period.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="table-card">
+        <h3>Recent Meter Readings</h3>
+        <table>
+            <thead><tr><th>Consumer</th><th>Current</th><th>Usage</th><th>Submitted By</th></tr></thead>
+            <tbody>
+                {% for reading in recent_readings %}
+                    <tr>
+                        <td>{{ reading.consumer.full_name }}</td>
+                        <td>{{ reading.current_reading }}</td>
+                        <td>{{ reading.usage_m3 }} m3</td>
+                        <td>{{ reading.submitted_by.username|default:'System' }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="4" class="empty-state">No meter readings in this period.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}
