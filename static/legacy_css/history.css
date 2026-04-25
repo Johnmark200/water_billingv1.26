@@ -1,0 +1,371 @@
+/* =======================================================
+   PAYMENT HISTORY PAGE STYLES
+======================================================= */
+
+/* Reset and Base Styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: 
+    linear-gradient(rgba(0, 60, 120, 0.65), rgba(0, 60, 120, 0.65)),
+    url("/img/water.png") center center / cover no-repeat fixed;
+  background-size: 160% auto;
+  background-blend-mode: overlay;
+  animation: waterFlow 30s ease-in-out infinite;
+  min-height: 100vh;
+  color: #fff;
+  overflow-x: hidden;
+}
+
+/* Water Flow Animation */
+@keyframes waterFlow {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Header Styles */
+.main-header {
+  width: 100%;
+  background: rgba(30, 58, 138, 0.85);
+  color: white;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 60px;
+  position: fixed;
+  top: 0;
+  z-index: 1000;
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+}
+
+.main-header h1 {
+  font-size: 22px;
+  letter-spacing: 1px;
+  font-weight: 600;
+  cursor: default;
+  transition: color 0.3s;
+}
+
+.main-header h1:hover {
+  color: #a5f3fc;
+}
+
+.main-header nav {
+  display: flex;
+  gap: 25px;
+  align-items: center;
+}
+
+.main-header nav a {
+  color: white;
+  text-decoration: none;
+  font-weight: 500;
+  position: relative;
+  transition: 0.3s ease;
+  padding: 8px 0;
+}
+
+.main-header nav a::after {
+  content: "";
+  position: absolute;
+  width: 0;
+  height: 2px;
+  left: 0;
+  bottom: -3px;
+  background: #38bdf8;
+  transition: width 0.3s;
+}
+
+.main-header nav a:hover::after,
+.main-header nav a.active::after {
+  width: 100%;
+}
+
+.main-header nav a:hover,
+.main-header nav a.active {
+  color: #a5f3fc;
+}
+
+/* Title Section */
+.title-section {
+  margin-top: 100px;
+  padding: 30px 70px 20px;
+  text-align: center;
+  animation: fadeInDown 0.6s ease forwards;
+}
+
+.title-section h2 {
+  font-size: 36px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.3);
+  letter-spacing: 1px;
+}
+
+/* Main Content Area */
+main {
+  padding: 20px 70px 60px;
+  min-height: calc(100vh - 200px);
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* Table Styles */
+table {
+  width: 100%;
+  background: rgba(0, 60, 120, 0.3);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  animation: fadeInUp 0.6s ease forwards;
+}
+
+table thead {
+  background: linear-gradient(135deg, #2563eb, #1e40af);
+  color: #fff;
+}
+
+table th {
+  padding: 18px 15px;
+  text-align: center;
+  font-weight: 600;
+  font-size: 15px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+table tbody tr {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  transition: background 0.3s ease;
+  color: #fff;
+}
+
+table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+table tbody tr:last-child {
+  border-bottom: none;
+}
+
+table td {
+  padding: 16px 15px;
+  text-align: center;
+  font-size: 14px;
+  color: #fff;
+  vertical-align: middle;
+}
+
+/* Receipt No. Column - Emphasized */
+table td:first-child {
+  font-weight: 600;
+  color: #38bdf8;
+}
+
+/* Amount Column - Bold */
+table td:nth-child(3) {
+  font-weight: 700;
+  color: #a5f3fc;
+  font-size: 15px;
+}
+
+/* Status Badges */
+.paid {
+  background: rgba(16, 185, 129, 0.15);
+  color: #059669;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 13px;
+  display: inline-block;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.pending {
+  background: rgba(245, 158, 11, 0.15);
+  color: #d97706;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 13px;
+  display: inline-block;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* Row Hover Effect with Left Border */
+table tbody tr {
+  position: relative;
+}
+
+table tbody tr::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 4px;
+  background: #38bdf8;
+  transform: scaleY(0);
+  transition: transform 0.3s ease;
+}
+
+table tbody tr:hover::before {
+  transform: scaleY(1);
+}
+
+/* Animations */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Empty State (if no records) */
+table tbody tr td[colspan] {
+  text-align: center;
+  padding: 40px 20px;
+  color: #64748b;
+  font-style: italic;
+}
+
+/* Responsive Design */
+@media (max-width: 900px) {
+  .main-header {
+    padding: 15px 30px;
+  }
+
+  .main-header h1 {
+    font-size: 18px;
+  }
+
+  .main-header nav {
+    gap: 15px;
+  }
+
+  .main-header nav a {
+    font-size: 14px;
+  }
+
+  .title-section {
+    padding: 30px 30px 20px;
+  }
+
+  .title-section h2 {
+    font-size: 28px;
+  }
+
+  main {
+    padding: 20px 30px 40px;
+  }
+
+  table {
+    font-size: 13px;
+    display: block;
+    overflow-x: auto;
+  }
+
+  table th,
+  table td {
+    padding: 12px 10px;
+    font-size: 13px;
+  }
+
+  .paid,
+  .pending {
+    padding: 5px 10px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 500px) {
+  .main-header {
+    flex-direction: column;
+    padding: 15px 20px;
+    gap: 10px;
+  }
+
+  .main-header h1 {
+    font-size: 16px;
+  }
+
+  .main-header nav {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+  }
+
+  .main-header nav a {
+    font-size: 12px;
+    padding: 5px 8px;
+  }
+
+  .title-section {
+    padding: 20px 15px 15px;
+    margin-top: 140px;
+  }
+
+  .title-section h2 {
+    font-size: 22px;
+  }
+
+  main {
+    padding: 15px 15px 30px;
+  }
+
+  table {
+    font-size: 12px;
+  }
+
+  table th {
+    padding: 10px 8px;
+    font-size: 11px;
+  }
+
+  table td {
+    padding: 10px 8px;
+    font-size: 12px;
+  }
+
+  .paid,
+  .pending {
+    padding: 4px 8px;
+    font-size: 10px;
+  }
+}

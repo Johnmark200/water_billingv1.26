@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block title %}Login{% endblock %}
+{% block content %}
+<div class="auth-card">
+    <h2>Login</h2>
+    <p>Use your account to open the correct dashboard for your assigned role.</p>
+    <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <div class="btn-row">
+            <button type="submit" class="btn">Login</button>
+            <a href="{% url 'signup' %}" class="btn secondary">Create Consumer Account</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% block title %}Billing Records{% endblock %}
+{% block content %}
+<section class="page-wrap">
+    <div class="table-card">
+        <div class="toolbar" style="justify-content: space-between; margin-bottom: 18px;">
+            <div>
+                <h2 class="page-title">Billing Records</h2>
+                <p class="muted">Authorized staff can review monthly billing, usage, balances, and due dates.</p>
+            </div>
+            <form method="get" class="toolbar">
+                <select name="consumer">
+                    <option value="">All consumers</option>
+                    {% for consumer in consumers %}
+                        <option value="{{ consumer.id }}" {% if selected_consumer == consumer.id|stringformat:'s' %}selected{% endif %}>
+                            {{ consumer.full_name }}
+                        </option>
+                    {% endfor %}
+                </select>
+                <button type="submit" class="btn secondary">Filter</button>
+                {% if can_add_billing %}
+                    <a href="{% url 'add_billing' %}" class="btn">Add Billing</a>
+                {% endif %}
+            </form>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Consumer</th>
+                    <th>Month</th>
+                    <th>Previous</th>
+                    <th>Current</th>
+                    <th>Usage</th>
+                    <th>Total</th>
+                    <th>Paid</th>
+                    <th>Due</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for bill in billings %}
+                    <tr>
+                        <td>{{ bill.consumer.full_name }}</td>
+                        <td>{{ bill.billing_month|date:'F Y' }}</td>
+                        <td>{{ bill.previous_reading }}</td>
+                        <td>{{ bill.current_reading }}</td>
+                        <td>{{ bill.usage_m3 }}</td>
+                        <td>&#8369;{{ bill.total_amount }}</td>
+                        <td>&#8369;{{ bill.amount_paid }}</td>
+                        <td>{{ bill.due_date }}</td>
+                        <td>{{ bill.get_status_display }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="9" class="empty-state">No billing records found.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

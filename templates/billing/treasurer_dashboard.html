@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+{% block title %}Treasurer Panel{% endblock %}
+{% block content %}
+<section class="page-wrap">
+    <h2 class="page-title">Treasurer Panel</h2>
+    <p class="muted">Collection-focused workspace for payment monitoring and financial follow-up.</p>
+    <div class="stats-grid">
+        <div class="mini-card"><h3>Month</h3><p>{{ current_month|date:'M Y' }}</p></div>
+        <div class="mini-card"><h3>Collected</h3><p>&#8369;{{ monthly_collected }}</p></div>
+        <div class="mini-card"><h3>Pending Requests</h3><p>{{ pending_requests|length }}</p></div>
+        <div class="mini-card"><h3>Overdue Bills</h3><p>{{ overdue_bills|length }}</p></div>
+    </div>
+</section>
+
+<section class="page-wrap grid-2">
+    <div class="table-card">
+        <h3>Pending Payment Requests</h3>
+        <table>
+            <thead><tr><th>Consumer</th><th>Amount</th><th>Method</th><th>Date</th></tr></thead>
+            <tbody>
+                {% for payment in pending_requests %}
+                    <tr>
+                        <td>{{ payment.consumer.full_name }}</td>
+                        <td>&#8369;{{ payment.amount_paid }}</td>
+                        <td>{{ payment.get_payment_method_display }}</td>
+                        <td>{{ payment.payment_date }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="4" class="empty-state">No pending payment requests.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="table-card">
+        <h3>Completed Receipts</h3>
+        <table>
+            <thead><tr><th>Consumer</th><th>Amount</th><th>Method</th><th>Date</th></tr></thead>
+            <tbody>
+                {% for payment in recent_receipts %}
+                    <tr>
+                        <td>{{ payment.consumer.full_name }}</td>
+                        <td>&#8369;{{ payment.amount_paid }}</td>
+                        <td>{{ payment.get_payment_method_display }}</td>
+                        <td>{{ payment.payment_date }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="4" class="empty-state">No completed receipts found.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="table-card">
+        <h3>Accounts Requiring Follow-Up</h3>
+        <table>
+            <thead><tr><th>Consumer</th><th>Month</th><th>Amount Due</th><th>Status</th></tr></thead>
+            <tbody>
+                {% for bill in overdue_bills %}
+                    <tr>
+                        <td>{{ bill.consumer.full_name }}</td>
+                        <td>{{ bill.billing_month|date:'F Y' }}</td>
+                        <td>&#8369;{{ bill.amount_due }}</td>
+                        <td>{{ bill.get_status_display }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="4" class="empty-state">No overdue accounts right now.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="card">
+        <h3>Treasurer Access Scope</h3>
+        <p>Treasurer accounts can monitor and record payments and review reports, but consumer management and system configuration remain admin-only.</p>
+        <div class="btn-row" style="margin-top: 16px;">
+            <a href="{% url 'payments' %}" class="btn">Open Payments</a>
+            <a href="{% url 'reports' %}" class="btn secondary">Open Reports</a>
+        </div>
+    </div>
+</section>
+{% endblock %}

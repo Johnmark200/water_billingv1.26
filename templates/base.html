@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Water Billing System{% endblock %}</title>
+    <style>
+        :root {
+            --bg: #f3f8fb;
+            --panel: #ffffff;
+            --ink: #183642;
+            --muted: #5c7985;
+            --line: #d6e3ea;
+            --brand: #0f766e;
+            --brand-dark: #115e59;
+            --accent: #f59e0b;
+            --danger: #dc2626;
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            background:
+                radial-gradient(circle at top left, rgba(15, 118, 110, 0.18), transparent 28%),
+                radial-gradient(circle at top right, rgba(245, 158, 11, 0.15), transparent 22%),
+                linear-gradient(180deg, #eef8fb 0%, var(--bg) 100%);
+            color: var(--ink);
+            min-height: 100vh;
+        }
+
+        a { color: inherit; text-decoration: none; }
+
+        .site-header {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            backdrop-filter: blur(14px);
+            background: rgba(255, 255, 255, 0.92);
+            border-bottom: 1px solid rgba(214, 227, 234, 0.9);
+        }
+
+        .header-wrap {
+            max-width: 1240px;
+            margin: 0 auto;
+            padding: 18px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .brand-block {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .brand-block strong {
+            font-size: 22px;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .brand-block span {
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        nav {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        nav a,
+        .role-chip {
+            padding: 10px 14px;
+            border-radius: 999px;
+            background: rgba(15, 118, 110, 0.08);
+            color: var(--ink);
+            font-size: 14px;
+            transition: background 0.2s ease, color 0.2s ease;
+        }
+
+        nav a:hover {
+            background: var(--brand);
+            color: #fff;
+        }
+
+        .nav-inline-form {
+            margin: 0;
+            display: inline-flex;
+        }
+
+        .nav-link-button {
+            border: 0;
+            padding: 10px 14px;
+            border-radius: 999px;
+            background: rgba(15, 118, 110, 0.08);
+            color: var(--ink);
+            font-size: 14px;
+            cursor: pointer;
+            transition: background 0.2s ease, color 0.2s ease;
+        }
+
+        .nav-link-button:hover {
+            background: var(--brand);
+            color: #fff;
+        }
+
+        .role-chip {
+            background: rgba(24, 54, 66, 0.08);
+            color: var(--muted);
+        }
+
+        .notification-link {
+            position: relative;
+            padding-right: 18px;
+        }
+
+        .badge {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            min-width: 18px;
+            height: 18px;
+            padding: 0 5px;
+            border-radius: 999px;
+            background: var(--danger);
+            color: #fff;
+            font-size: 11px;
+            line-height: 18px;
+            text-align: center;
+        }
+
+        .page-wrap,
+        .message-list {
+            max-width: 1240px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        .hero,
+        .section {
+            max-width: 1240px;
+            margin: 0 auto;
+            padding: 40px 24px 16px;
+        }
+
+        .hero h1,
+        .section h2,
+        .page-title {
+            margin: 0 0 12px;
+        }
+
+        .hero p,
+        .lead,
+        .section p {
+            color: var(--muted);
+        }
+
+        .hero {
+            padding-top: 56px;
+        }
+
+        .card,
+        .table-card,
+        .form-card,
+        .feature-card,
+        .mini-card {
+            background: var(--panel);
+            border: 1px solid rgba(214, 227, 234, 0.9);
+            border-radius: 20px;
+            box-shadow: 0 18px 32px rgba(24, 54, 66, 0.08);
+        }
+
+        .card,
+        .table-card,
+        .form-card,
+        .feature-card {
+            padding: 24px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 18px;
+        }
+
+        .mini-card {
+            padding: 22px;
+        }
+
+        .mini-card h3 {
+            margin: 0 0 8px;
+            font-size: 14px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .mini-card p {
+            margin: 0;
+            font-size: 30px;
+            font-weight: 700;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 20px;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 20px;
+        }
+
+        .features {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 18px;
+        }
+
+        .table-card { overflow-x: auto; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th,
+        td {
+            text-align: left;
+            padding: 12px 10px;
+            border-bottom: 1px solid var(--line);
+            vertical-align: top;
+        }
+
+        th {
+            color: var(--muted);
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .btn,
+        button,
+        input[type="submit"] {
+            border: 0;
+            border-radius: 12px;
+            background: var(--brand);
+            color: #fff;
+            padding: 11px 16px;
+            font-size: 14px;
+            cursor: pointer;
+            display: inline-block;
+        }
+
+        .btn.secondary,
+        .btn-soft {
+            background: rgba(15, 118, 110, 0.12);
+            color: var(--brand-dark);
+        }
+
+        .btn.warn {
+            background: var(--accent);
+            color: #fff;
+        }
+
+        .btn-row,
+        .toolbar {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        form p {
+            margin: 0 0 14px;
+        }
+
+        input,
+        select,
+        textarea {
+            width: 100%;
+            margin-top: 6px;
+            padding: 11px 12px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: #fff;
+            color: var(--ink);
+        }
+
+        .auth-card {
+            max-width: 560px;
+            margin: 64px auto;
+            padding: 28px;
+            background: rgba(255, 255, 255, 0.96);
+            border: 1px solid rgba(214, 227, 234, 0.9);
+            border-radius: 22px;
+            box-shadow: 0 18px 34px rgba(24, 54, 66, 0.1);
+        }
+
+        .message {
+            padding: 12px 14px;
+            border-radius: 14px;
+            background: rgba(15, 118, 110, 0.08);
+            border: 1px solid rgba(15, 118, 110, 0.16);
+            color: var(--brand-dark);
+            margin-bottom: 10px;
+        }
+
+        .muted {
+            color: var(--muted);
+        }
+
+        .empty-state {
+            color: var(--muted);
+            padding: 8px 0;
+        }
+
+        .status-feedback {
+            margin-bottom: 14px;
+            padding: 12px 14px;
+            border-radius: 14px;
+            background: rgba(15, 118, 110, 0.08);
+            border: 1px solid rgba(15, 118, 110, 0.16);
+            color: var(--brand-dark);
+        }
+
+        .status-feedback.error {
+            background: rgba(220, 38, 38, 0.08);
+            border-color: rgba(220, 38, 38, 0.16);
+            color: var(--danger);
+        }
+
+        .status-select {
+            min-width: 150px;
+        }
+
+        .config-list {
+            margin: 12px 0 0;
+            padding-left: 18px;
+            color: var(--muted);
+        }
+
+        .config-list li {
+            margin-bottom: 6px;
+        }
+
+        @media (max-width: 960px) {
+            .stats-grid,
+            .grid-2,
+            .grid-3,
+            .features {
+                grid-template-columns: 1fr;
+            }
+
+            .header-wrap {
+                align-items: flex-start;
+            }
+        }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-wrap">
+            <div class="brand-block">
+                <strong>Tabuan Water Billing System</strong>
+                <span>Role-aware billing, readings, payments, and notifications</span>
+            </div>
+            <nav>
+                <a href="{% url 'home' %}">Home</a>
+                {% if user.is_authenticated %}
+                    <a href="{% url dashboard_url_name %}">Dashboard</a>
+                    {% if can_manage_consumers %}
+                        <a href="{% url 'consumers' %}">Consumers</a>
+                    {% endif %}
+                    {% if current_role == 'admin' or current_role == 'secretary' or current_role == 'treasurer' %}
+                        <a href="{% url 'billing' %}">Billing</a>
+                        <a href="{% url 'payments' %}">Payments</a>
+                    {% endif %}
+                    {% if can_view_reports %}
+                        <a href="{% url 'reports' %}">Reports</a>
+                    {% endif %}
+                    {% if current_role == 'admin' %}
+                        <a href="{% url 'communications' %}">Communications</a>
+                        <a href="{% url 'payment_settings' %}">Settings</a>
+                    {% endif %}
+                    {% if can_input_meter_readings %}
+                        <a href="{% url 'reader_panel' %}">Meter Readings</a>
+                    {% endif %}
+                    {% if current_role == 'consumer' %}
+                        <a href="{% url 'notifications' %}" class="notification-link">&#128276; Notifications{% if unread_notifications %}<span class="badge">{{ unread_notifications }}</span>{% endif %}</a>
+                    {% endif %}
+                    <a href="{% url 'profile' %}">Profile</a>
+                    <form method="post" action="{% url 'logout' %}" class="nav-inline-form">
+                        {% csrf_token %}
+                        <button type="submit" class="nav-link-button">Logout</button>
+                    </form>
+                    <span class="role-chip">
+                        {{ current_profile.get_role_display|default:current_role|title }}
+                    </span>
+                {% else %}
+                    <a href="{% url 'login' %}">Login</a>
+                    <a href="{% url 'signup' %}">Sign Up</a>
+                {% endif %}
+            </nav>
+        </div>
+    </header>
+
+    {% if messages %}
+        <div class="message-list">
+            {% for message in messages %}
+                <div class="message">{{ message }}</div>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    {% block content %}{% endblock %}
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

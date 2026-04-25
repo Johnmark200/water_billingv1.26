@@ -1,0 +1,135 @@
+{% extends 'base.html' %}
+{% block title %}Admin Panel{% endblock %}
+{% block content %}
+<section class="page-wrap">
+    <div class="toolbar" style="justify-content: space-between; margin-bottom: 20px;">
+        <div>
+            <h2 class="page-title">Admin Panel</h2>
+            <p class="muted">Full system access for consumer management, communications, payment monitoring, and monthly analytics.</p>
+        </div>
+        <div class="toolbar">
+            <a href="{% url 'communications' %}" class="btn">Send Notifications</a>
+            <a href="{% url 'payment_settings' %}" class="btn secondary">Configure Payments</a>
+        </div>
+    </div>
+    <div class="stats-grid">
+        <div class="mini-card"><h3>Total Consumers</h3><p>{{ total_consumers }}</p></div>
+        <div class="mini-card"><h3>Active Connections</h3><p>{{ active_connections }}</p></div>
+        <div class="mini-card"><h3>Pending Payments</h3><p data-pending-payments-count>{{ pending_payments }}</p></div>
+        <div class="mini-card"><h3>Overdue Bills</h3><p>{{ overdue_bills }}</p></div>
+    </div>
+</section>
+
+<section class="page-wrap grid-2">
+    <div class="table-card">
+        <h3>{{ current_month|date:'F Y' }} Sales Snapshot</h3>
+        <p><strong>Total billed:</strong> &#8369;{{ monthly_billed }}</p>
+        <p><strong>Total collected:</strong> <span data-monthly-collected-total>PHP {{ monthly_collected }}</span></p>
+        <p><strong>Cash enabled:</strong> {{ system_settings.enable_cash_payments|yesno:'Yes,No' }}</p>
+        <p><strong>Online enabled:</strong> {{ system_settings.enable_online_payments|yesno:'Yes,No' }}</p>
+        <p><strong>SMS notifications enabled:</strong> {{ system_settings.notify_by_sms|yesno:'Yes,No' }}</p>
+    </div>
+    <div class="table-card">
+        <h3>Recent SMS Blasts</h3>
+        <table>
+            <thead><tr><th>Audience</th><th>Status</th><th>Sent</th><th>Failed</th></tr></thead>
+            <tbody>
+                {% for blast in recent_blasts %}
+                    <tr>
+                        <td>{{ blast.get_audience_display }}</td>
+                        <td>{{ blast.get_status_display }}</td>
+                        <td>{{ blast.sent_count }}</td>
+                        <td>{{ blast.failed_count }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="4" class="empty-state">No SMS blasts have been recorded yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="page-wrap grid-2">
+    <div class="table-card">
+        <h3>Recent Payments</h3>
+        <p class="muted">Change a payment status here to update the linked consumer account immediately and send the status update through the configured notification providers.</p>
+        <div class="status-feedback" data-payment-status-feedback hidden></div>
+        <table>
+            <thead><tr><th>Consumer</th><th>Method</th><th>Amount</th><th>Status</th><th>Bill Status</th><th>Email</th><th>SMS</th><th>Update</th></tr></thead>
+            <tbody>
+                {% for payment in recent_payments %}
+                    <tr>
+                        <td>{{ payment.consumer.full_name }}</td>
+                        <td>{{ payment.get_payment_method_display }}</td>
+                        <td>&#8369;{{ payment.amount_paid }}</td>
+                        <td class="payment-status-display">{{ payment.get_status_display }}</td>
+                        <td class="billing-status-display">{% if payment.billing %}{{ payment.billing.get_status_display }}{% else %}-{% endif %}</td>
+                        <td class="email-notification-display">-</td>
+                        <td class="sms-notification-display">-</td>
+                        <td>
+                            <form method="post" class="payment-status-form" data-url="{% url 'update_payment_status' payment.id %}">
+                                {% csrf_token %}
+                                <select name="status" class="status-select">
+                                    {% for value, label in payment_status_choices %}
+                                        <option value="{{ value }}" {% if payment.status == value %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </form>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="8" class="empty-state">No payments recorded yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="table-card">
+        <h3>Recent Billing Records</h3>
+        <table>
+            <thead><tr><th>Consumer</th><th>Month</th><th>Total</th><th>Status</th></tr></thead>
+            <tbody>
+                {% for bill in recent_bills %}
+                    <tr>
+                        <td>{{ bill.consumer.full_name }}</td>
+                        <td>{{ bill.billing_month|date:'F Y' }}</td>
+                        <td>&#8369;{{ bill.total_amount }}</td>
+                        <td>{{ bill.get_status_display }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="4" class="empty-state">No billing activity available.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="table-card">
+        <h3>Recent Meter Readings</h3>
+        <table>
+            <thead><tr><th>Consumer</th><th>Current</th><th>Usage</th><th>Submitted By</th></tr></thead>
+            <tbody>
+                {% for reading in recent_readings %}
+                    <tr>
+                        <td>{{ reading.consumer.full_name }}</td>
+                        <td>{{ reading.current_reading }}</td>
+                        <td>{{ reading.usage_m3 }} m3</td>
+                        <td>{{ reading.submitted_by.username|default:'System' }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="4" class="empty-state">No reading activity available.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="card">
+        <h3>Admin Tools</h3>
+        <p>Use the communications page to send SMS or email campaigns, the payment settings page to configure consumer payment channels, and the billing pages to manage full account data.</p>
+        <div class="btn-row" style="margin-top: 16px;">
+            <a href="{% url 'consumers' %}" class="btn secondary">Manage Consumers</a>
+            <a href="{% url 'payments' %}" class="btn secondary">Monitor Payments</a>
+            <a href="{% url 'reports' %}" class="btn secondary">View Reports</a>
+        </div>
+    </div>
+</section>
+{% endblock %}
+{% block extra_js %}
+    {% include 'billing/includes/payment_status_script.html' %}
+{% endblock %}

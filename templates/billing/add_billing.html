@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block title %}Add Billing{% endblock %}
+{% block content %}
+<section class="page-wrap">
+    <div class="form-card">
+        <h2 class="page-title">Create Billing Record</h2>
+        <p class="muted">Admin can create billing records manually and trigger due notifications immediately after saving.</p>
+        <form method="post">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <div class="btn-row">
+                <button type="submit" class="btn">Save Billing</button>
+                <a href="{% url 'billing' %}" class="btn secondary">Back to Billing</a>
+            </div>
+        </form>
+    </div>
+</section>
+{% endblock %}

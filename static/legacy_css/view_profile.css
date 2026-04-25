@@ -1,0 +1,365 @@
+/* =======================================================
+   UPDATE PROFILE PAGE STYLES
+======================================================= */
+
+/* Reset and Base Styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: 
+    linear-gradient(rgba(0, 60, 120, 0.65), rgba(0, 60, 120, 0.65)),
+    url("/img/water.png") center center / cover no-repeat fixed;
+  background-size: 160% auto;
+  background-blend-mode: overlay;
+  animation: waterFlow 30s ease-in-out infinite;
+  min-height: 100vh;
+  color: #fff;
+  overflow-x: hidden;
+}
+
+/* Water Flow Animation */
+@keyframes waterFlow {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Header Styles */
+header {
+  width: 100%;
+  background: rgba(30, 58, 138, 0.85);
+  color: white;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 60px;
+  position: fixed;
+  top: 0;
+  z-index: 1000;
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+}
+
+header h1 {
+  font-size: 22px;
+  letter-spacing: 1px;
+  font-weight: 600;
+  cursor: default;
+  transition: color 0.3s;
+}
+
+header h1:hover {
+  color: #a5f3fc;
+}
+
+header nav {
+  display: flex;
+  gap: 25px;
+  align-items: center;
+}
+
+header nav a {
+  color: white;
+  text-decoration: none;
+  font-weight: 500;
+  position: relative;
+  transition: 0.3s ease;
+  padding: 8px 0;
+}
+
+header nav a::after {
+  content: "";
+  position: absolute;
+  width: 0;
+  height: 2px;
+  left: 0;
+  bottom: -3px;
+  background: #38bdf8;
+  transition: width 0.3s;
+}
+
+header nav a:hover::after,
+header nav a.active::after {
+  width: 100%;
+}
+
+header nav a:hover,
+header nav a.active {
+  color: #a5f3fc;
+}
+
+/* Main Container */
+.container {
+  margin-top: 100px;
+  padding: 40px 70px;
+  min-height: calc(100vh - 180px);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.container main {
+  width: 100%;
+  max-width: 700px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 24px;
+  padding: 45px 50px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  animation: fadeInUp 0.6s ease forwards;
+}
+
+.container main h2 {
+  font-size: 32px;
+  font-weight: 700;
+  color: #1e3a8a;
+  margin-bottom: 30px;
+  text-align: center;
+  letter-spacing: 0.5px;
+  position: relative;
+  padding-bottom: 15px;
+}
+
+.container main h2::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80px;
+  height: 3px;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  border-radius: 2px;
+}
+
+/* Update Profile Form */
+.update-profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: 25px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-group label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e3a8a;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.form-group input {
+  padding: 14px 18px;
+  border: 2px solid rgba(37, 99, 235, 0.2);
+  border-radius: 12px;
+  font-size: 15px;
+  font-family: inherit;
+  color: #334155;
+  background: rgba(255, 255, 255, 0.9);
+  transition: all 0.3s ease;
+  outline: none;
+}
+
+.form-group input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+  background: white;
+}
+
+.form-group input:hover:not(:focus):not([readonly]) {
+  border-color: rgba(37, 99, 235, 0.4);
+}
+
+.form-group input[readonly] {
+  background: rgba(226, 232, 240, 0.5);
+  color: #64748b;
+  cursor: not-allowed;
+  border-color: rgba(203, 213, 225, 0.5);
+}
+
+/* Form Actions */
+.form-actions {
+  display: flex;
+  gap: 15px;
+  margin-top: 15px;
+  justify-content: center;
+}
+
+.form-actions .btn {
+  padding: 14px 35px;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.form-actions .btn[type="submit"] {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: white;
+}
+
+.form-actions .btn[type="submit"]:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
+  background: linear-gradient(135deg, #2563eb, #1e40af);
+}
+
+.form-actions .btn[type="submit"]:active {
+  transform: translateY(0);
+}
+
+.form-actions .cancel-btn {
+  background: linear-gradient(135deg, #64748b, #475569);
+  color: white;
+}
+
+.form-actions .cancel-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(100, 116, 139, 0.4);
+  background: linear-gradient(135deg, #475569, #334155);
+}
+
+.form-actions .cancel-btn:active {
+  transform: translateY(0);
+}
+
+/* Animations */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Footer Styles */
+footer {
+  background: rgba(30, 58, 138, 0.9);
+  color: white;
+  text-align: center;
+  padding: 25px 20px;
+  margin-top: 60px;
+  font-size: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 -3px 10px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(8px);
+  transition: background 0.5s ease;
+}
+
+footer:hover {
+  background: rgba(30, 64, 175, 0.95);
+}
+
+/* Responsive Design */
+@media (max-width: 900px) {
+  header {
+    padding: 15px 30px;
+  }
+
+  header h1 {
+    font-size: 18px;
+  }
+
+  header nav {
+    gap: 15px;
+  }
+
+  header nav a {
+    font-size: 14px;
+  }
+
+  .container {
+    padding: 30px 30px;
+    margin-top: 120px;
+  }
+
+  .container main {
+    padding: 35px 30px;
+  }
+
+  .container main h2 {
+    font-size: 26px;
+  }
+
+  .form-actions {
+    flex-direction: column;
+  }
+
+  .form-actions .btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 500px) {
+  header {
+    flex-direction: column;
+    padding: 15px 20px;
+    gap: 10px;
+  }
+
+  header h1 {
+    font-size: 16px;
+  }
+
+  header nav {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+  }
+
+  header nav a {
+    font-size: 12px;
+    padding: 5px 8px;
+  }
+
+  .container {
+    padding: 20px 15px;
+    margin-top: 140px;
+  }
+
+  .container main {
+    padding: 30px 20px;
+  }
+
+  .container main h2 {
+    font-size: 22px;
+  }
+
+  .form-group label {
+    font-size: 13px;
+  }
+
+  .form-group input {
+    padding: 12px 15px;
+    font-size: 14px;
+  }
+
+  .form-actions .btn {
+    padding: 12px 25px;
+    font-size: 14px;
+  }
+}

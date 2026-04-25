@@ -1,0 +1,129 @@
+{% extends 'base.html' %}
+{% block title %}Communications{% endblock %}
+{% block content %}
+<section class="page-wrap">
+    <div class="card">
+        <h2 class="page-title">Live Delivery Setup</h2>
+        <p class="muted">Add your live provider credentials in <code>{{ delivery_config.env_file_path }}</code>. Once configured, communication blasts send through the real email and SMS providers below.</p>
+        <div class="grid-2">
+            <div>
+                <h3>Email Provider: {{ delivery_config.email_provider_label }}</h3>
+                <p><strong>Status:</strong> {{ delivery_config.email_configured|yesno:'Configured,Missing credentials' }}</p>
+                <p class="muted">{{ delivery_config.email_setup_note }}</p>
+                {% if delivery_config.email_error %}
+                    <p class="status-feedback error">{{ delivery_config.email_error }}</p>
+                {% endif %}
+                <p class="muted">Required keys:</p>
+                <ul class="config-list">
+                    {% for item in delivery_config.email_env_keys %}
+                        <li><code>{{ item }}</code></li>
+                    {% endfor %}
+                </ul>
+            </div>
+            <div>
+                <h3>SMS Provider: {{ delivery_config.sms_provider_label }}</h3>
+                <p><strong>Status:</strong> {{ delivery_config.sms_configured|yesno:'Configured,Missing credentials' }}</p>
+                <p class="muted">{{ delivery_config.sms_setup_note }}</p>
+                {% if delivery_config.sms_error %}
+                    <p class="status-feedback error">{{ delivery_config.sms_error }}</p>
+                {% endif %}
+                <p class="muted">Required keys:</p>
+                <ul class="config-list">
+                    {% for item in delivery_config.sms_env_keys %}
+                        <li><code>{{ item }}</code></li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="page-wrap grid-2">
+    <div class="form-card" style="margin: 0; max-width: none;">
+        <h2 class="page-title">Send Test SMS</h2>
+        <p class="muted">Send one SMS first to verify Twilio authentication, sender number, and recipient formatting before using bulk blast.</p>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="test_sms">
+            {{ test_sms_form.as_p }}
+            <button type="submit" class="btn secondary">Send Test SMS</button>
+        </form>
+    </div>
+    <div class="form-card" style="margin: 0; max-width: none;">
+        <h2 class="page-title">Send Test Email</h2>
+        <p class="muted">Send one email first to verify the provider key, sender identity, and mailbox configuration before using bulk blast.</p>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="test_email">
+            {{ test_email_form.as_p }}
+            <button type="submit" class="btn secondary">Send Test Email</button>
+        </form>
+    </div>
+</section>
+
+<section class="page-wrap grid-2">
+    <div class="form-card" style="margin: 0; max-width: none;">
+        <h2 class="page-title">Send SMS Blast</h2>
+        <p class="muted">Admin-only communication tool for sending bulk SMS updates to selected consumer groups through the configured SMS provider.</p>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="sms">
+            {{ sms_form.as_p }}
+            <button type="submit" class="btn">Send SMS Blast</button>
+        </form>
+    </div>
+    <div class="form-card" style="margin: 0; max-width: none;">
+        <h2 class="page-title">Send Email Blast</h2>
+        <p class="muted">Use this form to send instant email updates to the same consumer audiences used by SMS blasts. Each send is logged below.</p>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="email">
+            {{ email_form.as_p }}
+            <button type="submit" class="btn">Send Email Blast</button>
+        </form>
+    </div>
+</section>
+
+<section class="page-wrap grid-2">
+    <div class="table-card">
+        <h3>Recent SMS Blasts</h3>
+        <table>
+            <thead><tr><th>Audience</th><th>Status</th><th>Provider</th><th>Sent</th><th>Failed</th><th>Sent At</th></tr></thead>
+            <tbody>
+                {% for blast in recent_blasts %}
+                    <tr>
+                        <td>{{ blast.get_audience_display }}</td>
+                        <td>{{ blast.get_status_display }}</td>
+                        <td>{{ blast.provider|default:'-' }}</td>
+                        <td>{{ blast.sent_count }}</td>
+                        <td>{{ blast.failed_count }}</td>
+                        <td>{{ blast.sent_at|date:'Y-m-d H:i'|default:'-' }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="6" class="empty-state">No SMS blasts have been sent yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="table-card">
+        <h3>Outbound Notification Log</h3>
+        <table>
+            <thead><tr><th>When</th><th>Channel</th><th>Title</th><th>Consumer</th><th>Status</th><th>Provider Response</th></tr></thead>
+            <tbody>
+                {% for item in recent_notifications %}
+                    <tr>
+                        <td>{{ item.created_at|date:'Y-m-d H:i' }}</td>
+                        <td>{{ item.get_channel_display }}</td>
+                        <td>{{ item.title }}</td>
+                        <td>{{ item.consumer.full_name|default:'-' }}</td>
+                        <td>{{ item.get_status_display }}</td>
+                        <td>{{ item.response_message|default:'-' }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="6" class="empty-state">No outbound notifications have been logged yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}
