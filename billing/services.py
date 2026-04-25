@@ -128,6 +128,47 @@ def _twilio_configuration_error():
     )
 
 
+def _sms_api_ph_configuration_error():
+    api_key = getattr(settings, 'SMS_API_PH_API_KEY', '')
+    endpoint = getattr(settings, 'SMS_API_PH_ENDPOINT', '')
+
+    if not endpoint:
+        return 'SMS_API_PH_ENDPOINT is missing.'
+    if not api_key:
+        return 'SMS_API_PH_API_KEY is missing.'
+    if not api_key.startswith('sk-'):
+        return 'SMS_API_PH_API_KEY should start with sk-.'
+    return ''
+
+
+def _parse_sms_api_ph_response(response_body):
+    """
+    Parse SMS API Philippines response to determine actual delivery status.
+    Returns: (status, message_id, error_message)
+    """
+    try:
+        response_data = json.loads(response_body)
+        
+        # Different SMS API providers may return different status values
+        api_status = (response_data.get('status') or response_data.get('state') or 'unknown').lower()
+        message_id = response_data.get('message_id') or response_data.get('id') or response_data.get('sms_id')
+        error_msg = response_data.get('message') or response_data.get('error') or response_data.get('error_message')
+        
+        # Normalize status
+        if api_status in ('error', 'failed', 'rejected'):
+            return 'failed', message_id, error_msg or f'API returned status: {api_status}'
+        elif api_status in ('success', 'sent', 'queued', 'pending'):
+            # Both "pending" and "queued" are acceptable - they will be delivered
+            return 'sent', message_id, None
+        else:
+            # Unknown status - log it but assume success
+            return 'sent', message_id, f'Unexpected API status: {api_status}'
+            
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        # Can't parse response - assume it failed
+        return None, None, f'Invalid JSON response: {_truncate_response_text(response_body)}'
+
+
 def _email_configuration_error():
     provider = email_provider_name()
     from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', '')
@@ -170,6 +211,8 @@ def is_sms_delivery_configured():
     provider = sms_provider_name()
     if provider == 'twilio':
         return bool(_twilio_auth_mode() and getattr(settings, 'TWILIO_PHONE_NUMBER', ''))
+    if provider == 'sms_api_ph':
+        return not bool(_sms_api_ph_configuration_error())
     return False
 
 
@@ -196,6 +239,32 @@ def get_delivery_configuration_summary():
             'SENDGRID_API_KEY',
         ]
 
+    if sms_provider == 'sms_api_ph':
+        sms_setup_note = (
+            'Use your SMS API Philippines API key. Requests are sent with the x-api-key header '
+            'to the configured SMS_API_PH_ENDPOINT.'
+        )
+        sms_error = _sms_api_ph_configuration_error()
+        sms_env_keys = [
+            'SMS_DELIVERY_PROVIDER',
+            'SMS_API_PH_ENDPOINT',
+            'SMS_API_PH_API_KEY',
+        ]
+    else:
+        sms_setup_note = (
+            'Use your Twilio Account SID (AC...) plus either an Auth Token or an API Key SID/Secret. '
+            'Do not use OAuth Client ID/Client Secret values for SMS delivery.'
+        )
+        sms_error = _twilio_configuration_error() if sms_provider == 'twilio' else ''
+        sms_env_keys = [
+            'SMS_DELIVERY_PROVIDER',
+            'TWILIO_ACCOUNT_SID',
+            'TWILIO_AUTH_TOKEN or',
+            'TWILIO_API_KEY_SID',
+            'TWILIO_API_KEY_SECRET',
+            'TWILIO_PHONE_NUMBER',
+        ]
+
     return {
         'env_file_path': str(settings.BASE_DIR / '.env'),
         'email_provider': email_provider,
@@ -208,21 +277,11 @@ def get_delivery_configuration_summary():
         'email_error': _email_configuration_error(),
         'email_env_keys': email_env_keys,
         'sms_provider': sms_provider,
-        'sms_provider_label': sms_provider.title(),
+        'sms_provider_label': 'SMS API PH' if sms_provider == 'sms_api_ph' else sms_provider.title(),
         'sms_configured': is_sms_delivery_configured(),
-        'sms_setup_note': (
-            'Use your Twilio Account SID (AC...) plus either an Auth Token or an API Key SID/Secret. '
-            'Do not use OAuth Client ID/Client Secret values for SMS delivery.'
-        ),
-        'sms_error': _twilio_configuration_error() if sms_provider == 'twilio' else '',
-        'sms_env_keys': [
-            'SMS_DELIVERY_PROVIDER',
-            'TWILIO_ACCOUNT_SID',
-            'TWILIO_AUTH_TOKEN or',
-            'TWILIO_API_KEY_SID',
-            'TWILIO_API_KEY_SECRET',
-            'TWILIO_PHONE_NUMBER',
-        ],
+        'sms_setup_note': sms_setup_note,
+        'sms_error': sms_error,
+        'sms_env_keys': sms_env_keys,
     }
 
 
@@ -332,6 +391,280 @@ def _send_via_smtp(email_address, subject, message):
     return f'SMTP email sent to {email_address}.'
 
 
+def _send_via_sms_api_ph(phone_number, message):
+    config_error = _sms_api_ph_configuration_error()
+    if config_error:
+        raise ValueError(config_error)
+
+    payload = json.dumps({'recipient': phone_number, 'message': message}).encode()
+    sms_request = request.Request(
+        getattr(settings, 'SMS_API_PH_ENDPOINT', ''),
+        data=payload,
+        headers={
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'x-api-key': getattr(settings, 'SMS_API_PH_API_KEY', ''),
+        },
+        method='POST',
+    )
+
+    with request.urlopen(sms_request, timeout=getattr(settings, 'SMS_API_TIMEOUT', 10)) as response:  # pragma: no cover - network-dependent
+        body = response.read().decode()
+
+    # Parse and validate the response
+    status, message_id, error = _parse_sms_api_ph_response(body)
+    
+    if status == 'failed':
+        raise ValueError(error or 'SMS API PH rejected the message')
+    
+    # Return success response with optional message ID
+    if message_id:
+        return f'SMS API PH accepted (ID: {message_id}) for {phone_number}'
+    return f'SMS API PH accepted the SMS for {phone_number}'
+
+
+def _paymongo_base_url():
+    return (getattr(settings, 'PAYMONGO_BASE_URL', 'https://api.paymongo.com/v1') or '').rstrip('/')
+
+
+def _paymongo_ewallet_type():
+    return (getattr(settings, 'PAYMONGO_EWALLET_TYPE', 'gcash') or '').strip().lower()
+
+
+def _paymongo_configuration_error():
+    secret_key = getattr(settings, 'PAYMONGO_SECRET_KEY', '')
+    base_url = _paymongo_base_url()
+    ewallet_type = _paymongo_ewallet_type()
+
+    if not base_url:
+        return 'PAYMONGO_BASE_URL is missing.'
+    if not secret_key:
+        return 'PAYMONGO_SECRET_KEY is missing.'
+    if not secret_key.startswith(('sk_test_', 'sk_live_')):
+        return 'PAYMONGO_SECRET_KEY must start with sk_test_ or sk_live_.'
+    if not ewallet_type:
+        return 'PAYMONGO_EWALLET_TYPE is missing.'
+    return ''
+
+
+def is_paymongo_configured():
+    return not bool(_paymongo_configuration_error())
+
+
+def _paymongo_auth_header():
+    token = f"{getattr(settings, 'PAYMONGO_SECRET_KEY', '')}:"
+    return f"Basic {base64.b64encode(token.encode()).decode()}"
+
+
+def _paymongo_url(path):
+    if str(path).startswith(('http://', 'https://')):
+        return path
+    return f"{_paymongo_base_url()}/{str(path).lstrip('/')}"
+
+
+def _format_paymongo_error(body):
+    try:
+        payload = json.loads(body)
+    except (TypeError, ValueError):
+        return _truncate_response_text(body)
+
+    errors = payload.get('errors') or []
+    if errors:
+        messages = []
+        for item in errors:
+            detail = item.get('detail') or item.get('message') or item.get('code')
+            if detail:
+                messages.append(str(detail))
+        if messages:
+            return _truncate_response_text('; '.join(messages))
+
+    return _truncate_response_text(body)
+
+
+def _paymongo_request(endpoint, method='GET', payload=None):
+    config_error = _paymongo_configuration_error()
+    if config_error:
+        raise ValueError(config_error)
+
+    data = json.dumps(payload).encode() if payload is not None else None
+    paymongo_request = request.Request(
+        _paymongo_url(endpoint),
+        data=data,
+        headers={
+            'Authorization': _paymongo_auth_header(),
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+        },
+        method=method,
+    )
+
+    try:
+        with request.urlopen(paymongo_request, timeout=getattr(settings, 'PAYMONGO_API_TIMEOUT', 10)) as response:  # pragma: no cover - network-dependent
+            body = response.read().decode()
+    except error.HTTPError as exc:  # pragma: no cover - network-dependent
+        body = exc.read().decode()
+        raise ValueError(_format_paymongo_error(body) or str(exc)) from exc
+
+    return json.loads(body) if body else {}
+
+
+def _paymongo_amount(amount):
+    return int((amount * Decimal('100')).quantize(Decimal('1')))
+
+
+def _paymongo_billing_details(consumer):
+    billing = {
+        'name': consumer.full_name,
+    }
+    email_address = normalize_email_address(_consumer_email(consumer))
+    phone_number = normalize_phone_number(_consumer_phone(consumer))
+    if email_address:
+        billing['email'] = email_address
+    if phone_number:
+        billing['phone'] = phone_number
+    return billing
+
+
+def _extract_paymongo_redirect_url(payment_intent):
+    attributes = payment_intent.get('attributes') or {}
+    next_action = attributes.get('next_action') or {}
+
+    candidates = [
+        next_action.get('redirect_url') if isinstance(next_action, dict) else '',
+        next_action.get('url') if isinstance(next_action, dict) else '',
+        (next_action.get('redirect') or {}).get('url') if isinstance(next_action, dict) else '',
+        (attributes.get('redirect') or {}).get('url') if isinstance(attributes.get('redirect'), dict) else '',
+        attributes.get('redirect_url'),
+    ]
+    for candidate in candidates:
+        if candidate:
+            return candidate
+    return ''
+
+
+def _paymongo_payment_resources(payment_intent):
+    attributes = payment_intent.get('attributes') or {}
+    payments = attributes.get('payments') or []
+    if isinstance(payments, list):
+        return payments
+    return []
+
+
+def _paymongo_payment_status(payment_resource):
+    return (payment_resource.get('attributes') or {}).get('status') if isinstance(payment_resource, dict) else ''
+
+
+def _latest_paymongo_payment(payment_intent):
+    attributes = payment_intent.get('attributes') or {}
+    latest_payment = attributes.get('latest_payment')
+    if isinstance(latest_payment, dict):
+        return latest_payment
+
+    payments = _paymongo_payment_resources(payment_intent)
+    for payment_resource in payments:
+        if _paymongo_payment_status(payment_resource) in {'paid', 'succeeded'}:
+            return payment_resource
+    return payments[-1] if payments else {}
+
+
+def create_paymongo_ewallet_payment(payment, success_url, cancel_url):
+    ewallet_type = _paymongo_ewallet_type()
+    billing_label = payment.billing.billing_month.strftime('%B %Y') if payment.billing else 'Water bill'
+    intent_payload = {
+        'data': {
+            'attributes': {
+                'amount': _paymongo_amount(payment.amount_paid),
+                'currency': 'PHP',
+                'payment_method_allowed': [ewallet_type],
+                'payment_method_options': {},
+                'description': f'Tabuan Water Billing payment for {payment.consumer.full_name}',
+                'statement_descriptor': 'TABUAN WATER',
+                'metadata': {
+                    'payment_id': str(payment.id),
+                    'consumer_id': str(payment.consumer_id),
+                    'billing_id': str(payment.billing_id or ''),
+                    'billing_month': billing_label,
+                    'cancel_url': cancel_url,
+                },
+            }
+        }
+    }
+    intent = _paymongo_request('payment_intents', method='POST', payload=intent_payload).get('data') or {}
+    intent_id = intent.get('id')
+    if not intent_id:
+        raise ValueError('PayMongo did not return a Payment Intent ID.')
+
+    method_payload = {
+        'data': {
+            'attributes': {
+                'type': ewallet_type,
+                'billing': _paymongo_billing_details(payment.consumer),
+            }
+        }
+    }
+    payment_method = _paymongo_request('payment_methods', method='POST', payload=method_payload).get('data') or {}
+    payment_method_id = payment_method.get('id')
+    if not payment_method_id:
+        raise ValueError('PayMongo did not return a Payment Method ID.')
+
+    attach_payload = {
+        'data': {
+            'attributes': {
+                'payment_method': payment_method_id,
+                'return_url': success_url,
+            }
+        }
+    }
+    attached_intent = _paymongo_request(
+        f'payment_intents/{intent_id}/attach',
+        method='POST',
+        payload=attach_payload,
+    ).get('data') or {}
+    redirect_url = _extract_paymongo_redirect_url(attached_intent)
+    if not redirect_url:
+        raise ValueError('PayMongo did not return an e-wallet redirect URL.')
+
+    return {
+        'intent': intent,
+        'payment_method': payment_method,
+        'attached_intent': attached_intent,
+        'redirect_url': redirect_url,
+    }
+
+
+def retrieve_paymongo_payment_intent(payment_intent_id):
+    return _paymongo_request(f'payment_intents/{payment_intent_id}').get('data') or {}
+
+
+def extract_paymongo_transaction_details(payment_intent):
+    attributes = payment_intent.get('attributes') or {}
+    latest_payment = _latest_paymongo_payment(payment_intent)
+    latest_payment_attributes = latest_payment.get('attributes') or {}
+    latest_payment_id = latest_payment.get('id') or attributes.get('latest_payment') or ''
+
+    return {
+        'intent_id': payment_intent.get('id', ''),
+        'intent_status': attributes.get('status', ''),
+        'payment_id': latest_payment_id if isinstance(latest_payment_id, str) else '',
+        'payment_status': latest_payment_attributes.get('status', ''),
+        'amount': attributes.get('amount'),
+        'amount_received': attributes.get('amount_received'),
+        'paid_at': latest_payment_attributes.get('paid_at') or latest_payment_attributes.get('created_at'),
+        'last_payment_error': attributes.get('last_payment_error') or {},
+    }
+
+
+def paymongo_intent_is_paid(payment_intent):
+    attributes = payment_intent.get('attributes') or {}
+    if attributes.get('status') in {'succeeded', 'paid'}:
+        return True
+
+    for payment_resource in _paymongo_payment_resources(payment_intent):
+        if _paymongo_payment_status(payment_resource) in {'paid', 'succeeded'}:
+            return True
+    return False
+
+
 def send_email_notification(consumer, subject, message, notification_type, **related_objects):
     email_address = normalize_email_address(_consumer_email(consumer))
     if not email_address:
@@ -412,25 +745,6 @@ def send_sms_notification(consumer, message, notification_type, **related_object
             **related_objects,
         )
 
-    provider = sms_provider_name()
-    account_sid = getattr(settings, 'TWILIO_ACCOUNT_SID', '')
-    auth_token = getattr(settings, 'TWILIO_AUTH_TOKEN', '')
-    api_key_sid = getattr(settings, 'TWILIO_API_KEY_SID', '')
-    api_key_secret = getattr(settings, 'TWILIO_API_KEY_SECRET', '')
-    from_number = normalize_phone_number(getattr(settings, 'TWILIO_PHONE_NUMBER', ''))
-
-    if provider != 'twilio':
-        return _log_outbound_notification(
-            Notification.Channels.SMS,
-            'SMS Notification',
-            message,
-            Notification.Statuses.FAILED,
-            consumer=consumer,
-            response_message=f'Unsupported SMS provider "{provider}". Set SMS_DELIVERY_PROVIDER=twilio for live delivery.',
-            notification_type=notification_type,
-            **related_objects,
-        )
-
     if not is_e164_phone_number(phone_number):
         return _log_outbound_notification(
             Notification.Channels.SMS,
@@ -442,6 +756,48 @@ def send_sms_notification(consumer, message, notification_type, **related_object
             notification_type=notification_type,
             **related_objects,
         )
+
+    provider = sms_provider_name()
+    if provider == 'sms_api_ph':
+        try:
+            response_message = _send_via_sms_api_ph(phone_number, message)
+            status = Notification.Statuses.SENT
+        except error.HTTPError as exc:  # pragma: no cover - network-dependent
+            status = Notification.Statuses.FAILED
+            response_message = _truncate_response_text(exc.read().decode())
+        except Exception as exc:  # pragma: no cover - network-dependent
+            status = Notification.Statuses.FAILED
+            response_message = _truncate_response_text(str(exc))
+
+        return _log_outbound_notification(
+            Notification.Channels.SMS,
+            'SMS Notification',
+            message,
+            status,
+            consumer=consumer,
+            response_message=response_message,
+            notification_type=notification_type,
+            **related_objects,
+        )
+
+    if provider != 'twilio':
+        return _log_outbound_notification(
+            Notification.Channels.SMS,
+            'SMS Notification',
+            message,
+            Notification.Statuses.FAILED,
+            consumer=consumer,
+            response_message=f'Unsupported SMS provider "{provider}". Set SMS_DELIVERY_PROVIDER to sms_api_ph or twilio.',
+            notification_type=notification_type,
+            **related_objects,
+        )
+
+    account_sid = getattr(settings, 'TWILIO_ACCOUNT_SID', '')
+    auth_token = getattr(settings, 'TWILIO_AUTH_TOKEN', '')
+    api_key_sid = getattr(settings, 'TWILIO_API_KEY_SID', '')
+    api_key_secret = getattr(settings, 'TWILIO_API_KEY_SECRET', '')
+    from_number = normalize_phone_number(getattr(settings, 'TWILIO_PHONE_NUMBER', ''))
+
     if not is_e164_phone_number(from_number):
         return _log_outbound_notification(
             Notification.Channels.SMS,
@@ -558,6 +914,48 @@ def send_test_sms(phone_number, message):
             message,
             Notification.Statuses.FAILED,
             response_message='Recipient phone number must be in E.164 format, for example +639171234567.',
+            notification_type=Notification.Types.ADMIN,
+        )
+
+    provider = sms_provider_name()
+    if provider == 'sms_api_ph':
+        config_error = _sms_api_ph_configuration_error()
+        if config_error:
+            return _log_outbound_notification(
+                Notification.Channels.SMS,
+                'SMS Test',
+                message,
+                Notification.Statuses.FAILED,
+                response_message=config_error,
+                notification_type=Notification.Types.ADMIN,
+            )
+
+        try:
+            response_message = _send_via_sms_api_ph(phone_number, message)
+            status = Notification.Statuses.SENT
+        except error.HTTPError as exc:  # pragma: no cover - environment-dependent
+            status = Notification.Statuses.FAILED
+            response_message = _truncate_response_text(exc.read().decode())
+        except Exception as exc:  # pragma: no cover - environment-dependent
+            status = Notification.Statuses.FAILED
+            response_message = _truncate_response_text(str(exc))
+
+        return _log_outbound_notification(
+            Notification.Channels.SMS,
+            'SMS Test',
+            message,
+            status,
+            response_message=response_message,
+            notification_type=Notification.Types.ADMIN,
+        )
+
+    if provider != 'twilio':
+        return _log_outbound_notification(
+            Notification.Channels.SMS,
+            'SMS Test',
+            message,
+            Notification.Statuses.FAILED,
+            response_message=f'Unsupported SMS provider "{provider}". Set SMS_DELIVERY_PROVIDER to sms_api_ph or twilio.',
             notification_type=Notification.Types.ADMIN,
         )
 

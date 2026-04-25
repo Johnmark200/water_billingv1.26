@@ -152,6 +152,7 @@ class Payment(models.Model):
 
     class Methods(models.TextChoices):
         CASH = 'cash', 'Cash'
+        ONLINE = 'online', 'Online Payment'
         GCASH = 'gcash', 'GCash'
         PAYMAYA = 'paymaya', 'PayMaya'
         BANK = 'bank', 'Bank'
@@ -163,6 +164,12 @@ class Payment(models.Model):
     payment_date = models.DateField()
     status = models.CharField(max_length=20, choices=Statuses.choices, default=Statuses.COMPLETED)
     reference_number = models.CharField(max_length=100, blank=True)
+    gateway = models.CharField(max_length=30, blank=True)
+    gateway_reference = models.CharField(max_length=120, blank=True)
+    gateway_payment_id = models.CharField(max_length=120, blank=True)
+    gateway_status = models.CharField(max_length=50, blank=True)
+    gateway_redirect_url = models.URLField(blank=True)
+    gateway_response = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

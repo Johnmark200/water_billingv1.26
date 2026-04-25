@@ -39,54 +39,103 @@ document.addEventListener('DOMContentLoaded', () => {
         node.textContent = `${prefix}${value}`;
     };
 
-    forms.forEach((form) => {
+    const setStatusControls = (form, status) => {
         const select = form.querySelector('select[name="status"]');
-        if (!select) {
-            return;
+        if (select) {
+            select.value = status;
+            select.dataset.previousValue = status;
         }
 
-        select.dataset.previousValue = select.value;
+        form.dataset.currentStatus = status;
+        form.querySelectorAll('button[name="status"]').forEach((button) => {
+            const isActive = button.value === status;
+            button.disabled = isActive;
+            button.classList.toggle('active', isActive);
+        });
+    };
 
-        select.addEventListener('change', async () => {
-            const row = form.closest('tr');
-            const previousValue = select.dataset.previousValue || select.value;
-            const formData = new FormData(form);
-            select.disabled = true;
+    const setControlsDisabled = (form, disabled) => {
+        form.querySelectorAll('select[name="status"], button[name="status"]').forEach((control) => {
+            if (disabled) {
+                control.disabled = true;
+                return;
+            }
 
-            try {
-                const response = await fetch(form.dataset.url, {
-                    method: 'POST',
-                    headers: {
-                        'X-Requested-With': 'XMLHttpRequest',
-                    },
-                    body: formData,
-                });
-                const payload = await response.json().catch(() => ({
-                    ok: false,
-                    message: 'The server returned an invalid response while updating the payment status.',
-                }));
+            if (control.tagName === 'BUTTON') {
+                control.disabled = control.value === form.dataset.currentStatus;
+                return;
+            }
 
-                if (!response.ok || !payload.ok) {
-                    throw new Error(payload.message || 'Unable to update the payment status.');
+            control.disabled = false;
+        });
+    };
+
+    const submitStatus = async (form, status, previousValue) => {
+        const row = form.closest('tr');
+        const formData = new FormData(form);
+        formData.set('status', status);
+        setControlsDisabled(form, true);
+
+        try {
+            const response = await fetch(form.dataset.url, {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: formData,
+            });
+            const payload = await response.json().catch(() => ({
+                ok: false,
+                message: 'The server returned an invalid response while updating the payment status.',
+            }));
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || 'Unable to update the payment status.');
+            }
+
+            setStatusControls(form, payload.status);
+            setText(row, '.payment-status-display', payload.status_display);
+            setText(row, '.billing-paid-display', payload.billing_amount_paid, 'PHP ');
+            setText(row, '.billing-due-display', payload.billing_amount_due, 'PHP ');
+            setText(row, '.billing-status-display', payload.billing_status_display);
+            setText(row, '.email-notification-display', payload.email_notification_status);
+            setText(row, '.sms-notification-display', payload.sms_notification_status);
+            setMetric('[data-pending-payments-count]', payload.pending_payments);
+            setMetric('[data-monthly-collected-total]', payload.monthly_collected, 'PHP ');
+            setFeedback(payload.message, false);
+        } catch (error) {
+            setStatusControls(form, previousValue);
+            setFeedback(error.message, true);
+        } finally {
+            setControlsDisabled(form, false);
+        }
+    };
+
+    forms.forEach((form) => {
+        const select = form.querySelector('select[name="status"]');
+        const buttons = form.querySelectorAll('button[name="status"]');
+
+        if (select) {
+            setStatusControls(form, select.value);
+
+            select.addEventListener('change', async () => {
+                await submitStatus(form, select.value, select.dataset.previousValue || select.value);
+            });
+        }
+
+        if (buttons.length) {
+            setStatusControls(form, form.dataset.currentStatus || '');
+
+            form.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                const button = event.submitter;
+                if (!button || !button.value) {
+                    return;
                 }
 
-                select.dataset.previousValue = payload.status;
-                setText(row, '.payment-status-display', payload.status_display);
-                setText(row, '.billing-paid-display', payload.billing_amount_paid, 'PHP ');
-                setText(row, '.billing-due-display', payload.billing_amount_due, 'PHP ');
-                setText(row, '.billing-status-display', payload.billing_status_display);
-                setText(row, '.email-notification-display', payload.email_notification_status);
-                setText(row, '.sms-notification-display', payload.sms_notification_status);
-                setMetric('[data-pending-payments-count]', payload.pending_payments);
-                setMetric('[data-monthly-collected-total]', payload.monthly_collected, 'PHP ');
-                setFeedback(payload.message, false);
-            } catch (error) {
-                select.value = previousValue;
-                setFeedback(error.message, true);
-            } finally {
-                select.disabled = false;
-            }
-        });
+                await submitStatus(form, button.value, form.dataset.currentStatus || button.value);
+            });
+        }
     });
 });
 </script>

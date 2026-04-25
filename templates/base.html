@@ -343,6 +343,35 @@
             min-width: 150px;
         }
 
+        .status-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .status-button {
+            border: 1px solid var(--border);
+            background: #fff;
+            color: var(--text);
+            border-radius: 6px;
+            padding: 8px 10px;
+            cursor: pointer;
+            font-weight: 700;
+        }
+
+        .status-button:hover:not(:disabled) {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        .status-button.active,
+        .status-button:disabled {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: #fff;
+            cursor: default;
+        }
+
         .config-list {
             margin: 12px 0 0;
             padding-left: 18px;
@@ -373,10 +402,9 @@
         <div class="header-wrap">
             <div class="brand-block">
                 <strong>Tabuan Water Billing System</strong>
-                <span>Role-aware billing, readings, payments, and notifications</span>
+                <span>Simplifies water usage tracking, billing, and payments for Tabuan</span>
             </div>
             <nav>
-                <a href="{% url 'home' %}">Home</a>
                 {% if user.is_authenticated %}
                     <a href="{% url dashboard_url_name %}">Dashboard</a>
                     {% if can_manage_consumers %}
@@ -408,6 +436,7 @@
                         {{ current_profile.get_role_display|default:current_role|title }}
                     </span>
                 {% else %}
+                    <a href="{% url 'home' %}">Home</a>
                     <a href="{% url 'login' %}">Login</a>
                     <a href="{% url 'signup' %}">Sign Up</a>
                 {% endif %}

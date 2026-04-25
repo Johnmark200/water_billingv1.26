@@ -28,8 +28,12 @@ from .forms import (
 from .models import BillingRecord, Consumer, ConsumerProfile, MeterReading, Notification, Payment, SMSBlast, SystemSettings
 from .permissions import PAYMENT_MANAGER_ROLES, role_required, ensure_user_profile, get_dashboard_url_for_user, get_linked_consumer, get_user_profile, get_user_role
 from .services import (
+    create_paymongo_ewallet_payment,
+    extract_paymongo_transaction_details,
     get_delivery_configuration_summary,
     handle_meter_reading_submission,
+    paymongo_intent_is_paid,
+    retrieve_paymongo_payment_intent,
     notify_roles,
     send_billing_due_notification,
     send_email_blast,
@@ -100,6 +104,54 @@ def _payment_status_payload(payment, previous_status, notification_results, syst
             f'Email: {email_status}. SMS: {sms_status}.'
         ),
     }
+
+
+def _store_paymongo_gateway_start(payment, ewallet_payment):
+    payment_intent = ewallet_payment.get('attached_intent') or ewallet_payment.get('intent') or {}
+    details = extract_paymongo_transaction_details(payment_intent)
+    intent_id = details.get('intent_id') or payment.gateway_reference
+
+    payment.gateway = 'paymongo'
+    payment.gateway_reference = intent_id
+    payment.reference_number = intent_id
+    payment.gateway_status = details.get('payment_status') or details.get('intent_status') or ''
+    payment.gateway_redirect_url = ewallet_payment.get('redirect_url', '')
+    payment.gateway_response = ewallet_payment
+    payment.save(
+        update_fields=[
+            'gateway',
+            'gateway_reference',
+            'reference_number',
+            'gateway_status',
+            'gateway_redirect_url',
+            'gateway_response',
+        ]
+    )
+
+
+def _store_paymongo_gateway_result(payment, payment_intent):
+    details = extract_paymongo_transaction_details(payment_intent)
+    intent_id = details.get('intent_id') or payment.gateway_reference or payment.reference_number
+
+    payment.gateway = 'paymongo'
+    payment.gateway_reference = intent_id
+    payment.reference_number = intent_id
+    payment.gateway_payment_id = details.get('payment_id') or payment.gateway_payment_id
+    payment.gateway_status = details.get('payment_status') or details.get('intent_status') or payment.gateway_status
+    payment.gateway_response = {
+        'payment_intent': payment_intent,
+        'details': details,
+    }
+    payment.save(
+        update_fields=[
+            'gateway',
+            'gateway_reference',
+            'reference_number',
+            'gateway_payment_id',
+            'gateway_status',
+            'gateway_response',
+        ]
+    )
 
 
 def home(request):
@@ -259,6 +311,37 @@ def consumer_panel(request):
             payment_form = ConsumerPaymentForm(request.POST, consumer=consumer, system_settings=system_settings)
             if payment_form.is_valid():
                 payment = payment_form.save()
+                if payment.payment_method == Payment.Methods.ONLINE:
+                    try:
+                        ewallet_payment = create_paymongo_ewallet_payment(
+                            payment,
+                            request.build_absolute_uri(reverse('paymongo_success', args=[payment.id])),
+                            request.build_absolute_uri(reverse('paymongo_cancel', args=[payment.id])),
+                        )
+                        _store_paymongo_gateway_start(payment, ewallet_payment)
+                    except Exception as exc:
+                        update_payment_status(
+                            payment,
+                            Payment.Statuses.FAILED,
+                            system_settings=system_settings,
+                        )
+                        messages.error(request, f'Online payment could not be started: {exc}')
+                        return redirect('consumer_panel')
+
+                    notify_roles(
+                        {ConsumerProfile.Roles.ADMIN, ConsumerProfile.Roles.TREASURER},
+                        'New online payment started by consumer',
+                        (
+                            f'{consumer.full_name} started an online PayMongo payment of '
+                            f'PHP {payment.amount_paid}.'
+                        ),
+                        Notification.Types.PAYMENT,
+                        consumer=consumer,
+                        payment=payment,
+                        billing=payment.billing,
+                    )
+                    return redirect(ewallet_payment['redirect_url'])
+
                 notify_roles(
                     {ConsumerProfile.Roles.ADMIN, ConsumerProfile.Roles.TREASURER},
                     'New payment submitted by consumer',
@@ -291,6 +374,57 @@ def consumer_panel(request):
         )[:10],
     }
     return render(request, 'billing/consumer_dashboard.html', context)
+
+
+@role_required(ConsumerProfile.Roles.CONSUMER)
+def paymongo_success(request, payment_id):
+    consumer = get_linked_consumer(request.user)
+    payment = get_object_or_404(Payment.objects.select_related('consumer', 'billing'), pk=payment_id, consumer=consumer)
+
+    if payment.payment_method != Payment.Methods.ONLINE:
+        messages.error(request, 'That payment is not an online PayMongo transaction.')
+        return redirect('consumer_panel')
+    gateway_reference = payment.gateway_reference or payment.reference_number
+    if not gateway_reference:
+        messages.error(request, 'No PayMongo payment reference is linked to this payment.')
+        return redirect('consumer_panel')
+
+    system_settings = SystemSettings.load()
+    try:
+        payment_intent = retrieve_paymongo_payment_intent(gateway_reference)
+        _store_paymongo_gateway_result(payment, payment_intent)
+    except Exception as exc:
+        messages.error(request, f'Unable to verify PayMongo payment: {exc}')
+        return redirect('consumer_panel')
+
+    if paymongo_intent_is_paid(payment_intent):
+        update_payment_status(payment, Payment.Statuses.COMPLETED, system_settings=system_settings)
+        messages.success(request, 'Online payment verified and marked as completed.')
+    elif payment.gateway_status in {'awaiting_payment_method', 'failed', 'canceled', 'cancelled'}:
+        update_payment_status(payment, Payment.Statuses.FAILED, system_settings=system_settings)
+        messages.error(request, 'PayMongo returned the transaction as failed or cancelled.')
+    else:
+        messages.info(request, 'PayMongo returned, but the payment is still pending verification.')
+    return redirect('consumer_panel')
+
+
+@role_required(ConsumerProfile.Roles.CONSUMER)
+def paymongo_cancel(request, payment_id):
+    consumer = get_linked_consumer(request.user)
+    payment = get_object_or_404(Payment.objects.select_related('consumer', 'billing'), pk=payment_id, consumer=consumer)
+
+    gateway_reference = payment.gateway_reference or payment.reference_number
+    if gateway_reference:
+        try:
+            payment_intent = retrieve_paymongo_payment_intent(gateway_reference)
+            _store_paymongo_gateway_result(payment, payment_intent)
+        except Exception as exc:
+            messages.warning(request, f'Unable to refresh PayMongo status: {exc}')
+
+    if payment.payment_method == Payment.Methods.ONLINE and payment.status == Payment.Statuses.PENDING:
+        update_payment_status(payment, Payment.Statuses.FAILED, system_settings=SystemSettings.load())
+    messages.error(request, 'Online payment was cancelled or failed.')
+    return redirect('consumer_panel')
 
 
 @role_required(ConsumerProfile.Roles.ADMIN)

@@ -127,6 +127,10 @@ class AdminPaymentForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields['consumer'].queryset = Consumer.objects.order_by('full_name')
         self.fields['billing'].queryset = BillingRecord.objects.select_related('consumer').order_by('-billing_month')
+        self.fields['payment_method'].choices = [
+            (Payment.Methods.CASH, Payment.Methods.CASH.label),
+            (Payment.Methods.ONLINE, Payment.Methods.ONLINE.label),
+        ]
 
 
 def build_payment_method_choices(system_settings):
@@ -134,13 +138,7 @@ def build_payment_method_choices(system_settings):
     if system_settings.enable_cash_payments:
         choices.append((Payment.Methods.CASH, Payment.Methods.CASH.label))
     if system_settings.enable_online_payments:
-        choices.extend(
-            [
-                (Payment.Methods.GCASH, Payment.Methods.GCASH.label),
-                (Payment.Methods.PAYMAYA, Payment.Methods.PAYMAYA.label),
-                (Payment.Methods.BANK, Payment.Methods.BANK.label),
-            ]
-        )
+        choices.append((Payment.Methods.ONLINE, Payment.Methods.ONLINE.label))
     return choices
 
 
@@ -155,6 +153,9 @@ class ConsumerPaymentForm(forms.ModelForm):
         self.system_settings = system_settings or SystemSettings.load()
         self.fields['billing'].queryset = BillingRecord.objects.none()
         self.fields['payment_method'].choices = build_payment_method_choices(self.system_settings)
+        self.fields['reference_number'].required = False
+        self.fields['reference_number'].label = 'Reference number (cash only, optional)'
+        self.fields['reference_number'].help_text = 'Online payment references are generated automatically by PayMongo.'
         if consumer:
             self.fields['billing'].queryset = consumer.billings.exclude(status=BillingRecord.Statuses.PAID).order_by(
                 '-billing_month'
@@ -180,6 +181,8 @@ class ConsumerPaymentForm(forms.ModelForm):
         payment.consumer = self.consumer
         payment.payment_date = timezone.localdate()
         payment.status = Payment.Statuses.PENDING
+        if payment.payment_method == Payment.Methods.ONLINE:
+            payment.reference_number = ''
         if commit:
             payment.save()
         return payment
