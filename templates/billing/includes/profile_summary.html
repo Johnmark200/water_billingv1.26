@@ -1,0 +1,25 @@
+<div class="card profile-summary-card">
+    <div class="profile-summary">
+        <div class="profile-avatar">
+            {% if profile.photo %}
+                <img src="{{ profile.photo.url }}" alt="{{ profile.full_name }}">
+            {% elif consumer and consumer.photo %}
+                <img src="{{ consumer.photo.url }}" alt="{{ consumer.full_name }}">
+            {% else %}
+                <span>{{ profile.full_name|default:request.user.username|slice:':1'|upper }}</span>
+            {% endif %}
+        </div>
+        <div class="profile-summary-copy">
+            <h3>{{ profile.full_name }}</h3>
+            <p class="muted">{{ profile.get_role_display }}</p>
+            <p><strong>Username:</strong> {{ request.user.username }}</p>
+            <p><strong>Email:</strong> {{ profile.email|default:request.user.email|default:'-' }}</p>
+            <p><strong>Contact:</strong> {{ profile.contact|default:'-' }}</p>
+            <p><strong>Address:</strong> {{ profile.address|default:'-' }}</p>
+            {% if consumer %}
+                <p><strong>Consumer ID:</strong> {{ consumer.id|stringformat:'03d' }}</p>
+                <p><strong>Status:</strong> {{ consumer.get_status_display }}</p>
+            {% endif %}
+        </div>
+    </div>
+</div>

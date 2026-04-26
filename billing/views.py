@@ -7,6 +7,7 @@ from django.contrib.auth.views import LoginView
 from django.db.models import Q, Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
@@ -19,6 +20,8 @@ from .forms import (
     EmailBlastForm,
     LoginForm,
     MeterReadingForm,
+    MeterReadingUpdateForm,
+    ProfileUpdateForm,
     SignUpForm,
     SMSBlastForm,
     SystemSettingsForm,
@@ -28,10 +31,16 @@ from .forms import (
 from .models import BillingRecord, Consumer, ConsumerProfile, MeterReading, Notification, Payment, SMSBlast, SystemSettings
 from .permissions import PAYMENT_MANAGER_ROLES, role_required, ensure_user_profile, get_dashboard_url_for_user, get_linked_consumer, get_user_profile, get_user_role
 from .services import (
+    create_or_update_billing_from_reading,
     create_paymongo_ewallet_payment,
     extract_paymongo_transaction_details,
+    get_consumer_billing_comparison,
+    get_consumer_monthly_billings,
     get_delivery_configuration_summary,
+    get_next_payment_month,
+    get_previous_reading_details,
     handle_meter_reading_submission,
+    month_start,
     paymongo_intent_is_paid,
     retrieve_paymongo_payment_intent,
     notify_roles,
@@ -152,6 +161,107 @@ def _store_paymongo_gateway_result(payment, payment_intent):
             'gateway_response',
         ]
     )
+
+
+def _is_ajax(request):
+    return request.headers.get('x-requested-with') == 'XMLHttpRequest'
+
+
+def _scoped_reader_readings(user):
+    readings = MeterReading.objects.select_related('consumer', 'submitted_by')
+    if get_user_role(user) == ConsumerProfile.Roles.READER:
+        readings = readings.filter(submitted_by=user)
+    return readings
+
+
+def _build_profile_context(user):
+    profile = get_user_profile(user, create=True)
+    consumer = get_linked_consumer(user)
+
+    return {
+        'profile': profile,
+        'consumer': consumer,
+        'role': get_user_role(user),
+        'profile_form': ProfileUpdateForm(instance=profile),
+        'billing_records': get_consumer_monthly_billings(consumer, limit=10) if consumer else [],
+        'payments': consumer.payments.select_related('billing').all()[:10] if consumer else Payment.objects.none(),
+        'meter_readings': consumer.meter_readings.all()[:10] if consumer else MeterReading.objects.none(),
+    }
+
+
+def _build_reader_panel_context(request, form=None, edit_form=None):
+    return {
+        **_build_profile_context(request.user),
+        'form': form or MeterReadingForm(initial={'reading_date': timezone.localdate()}),
+        'edit_form': edit_form or MeterReadingUpdateForm(),
+        'recent_readings': _scoped_reader_readings(request.user)[:20],
+    }
+
+
+def _build_consumer_panel_context(request, payment_form=None):
+    consumer = get_linked_consumer(request.user)
+    system_settings = SystemSettings.load()
+    current_billing, previous_billing = get_consumer_billing_comparison(consumer)
+
+    context = {
+        **_build_profile_context(request.user),
+        'consumer': consumer,
+        'payment_form': payment_form,
+        'billing_records': get_consumer_monthly_billings(consumer, limit=10) if consumer else [],
+        'payments': consumer.payments.select_related('billing').all()[:10] if consumer else Payment.objects.none(),
+        'receipts': (
+            consumer.payments.filter(status=Payment.Statuses.COMPLETED).select_related('billing')[:10]
+            if consumer
+            else Payment.objects.none()
+        ),
+        'meter_readings': consumer.meter_readings.all()[:10] if consumer else MeterReading.objects.none(),
+        'notification_feed': Notification.objects.filter(
+            recipient=request.user,
+            channel=Notification.Channels.IN_APP,
+        )[:10],
+        'current_billing': current_billing,
+        'previous_billing': previous_billing,
+        'next_payment_month': get_next_payment_month(consumer) if consumer else None,
+        'system_settings': system_settings,
+    }
+
+    if consumer and context['payment_form'] is None:
+        context['payment_form'] = ConsumerPaymentForm(consumer=consumer, system_settings=system_settings)
+
+    return context
+
+
+def _render_profile_response_payload(request, context):
+    return {
+        'ok': True,
+        'message': 'Profile updated successfully.',
+        'summary_html': render_to_string('billing/includes/profile_summary.html', context, request=request),
+        'form_html': render_to_string('billing/includes/profile_form.html', context, request=request),
+    }
+
+
+def _render_reader_live_payload(request, context, message=''):
+    return {
+        'ok': True,
+        'message': message,
+        'summary_html': render_to_string('billing/includes/profile_summary.html', context, request=request),
+        'rows_html': render_to_string('billing/includes/reader_reading_rows.html', context, request=request),
+        'form_html': render_to_string('billing/includes/reader_reading_form.html', context, request=request),
+        'edit_form_html': render_to_string('billing/includes/reader_edit_form.html', context, request=request),
+    }
+
+
+def _render_consumer_live_payload(request, context, message=''):
+    return {
+        'ok': True,
+        'message': message,
+        'summary_html': render_to_string('billing/includes/profile_summary.html', context, request=request),
+        'comparison_html': render_to_string('billing/includes/consumer_billing_comparison.html', context, request=request),
+        'receipt_rows_html': render_to_string('billing/includes/consumer_receipt_rows.html', context, request=request),
+        'billing_rows_html': render_to_string('billing/includes/consumer_billing_rows.html', context, request=request),
+        'reading_rows_html': render_to_string('billing/includes/consumer_reading_rows.html', context, request=request),
+        'payment_rows_html': render_to_string('billing/includes/consumer_payment_rows.html', context, request=request),
+    }
 
 
 def home(request):
@@ -283,21 +393,12 @@ def reader_panel(request):
                 f'Meter reading saved for {reading.consumer.full_name}. Billing record for {billing.billing_month:%B %Y} was updated.',
             )
             return redirect('reader_panel')
-    else:
-        form = MeterReadingForm(initial={'reading_date': timezone.localdate()})
 
-    readings = MeterReading.objects.select_related('consumer', 'submitted_by')
-    if get_user_role(request.user) == ConsumerProfile.Roles.READER:
-        readings = readings.filter(submitted_by=request.user)
+        context = _build_reader_panel_context(request, form=form)
+        return render(request, 'billing/reader_dashboard.html', context)
 
-    return render(
-        request,
-        'billing/reader_dashboard.html',
-        {
-            'form': form,
-            'recent_readings': readings[:20],
-        },
-    )
+    context = _build_reader_panel_context(request)
+    return render(request, 'billing/reader_dashboard.html', context)
 
 
 @role_required(ConsumerProfile.Roles.CONSUMER)
@@ -360,20 +461,151 @@ def consumer_panel(request):
         else:
             payment_form = ConsumerPaymentForm(consumer=consumer, system_settings=system_settings)
 
-    context = {
-        'consumer': consumer,
-        'profile': get_user_profile(request.user, create=True),
-        'payment_form': payment_form,
-        'billing_records': consumer.billings.all()[:10] if consumer else BillingRecord.objects.none(),
-        'payments': consumer.payments.all()[:10] if consumer else Payment.objects.none(),
-        'receipts': consumer.payments.filter(status=Payment.Statuses.COMPLETED)[:10] if consumer else Payment.objects.none(),
-        'meter_readings': consumer.meter_readings.all()[:10] if consumer else MeterReading.objects.none(),
-        'notification_feed': Notification.objects.filter(
-            recipient=request.user,
-            channel=Notification.Channels.IN_APP,
-        )[:10],
-    }
+    context = _build_consumer_panel_context(request, payment_form=payment_form)
     return render(request, 'billing/consumer_dashboard.html', context)
+
+
+@role_required(ConsumerProfile.Roles.ADMIN, ConsumerProfile.Roles.READER)
+def reader_panel_data(request):
+    context = _build_reader_panel_context(request)
+    return JsonResponse(_render_reader_live_payload(request, context))
+
+
+@role_required(ConsumerProfile.Roles.CONSUMER)
+def consumer_panel_data(request):
+    context = _build_consumer_panel_context(request)
+    return JsonResponse(_render_consumer_live_payload(request, context))
+
+
+@login_required
+@require_POST
+def update_profile_view(request):
+    profile = get_user_profile(request.user, create=True)
+    form = ProfileUpdateForm(request.POST, request.FILES, instance=profile)
+
+    if form.is_valid():
+        form.save()
+        context = _build_profile_context(request.user)
+        if _is_ajax(request):
+            return JsonResponse(_render_profile_response_payload(request, context))
+        messages.success(request, 'Profile updated successfully.')
+    else:
+        if _is_ajax(request):
+            context = {
+                **_build_profile_context(request.user),
+                'profile_form': form,
+            }
+            return JsonResponse(
+                {
+                    'ok': False,
+                    'message': 'Please fix the highlighted profile fields.',
+                    'form_html': render_to_string('billing/includes/profile_form.html', context, request=request),
+                },
+                status=400,
+            )
+        messages.error(request, 'Please fix the highlighted profile fields.')
+
+    return redirect(request.POST.get('next') or 'profile')
+
+
+@role_required(ConsumerProfile.Roles.ADMIN, ConsumerProfile.Roles.READER)
+@require_POST
+def submit_reader_reading(request):
+    form = MeterReadingForm(request.POST)
+    if form.is_valid():
+        reading, billing = handle_meter_reading_submission(form, request.user)
+        context = _build_reader_panel_context(request)
+        payload = _render_reader_live_payload(
+            request,
+            context,
+            message=(
+                f'Meter reading saved for {reading.consumer.full_name}. '
+                f'Billing record for {billing.billing_month:%B %Y} was updated.'
+            ),
+        )
+        payload['reading_id'] = reading.id
+        if _is_ajax(request):
+            return JsonResponse(payload)
+        messages.success(request, payload['message'])
+        return redirect('reader_panel')
+
+    if _is_ajax(request):
+        context = _build_reader_panel_context(request, form=form)
+        return JsonResponse(
+            {
+                'ok': False,
+                'message': 'Please correct the reading details and try again.',
+                'form_html': render_to_string('billing/includes/reader_reading_form.html', context, request=request),
+            },
+            status=400,
+        )
+
+    return render(request, 'billing/reader_dashboard.html', _build_reader_panel_context(request, form=form))
+
+
+@role_required(ConsumerProfile.Roles.ADMIN, ConsumerProfile.Roles.READER)
+def reader_reading_context(request):
+    consumer_id = request.GET.get('consumer')
+    reading_date_value = request.GET.get('reading_date')
+    try:
+        reading_date = datetime.strptime(reading_date_value, '%Y-%m-%d').date() if reading_date_value else timezone.localdate()
+    except ValueError:
+        reading_date = timezone.localdate()
+
+    consumer = get_object_or_404(Consumer, pk=consumer_id, status=Consumer.Statuses.ACTIVE)
+    details = get_previous_reading_details(consumer, reading_date)
+    current_reading = (
+        MeterReading.objects.filter(consumer=consumer, billing_month=month_start(reading_date))
+        .order_by('-created_at')
+        .first()
+    )
+
+    return JsonResponse(
+        {
+            'ok': True,
+            'previous_reading': str(details['value']),
+            'previous_month': details['month'].strftime('%B %Y') if details['month'] else '',
+            'current_month': month_start(reading_date).strftime('%B %Y'),
+            'current_reading': str(current_reading.current_reading) if current_reading else '',
+            'notes': current_reading.notes if current_reading else '',
+        }
+    )
+
+
+@role_required(ConsumerProfile.Roles.ADMIN, ConsumerProfile.Roles.READER)
+@require_POST
+def update_reader_reading(request, reading_id):
+    readings = _scoped_reader_readings(request.user)
+    reading = get_object_or_404(readings, pk=reading_id)
+    form = MeterReadingUpdateForm(request.POST, instance=reading)
+
+    if form.is_valid():
+        updated_reading = form.save(commit=False)
+        previous_details = get_previous_reading_details(updated_reading.consumer, updated_reading.billing_month)
+        updated_reading.previous_reading = previous_details['value']
+        updated_reading.save()
+        billing = create_or_update_billing_from_reading(updated_reading)
+        context = _build_reader_panel_context(request)
+        payload = _render_reader_live_payload(
+            request,
+            context,
+            message=(
+                f'Reading for {updated_reading.consumer.full_name} was updated. '
+                f'Billing for {billing.billing_month:%B %Y} is now in sync.'
+            ),
+        )
+        payload['reading_id'] = updated_reading.id
+        return JsonResponse(payload)
+
+    context = _build_reader_panel_context(request, edit_form=form)
+    return JsonResponse(
+        {
+            'ok': False,
+            'message': 'Please correct the reading update and try again.',
+            'edit_form_html': render_to_string('billing/includes/reader_edit_form.html', context, request=request),
+        },
+        status=400,
+    )
 
 
 @role_required(ConsumerProfile.Roles.CONSUMER)
@@ -714,25 +946,4 @@ def notifications_view(request):
 
 @login_required
 def profile_view(request):
-    profile = get_user_profile(request.user, create=True)
-    consumer = get_linked_consumer(request.user)
-    role = get_user_role(request.user)
-
-    if consumer:
-        billing_records = consumer.billings.all()[:10]
-        payments = consumer.payments.all()[:10]
-        meter_readings = consumer.meter_readings.all()[:10]
-    else:
-        billing_records = BillingRecord.objects.none()
-        payments = Payment.objects.none()
-        meter_readings = MeterReading.objects.none()
-
-    context = {
-        'profile': profile,
-        'consumer': consumer,
-        'billing_records': billing_records,
-        'payments': payments,
-        'meter_readings': meter_readings,
-        'role': role,
-    }
-    return render(request, 'billing/profile.html', context)
+    return render(request, 'billing/profile.html', _build_profile_context(request.user))

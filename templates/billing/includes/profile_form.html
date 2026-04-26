@@ -1,0 +1,56 @@
+<form
+    method="post"
+    action="{% url 'update_profile' %}"
+    enctype="multipart/form-data"
+    class="ajax-profile-form"
+>
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ request.path }}">
+
+    {% if profile_form.non_field_errors %}
+        <div class="status-feedback error">
+            {% for error in profile_form.non_field_errors %}
+                <div>{{ error }}</div>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    <p>
+        <label for="{{ profile_form.full_name.id_for_label }}">Full name</label>
+        {{ profile_form.full_name }}
+        {% for error in profile_form.full_name.errors %}
+            <span class="field-error">{{ error }}</span>
+        {% endfor %}
+    </p>
+    <p>
+        <label for="{{ profile_form.email.id_for_label }}">Email</label>
+        {{ profile_form.email }}
+        {% for error in profile_form.email.errors %}
+            <span class="field-error">{{ error }}</span>
+        {% endfor %}
+    </p>
+    <p>
+        <label for="{{ profile_form.contact.id_for_label }}">Contact number</label>
+        {{ profile_form.contact }}
+        {% for error in profile_form.contact.errors %}
+            <span class="field-error">{{ error }}</span>
+        {% endfor %}
+    </p>
+    <p>
+        <label for="{{ profile_form.address.id_for_label }}">Address</label>
+        {{ profile_form.address }}
+        {% for error in profile_form.address.errors %}
+            <span class="field-error">{{ error }}</span>
+        {% endfor %}
+    </p>
+    <p>
+        <label for="{{ profile_form.photo.id_for_label }}">Profile picture</label>
+        {{ profile_form.photo }}
+        {% for error in profile_form.photo.errors %}
+            <span class="field-error">{{ error }}</span>
+        {% endfor %}
+    </p>
+    <div class="btn-row">
+        <button type="submit" class="btn">Save Profile</button>
+    </div>
+</form>

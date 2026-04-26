@@ -99,6 +99,43 @@ def get_dashboard_url_for_user(user):
     return get_dashboard_route(get_user_role(user, create=True))
 
 
+def build_navigation_items(role):
+    items = [
+        {'label': 'Dashboard', 'url_name': get_dashboard_route(role)},
+    ]
+
+    if role in ADMIN_ROLES:
+        items.append({'label': 'Consumers', 'url_name': 'consumers'})
+
+    if role in {ConsumerProfile.Roles.ADMIN, ConsumerProfile.Roles.SECRETARY, ConsumerProfile.Roles.TREASURER}:
+        items.extend(
+            [
+                {'label': 'Billing', 'url_name': 'billing'},
+                {'label': 'Payments', 'url_name': 'payments'},
+            ]
+        )
+
+    if role in REPORT_ROLES:
+        items.append({'label': 'Reports', 'url_name': 'reports'})
+
+    if role == ConsumerProfile.Roles.ADMIN:
+        items.extend(
+            [
+                {'label': 'Communications', 'url_name': 'communications'},
+                {'label': 'Settings', 'url_name': 'payment_settings'},
+            ]
+        )
+
+    if role in READING_ENTRY_ROLES:
+        items.append({'label': 'Meter Readings', 'url_name': 'reader_panel'})
+
+    if role == ConsumerProfile.Roles.CONSUMER:
+        items.append({'label': 'Notifications', 'url_name': 'notifications'})
+
+    items.append({'label': 'Profile', 'url_name': 'profile'})
+    return items
+
+
 def role_required(*allowed_roles):
     def decorator(view_func):
         @login_required

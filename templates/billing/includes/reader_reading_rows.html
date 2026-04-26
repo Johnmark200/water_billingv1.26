@@ -1,0 +1,27 @@
+{% for reading in recent_readings %}
+    <tr>
+        <td>{{ reading.consumer.full_name }}</td>
+        <td>{{ reading.billing_month|date:'F Y' }}</td>
+        <td>{{ reading.previous_reading }}</td>
+        <td>{{ reading.current_reading }}</td>
+        <td>{{ reading.usage_m3 }} m3</td>
+        <td>{{ reading.reading_date }}</td>
+        <td>
+            <button
+                type="button"
+                class="btn secondary reader-edit-trigger"
+                data-reading-id="{{ reading.id }}"
+                data-update-url="{% url 'update_reader_reading' reading.id %}"
+                data-consumer="{{ reading.consumer.full_name }}"
+                data-month="{{ reading.billing_month|date:'F Y' }}"
+                data-previous="{{ reading.previous_reading }}"
+                data-current="{{ reading.current_reading }}"
+                data-notes="{{ reading.notes|default:''|escapejs }}"
+            >
+                Edit
+            </button>
+        </td>
+    </tr>
+{% empty %}
+    <tr><td colspan="7" class="empty-state">No meter readings submitted yet.</td></tr>
+{% endfor %}

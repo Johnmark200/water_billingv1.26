@@ -1,7 +1,7 @@
 import base64
 import json
 import re
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from urllib import error, parse, request
 
@@ -11,6 +11,7 @@ from django.core.exceptions import ValidationError
 from django.core.mail import send_mail
 from django.core.validators import validate_email
 from django.db.models import Q
+from django.utils import timezone
 
 from .models import BillingRecord, Consumer, ConsumerProfile, MeterReading, Notification, Payment, SMSBlast, SystemSettings
 
@@ -569,7 +570,8 @@ def _latest_paymongo_payment(payment_intent):
 
 def create_paymongo_ewallet_payment(payment, success_url, cancel_url):
     ewallet_type = _paymongo_ewallet_type()
-    billing_label = payment.billing.billing_month.strftime('%B %Y') if payment.billing else 'Water bill'
+    covered_month = payment.display_covered_month
+    billing_label = covered_month.strftime('%B %Y') if covered_month else 'Water bill'
     intent_payload = {
         'data': {
             'attributes': {
@@ -1034,24 +1036,174 @@ def notify_consumer(consumer, title, message, notification_type, send_email=Fals
     return results
 
 
-def get_previous_reading_for_month(consumer, billing_month):
+def month_start(value):
+    if not value:
+        return None
+    return value.replace(day=1)
+
+
+def add_months(base_month, months):
+    normalized = month_start(base_month)
+    month_index = normalized.month - 1 + months
+    return date(normalized.year + month_index // 12, (month_index % 12) + 1, 1)
+
+
+def _billing_rank(record):
+    return (
+        record.total_amount or Decimal('0'),
+        record.amount_paid or Decimal('0'),
+        record.current_reading or Decimal('0'),
+        record.created_at,
+    )
+
+
+def get_consumer_monthly_billings(consumer, limit=None):
+    if consumer is None:
+        return []
+
+    billings_by_month = {}
+    for record in consumer.billings.all().order_by('-billing_month', '-created_at'):
+        billing_month = month_start(record.billing_month)
+        current = billings_by_month.get(billing_month)
+        if current is None or _billing_rank(record) > _billing_rank(current):
+            billings_by_month[billing_month] = record
+
+    months = sorted(billings_by_month.keys(), reverse=True)
+    records = [billings_by_month[item] for item in months]
+    return records[:limit] if limit else records
+
+
+def get_existing_billing_for_month(consumer, billing_month):
+    target_month = month_start(billing_month)
+    for record in get_consumer_monthly_billings(consumer):
+        if month_start(record.billing_month) == target_month:
+            return record
+    return None
+
+
+def get_consumer_billing_comparison(consumer):
+    monthly_billings = get_consumer_monthly_billings(consumer, limit=2)
+    current_billing = monthly_billings[0] if monthly_billings else None
+    previous_billing = monthly_billings[1] if len(monthly_billings) > 1 else None
+    return current_billing, previous_billing
+
+
+def _payment_totals_by_month(consumer):
+    totals = {}
+    if consumer is None:
+        return totals
+
+    for payment in consumer.payments.exclude(status=Payment.Statuses.FAILED).select_related('billing'):
+        covered_month = month_start(payment.display_covered_month)
+        if covered_month is None:
+            continue
+        totals.setdefault(covered_month, Decimal('0'))
+        totals[covered_month] += payment.amount_credited
+
+    return totals
+
+
+def get_next_payment_month(consumer):
+    current_month = month_start(timezone.localdate())
+    if consumer is None:
+        return current_month
+
+    payment_totals = _payment_totals_by_month(consumer)
+    monthly_billings = list(reversed(get_consumer_monthly_billings(consumer)))
+
+    for billing in monthly_billings:
+        billing_month = month_start(billing.billing_month)
+        credited_amount = payment_totals.get(billing_month, Decimal('0'))
+        if credited_amount < (billing.total_amount or Decimal('0')):
+            return billing_month
+
+    covered_months = set(payment_totals.keys())
+    covered_months.update(
+        month_start(billing.billing_month)
+        for billing in monthly_billings
+        if billing.status == BillingRecord.Statuses.PAID
+    )
+    covered_months = {item for item in covered_months if item is not None}
+
+    if covered_months:
+        return add_months(max(covered_months), 1)
+
+    if monthly_billings:
+        return add_months(month_start(monthly_billings[-1].billing_month), 1)
+
+    return current_month
+
+
+def build_consumer_payment_month_choices(consumer, advance_months=6):
+    if consumer is None:
+        return []
+
+    next_month = get_next_payment_month(consumer)
+    choices = []
+    for offset in range(advance_months + 1):
+        candidate = add_months(next_month, offset)
+        label = candidate.strftime('%B %Y')
+        if offset == 0:
+            label = f'{label} (Next due)'
+        elif offset > 0:
+            label = f'{label} (Advance)'
+        choices.append((candidate.strftime('%Y-%m'), label))
+    return choices
+
+
+def get_previous_reading_details(consumer, billing_month):
+    target_month = month_start(billing_month)
     prior_reading = (
-        MeterReading.objects.filter(consumer=consumer, billing_month__lt=billing_month)
+        MeterReading.objects.filter(consumer=consumer, billing_month__lt=target_month)
         .order_by('-billing_month', '-created_at')
         .first()
     )
     if prior_reading:
-        return prior_reading.current_reading
+        return {
+            'value': prior_reading.current_reading,
+            'month': month_start(prior_reading.billing_month),
+            'source': 'reading',
+            'record': prior_reading,
+        }
 
     prior_billing = (
-        BillingRecord.objects.filter(consumer=consumer, billing_month__lt=billing_month)
+        BillingRecord.objects.filter(consumer=consumer, billing_month__lt=target_month)
         .order_by('-billing_month', '-created_at')
         .first()
     )
     if prior_billing:
-        return prior_billing.current_reading
+        return {
+            'value': prior_billing.current_reading,
+            'month': month_start(prior_billing.billing_month),
+            'source': 'billing',
+            'record': prior_billing,
+        }
 
-    return Decimal('0')
+    return {
+        'value': Decimal('0'),
+        'month': None,
+        'source': '',
+        'record': None,
+    }
+
+
+def get_previous_reading_for_month(consumer, billing_month):
+    return get_previous_reading_details(consumer, billing_month)['value']
+
+
+def _sync_advance_payments_to_billing(billing):
+    Payment.objects.filter(
+        consumer=billing.consumer,
+        billing__isnull=True,
+        covered_month=month_start(billing.billing_month),
+    ).update(billing=billing)
+
+    billing.amount_paid = sum(
+        payment.amount_credited
+        for payment in billing.payments.filter(status=Payment.Statuses.COMPLETED).only('amount_paid', 'discount_amount')
+    )
+    billing.save(update_fields=['amount_paid', 'usage_m3', 'total_amount', 'status'])
+    return billing
 
 
 def create_or_update_billing_from_reading(reading, system_settings=None):
@@ -1070,7 +1222,7 @@ def create_or_update_billing_from_reading(reading, system_settings=None):
     billing.billing_date = reading.reading_date
     billing.due_date = reading.reading_date + timedelta(days=system_settings.billing_due_days)
     billing.save()
-    return billing
+    return _sync_advance_payments_to_billing(billing)
 
 
 def handle_meter_reading_submission(form, submitted_by):
@@ -1145,9 +1297,12 @@ def send_billing_due_notification(billing, system_settings=None):
 
 def send_payment_notification(payment, system_settings=None):
     system_settings = system_settings or SystemSettings.load()
+    covered_month = payment.display_covered_month
+    covered_label = covered_month.strftime('%B %Y') if covered_month else 'the selected billing month'
+    discount_message = f' Discount applied: PHP {payment.discount_amount}.' if payment.discount_amount else ''
     message = (
-        f'Your payment of PHP {payment.amount_paid} for {payment.consumer.full_name} was marked as '
-        f'{payment.get_status_display().lower()} on {payment.payment_date:%B %d, %Y}.'
+        f'Your payment for {covered_label} was marked as {payment.get_status_display().lower()} '
+        f'on {payment.payment_date:%B %d, %Y}. Amount paid: PHP {payment.amount_paid}.{discount_message}'
     )
     return notify_consumer(
         payment.consumer,

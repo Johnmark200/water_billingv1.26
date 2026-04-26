@@ -1,0 +1,12 @@
+{% for payment in receipts %}
+    <tr>
+        <td>{{ payment.payment_date }}</td>
+        <td>{{ payment.display_covered_month|date:'F Y' }}</td>
+        <td>&#8369;{{ payment.amount_paid }}</td>
+        <td>&#8369;{{ payment.discount_amount }}</td>
+        <td>&#8369;{{ payment.amount_credited }}</td>
+        <td>{{ payment.reference_number|default:'-' }}</td>
+    </tr>
+{% empty %}
+    <tr><td colspan="6" class="empty-state">No completed receipts yet.</td></tr>
+{% endfor %}

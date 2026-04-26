@@ -1,0 +1,11 @@
+{% for reading in meter_readings %}
+    <tr>
+        <td>{{ reading.billing_month|date:'F Y' }}</td>
+        <td>{{ reading.previous_reading }}</td>
+        <td>{{ reading.current_reading }}</td>
+        <td>{{ reading.usage_m3 }} m3</td>
+        <td>{{ reading.reading_date }}</td>
+    </tr>
+{% empty %}
+    <tr><td colspan="5" class="empty-state">No meter readings available.</td></tr>
+{% endfor %}

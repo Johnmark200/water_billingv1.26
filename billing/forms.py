@@ -1,9 +1,14 @@
+from datetime import date
+from decimal import Decimal
+import re
+
 from django import forms
+from django.contrib.auth import password_validation
 from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 
-from .services import is_e164_phone_number, is_valid_email_address, normalize_phone_number
 from .models import (
     BillingRecord,
     Consumer,
@@ -13,6 +18,43 @@ from .models import (
     SMSBlast,
     SystemSettings,
 )
+from .services import (
+    build_consumer_payment_month_choices,
+    get_existing_billing_for_month,
+    get_previous_reading_for_month,
+    is_e164_phone_number,
+    is_valid_email_address,
+    normalize_phone_number,
+)
+
+
+MAX_REASONABLE_MONTHLY_USAGE = Decimal('500')
+SPECIAL_CHARACTER_PATTERN = re.compile(r'[!@#$%^&*(),.?":{}|<>_\-+=/\\[\]~`]')
+
+
+def collect_password_strength_issues(password, username='', email=''):
+    issues = []
+
+    if len(password) < 8:
+        issues.append('Use at least 8 characters.')
+    if not re.search(r'[A-Z]', password):
+        issues.append('Add at least one uppercase letter.')
+    if not re.search(r'[a-z]', password):
+        issues.append('Add at least one lowercase letter.')
+    if not re.search(r'\d', password):
+        issues.append('Add at least one number.')
+    if not SPECIAL_CHARACTER_PATTERN.search(password):
+        issues.append('Add at least one special character.')
+
+    temp_user = User(username=username or '', email=email or '')
+    try:
+        password_validation.validate_password(password, user=temp_user)
+    except ValidationError as exc:
+        for message in exc.messages:
+            if message not in issues:
+                issues.append(message)
+
+    return issues
 
 
 class LoginForm(AuthenticationForm):
@@ -30,6 +72,9 @@ class SignUpForm(UserCreationForm):
         model = User
         fields = ('username', 'full_name', 'email', 'contact', 'address', 'password1', 'password2')
 
+    def _post_clean(self):
+        forms.ModelForm._post_clean(self)
+
     def clean_email(self):
         email = self.cleaned_data.get('email', '').strip()
         if email and not is_valid_email_address(email):
@@ -42,6 +87,28 @@ class SignUpForm(UserCreationForm):
             raise forms.ValidationError('Enter the contact number in E.164 format, for example +639171234567.')
         return contact
 
+    def clean(self):
+        cleaned_data = forms.ModelForm.clean(self)
+        password1 = cleaned_data.get('password1', '')
+        password2 = cleaned_data.get('password2', '')
+        username = cleaned_data.get('username', '')
+        email = cleaned_data.get('email', '')
+
+        if password1 and username and username.lower() in password1.lower():
+            self.add_error('password1', 'Your username cannot be used as your password.')
+
+        if password1:
+            issues = collect_password_strength_issues(password1, username=username, email=email)
+            if issues:
+                self.add_error('password1', 'Your password is too weak. Please use a stronger password.')
+                for issue in issues:
+                    self.add_error('password1', issue)
+
+        if password1 and password2 and password1 != password2:
+            self.add_error('password2', 'Passwords do not match. Please try again.')
+
+        return cleaned_data
+
     def save(self, commit=True):
         user = super().save(commit=False)
         user.email = self.cleaned_data.get('email', '')
@@ -53,14 +120,14 @@ class SignUpForm(UserCreationForm):
                 email=self.cleaned_data.get('email', ''),
                 contact=self.cleaned_data.get('contact', ''),
                 address=self.cleaned_data.get('address', ''),
-                role='consumer',
+                role=ConsumerProfile.Roles.CONSUMER,
             )
             Consumer.objects.create(
                 profile=profile,
                 full_name=profile.full_name,
                 address=profile.address,
                 contact_number=profile.contact,
-                status='active',
+                status=Consumer.Statuses.ACTIVE,
             )
         return user
 
@@ -118,7 +185,16 @@ class BillingRecordForm(forms.ModelForm):
 class AdminPaymentForm(forms.ModelForm):
     class Meta:
         model = Payment
-        fields = ['consumer', 'billing', 'payment_method', 'amount_paid', 'payment_date', 'status', 'reference_number']
+        fields = [
+            'consumer',
+            'billing',
+            'payment_method',
+            'amount_paid',
+            'discount_amount',
+            'payment_date',
+            'status',
+            'reference_number',
+        ]
         widgets = {
             'payment_date': forms.DateInput(attrs={'type': 'date'}),
         }
@@ -131,6 +207,8 @@ class AdminPaymentForm(forms.ModelForm):
             (Payment.Methods.CASH, Payment.Methods.CASH.label),
             (Payment.Methods.ONLINE, Payment.Methods.ONLINE.label),
         ]
+        self.fields['discount_amount'].required = False
+        self.fields['discount_amount'].label = 'Discount applied'
 
 
 def build_payment_method_choices(system_settings):
@@ -143,31 +221,50 @@ def build_payment_method_choices(system_settings):
 
 
 class ConsumerPaymentForm(forms.ModelForm):
+    covered_month = forms.ChoiceField(label='Payment month')
+
     class Meta:
         model = Payment
-        fields = ['billing', 'payment_method', 'amount_paid', 'reference_number']
+        fields = ['payment_method', 'amount_paid', 'reference_number']
 
     def __init__(self, *args, consumer=None, system_settings=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.consumer = consumer
         self.system_settings = system_settings or SystemSettings.load()
-        self.fields['billing'].queryset = BillingRecord.objects.none()
+        self.available_months = []
         self.fields['payment_method'].choices = build_payment_method_choices(self.system_settings)
         self.fields['reference_number'].required = False
         self.fields['reference_number'].label = 'Reference number (cash only, optional)'
         self.fields['reference_number'].help_text = 'Online payment references are generated automatically by PayMongo.'
+        self.fields['covered_month'].help_text = 'Select the next due month or make an advance payment for an upcoming month.'
+        self.fields['covered_month'].choices = []
+
         if consumer:
-            self.fields['billing'].queryset = consumer.billings.exclude(status=BillingRecord.Statuses.PAID).order_by(
-                '-billing_month'
-            )
+            self.available_months = build_consumer_payment_month_choices(consumer)
+            self.fields['covered_month'].choices = self.available_months
+            if self.available_months and not self.is_bound:
+                self.initial.setdefault('covered_month', self.available_months[0][0])
+
+    def clean_covered_month(self):
+        raw_value = (self.cleaned_data.get('covered_month') or '').strip()
+        try:
+            year, month = [int(part) for part in raw_value.split('-', 1)]
+            return date(year, month, 1)
+        except (TypeError, ValueError):
+            raise forms.ValidationError('Select a valid payment month.')
 
     def clean(self):
         cleaned_data = super().clean()
-        billing = cleaned_data.get('billing')
-        if billing and self.consumer and billing.consumer_id != self.consumer.id:
-            raise forms.ValidationError('You can only pay bills assigned to your account.')
+        covered_month = cleaned_data.get('covered_month')
+
+        if covered_month and self.consumer:
+            cleaned_data['billing'] = get_existing_billing_for_month(self.consumer, covered_month)
+
         if not self.fields['payment_method'].choices:
             raise forms.ValidationError('Payment channels are not enabled yet. Please contact the administrator.')
+        if self.consumer and not self.available_months:
+            raise forms.ValidationError('No payment months are available right now. Please contact the administrator.')
+
         return cleaned_data
 
     def clean_amount_paid(self):
@@ -179,6 +276,9 @@ class ConsumerPaymentForm(forms.ModelForm):
     def save(self, commit=True):
         payment = super().save(commit=False)
         payment.consumer = self.consumer
+        payment.billing = self.cleaned_data.get('billing')
+        payment.covered_month = self.cleaned_data.get('covered_month')
+        payment.discount_amount = Decimal('0')
         payment.payment_date = timezone.localdate()
         payment.status = Payment.Statuses.PENDING
         if payment.payment_method == Payment.Methods.ONLINE:
@@ -216,13 +316,93 @@ class MeterReadingForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['consumer'].queryset = Consumer.objects.filter(status=Consumer.Statuses.ACTIVE).order_by('full_name')
+        if 'consumer' in self.fields:
+            self.fields['consumer'].queryset = Consumer.objects.filter(status=Consumer.Statuses.ACTIVE).order_by(
+                'full_name'
+            )
 
     def clean_current_reading(self):
         current_reading = self.cleaned_data['current_reading']
         if current_reading < 0:
             raise forms.ValidationError('Reading must be zero or greater.')
         return current_reading
+
+    def clean(self):
+        cleaned_data = super().clean()
+        consumer = cleaned_data.get('consumer') or getattr(self.instance, 'consumer', None)
+        reading_date = cleaned_data.get('reading_date') or getattr(self.instance, 'reading_date', None)
+        current_reading = cleaned_data.get('current_reading')
+
+        if consumer and reading_date and current_reading is not None:
+            previous_reading = get_previous_reading_for_month(consumer, reading_date.replace(day=1))
+            cleaned_data['previous_reading_snapshot'] = previous_reading
+            usage_delta = current_reading - previous_reading
+
+            if current_reading < previous_reading:
+                self.add_error(
+                    'current_reading',
+                    'Current reading cannot be lower than the previous reading shown for this consumer.',
+                )
+            elif usage_delta > MAX_REASONABLE_MONTHLY_USAGE:
+                self.add_error(
+                    'current_reading',
+                    (
+                        f'The reading jump looks unrealistic ({usage_delta} m3). '
+                        'Please verify the meter number and cubic reading before saving.'
+                    ),
+                )
+
+        return cleaned_data
+
+
+class MeterReadingUpdateForm(MeterReadingForm):
+    class Meta(MeterReadingForm.Meta):
+        fields = ['current_reading', 'notes']
+
+
+class ProfileUpdateForm(forms.ModelForm):
+    class Meta:
+        model = ConsumerProfile
+        fields = ['full_name', 'email', 'contact', 'address', 'photo']
+        widgets = {
+            'address': forms.Textarea(attrs={'rows': 3}),
+        }
+
+    def clean_email(self):
+        email = self.cleaned_data.get('email', '').strip()
+        if email and not is_valid_email_address(email):
+            raise forms.ValidationError('Enter a valid email address.')
+        return email
+
+    def clean_contact(self):
+        contact = normalize_phone_number(self.cleaned_data.get('contact', ''))
+        if contact and not is_e164_phone_number(contact):
+            raise forms.ValidationError('Enter the contact number in E.164 format, for example +639171234567.')
+        return contact
+
+    def save(self, commit=True):
+        profile = super().save(commit=False)
+        user = profile.user
+        user.email = self.cleaned_data.get('email', '')
+
+        if commit:
+            user.save(update_fields=['email'])
+            profile.save()
+
+            consumer = getattr(profile, 'consumer_record', None)
+            if consumer:
+                consumer.full_name = profile.full_name
+                consumer.address = profile.address
+                consumer.contact_number = profile.contact
+                if profile.photo:
+                    consumer.photo = profile.photo
+
+                update_fields = ['full_name', 'address', 'contact_number']
+                if profile.photo:
+                    update_fields.append('photo')
+                consumer.save(update_fields=update_fields)
+
+        return profile
 
 
 class SMSBlastForm(forms.ModelForm):

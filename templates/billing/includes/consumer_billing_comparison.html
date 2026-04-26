@@ -1,0 +1,39 @@
+<div class="table-card billing-comparison-card">
+    <div class="toolbar" style="justify-content: space-between; margin-bottom: 16px;">
+        <div>
+            <h3>Previous and Current Billing</h3>
+            <p class="muted">Compare your latest billing cycle against the one before it.</p>
+        </div>
+        {% if next_payment_month %}
+            <span class="status-chip">Next payment month: {{ next_payment_month|date:'F Y' }}</span>
+        {% endif %}
+    </div>
+    <div class="comparison-grid">
+        <div class="comparison-card">
+            <h4>Current Billing</h4>
+            {% if current_billing %}
+                <p><strong>Month:</strong> {{ current_billing.billing_month|date:'F Y' }}</p>
+                <p><strong>Previous Reading:</strong> {{ current_billing.previous_reading }}</p>
+                <p><strong>Current Reading:</strong> {{ current_billing.current_reading }}</p>
+                <p><strong>Total Amount:</strong> PHP {{ current_billing.total_amount }}</p>
+                <p><strong>Amount Paid:</strong> PHP {{ current_billing.amount_paid }}</p>
+                <p><strong>Status:</strong> {{ current_billing.get_status_display }}</p>
+            {% else %}
+                <p class="empty-state">No current billing record is available yet.</p>
+            {% endif %}
+        </div>
+        <div class="comparison-card comparison-card-secondary">
+            <h4>Previous Billing</h4>
+            {% if previous_billing %}
+                <p><strong>Month:</strong> {{ previous_billing.billing_month|date:'F Y' }}</p>
+                <p><strong>Previous Reading:</strong> {{ previous_billing.previous_reading }}</p>
+                <p><strong>Current Reading:</strong> {{ previous_billing.current_reading }}</p>
+                <p><strong>Total Amount:</strong> PHP {{ previous_billing.total_amount }}</p>
+                <p><strong>Amount Paid:</strong> PHP {{ previous_billing.amount_paid }}</p>
+                <p><strong>Status:</strong> {{ previous_billing.get_status_display }}</p>
+            {% else %}
+                <p class="empty-state">No earlier billing record is available yet.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>

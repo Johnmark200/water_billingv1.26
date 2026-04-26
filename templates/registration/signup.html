@@ -1,16 +1,141 @@
 {% extends 'base.html' %}
 {% block title %}Sign Up{% endblock %}
 {% block content %}
-<div class="auth-card">
-    <h2>Create Consumer Account</h2>
-    <p>Registration is for consumer access. Staff accounts should be created and assigned by the administrator.</p>
-    <form method="post">
-        {% csrf_token %}
-        {{ form.as_p }}
-        <div class="btn-row">
-            <button type="submit" class="btn">Create Account</button>
-            <a href="{% url 'login' %}" class="btn secondary">Back to Login</a>
-        </div>
-    </form>
-</div>
+<section class="page-wrap">
+    <div class="auth-card">
+        <h2>Create Consumer Account</h2>
+        <p class="muted">Registration is for consumer access. Staff accounts should be created and assigned by the administrator.</p>
+
+        {% if form.non_field_errors %}
+            <div class="status-feedback error">
+                {% for error in form.non_field_errors %}
+                    <div>{{ error }}</div>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        <form method="post" novalidate id="signup-form">
+            {% csrf_token %}
+
+            <p>
+                <label for="id_username">Username</label>
+                <input type="text" name="username" id="id_username" maxlength="150" required value="{{ form.username.value|default:'' }}">
+                {% for error in form.username.errors %}
+                    <span class="field-error">{{ error }}</span>
+                {% endfor %}
+            </p>
+
+            <p>
+                <label for="id_full_name">Full Name</label>
+                <input type="text" name="full_name" id="id_full_name" maxlength="255" required value="{{ form.full_name.value|default:'' }}">
+                {% for error in form.full_name.errors %}
+                    <span class="field-error">{{ error }}</span>
+                {% endfor %}
+            </p>
+
+            <p>
+                <label for="id_email">Email</label>
+                <input type="email" name="email" id="id_email" value="{{ form.email.value|default:'' }}">
+                <span class="muted">We use this for billing notices and payment updates.</span>
+                {% for error in form.email.errors %}
+                    <span class="field-error">{{ error }}</span>
+                {% endfor %}
+            </p>
+
+            <p>
+                <label for="id_contact">Contact Number</label>
+                <input type="tel" name="contact" id="id_contact" maxlength="50" value="{{ form.contact.value|default:'' }}" placeholder="+639171234567">
+                <span class="muted">Use E.164 format, for example +639171234567.</span>
+                {% for error in form.contact.errors %}
+                    <span class="field-error">{{ error }}</span>
+                {% endfor %}
+            </p>
+
+            <p>
+                <label for="id_address">Address</label>
+                <textarea name="address" id="id_address">{{ form.address.value|default:'' }}</textarea>
+                {% for error in form.address.errors %}
+                    <span class="field-error">{{ error }}</span>
+                {% endfor %}
+            </p>
+
+            <p>
+                <label for="id_password1">Password</label>
+                <input type="password" name="password1" id="id_password1" required>
+                <span class="muted">Use at least 8 characters with uppercase, lowercase, number, and special character. Your username must not appear in the password.</span>
+                <span class="field-error" id="password-live-error" hidden></span>
+                {% for error in form.password1.errors %}
+                    <span class="field-error">{{ error }}</span>
+                {% endfor %}
+            </p>
+
+            <p>
+                <label for="id_password2">Confirm Password</label>
+                <input type="password" name="password2" id="id_password2" required>
+                <span class="field-error" id="password-match-error" hidden></span>
+                {% for error in form.password2.errors %}
+                    <span class="field-error">{{ error }}</span>
+                {% endfor %}
+            </p>
+
+            <div class="btn-row">
+                <button type="submit" class="btn">Create Account</button>
+                <a href="{% url 'login' %}" class="btn secondary">Back to Login</a>
+            </div>
+        </form>
+    </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    (function () {
+        const usernameField = document.getElementById('id_username');
+        const passwordField = document.getElementById('id_password1');
+        const confirmField = document.getElementById('id_password2');
+        const passwordLiveError = document.getElementById('password-live-error');
+        const passwordMatchError = document.getElementById('password-match-error');
+
+        function setInlineError(target, message) {
+            if (!target) return;
+            target.hidden = !message;
+            target.textContent = message || '';
+        }
+
+        function passwordStrengthMessage(password, username) {
+            if (!password) return '';
+            if (username && password.toLowerCase().includes(username.toLowerCase())) {
+                return 'Your username cannot be used as your password.';
+            }
+            if (password.length < 8) {
+                return 'Your password is too weak. Please use a stronger password.';
+            }
+            const hasUpper = /[A-Z]/.test(password);
+            const hasLower = /[a-z]/.test(password);
+            const hasNumber = /\d/.test(password);
+            const hasSpecial = /[!@#$%^&*(),.?":{}|<>_\-+=/\\[\]~`]/.test(password);
+            if (!(hasUpper && hasLower && hasNumber && hasSpecial)) {
+                return 'Your password is too weak. Please use a stronger password.';
+            }
+            return '';
+        }
+
+        function validatePasswords() {
+            const username = usernameField ? usernameField.value.trim() : '';
+            const password = passwordField ? passwordField.value : '';
+            const confirm = confirmField ? confirmField.value : '';
+
+            setInlineError(passwordLiveError, passwordStrengthMessage(password, username));
+            if (confirm && password !== confirm) {
+                setInlineError(passwordMatchError, 'Passwords do not match. Please try again.');
+            } else {
+                setInlineError(passwordMatchError, '');
+            }
+        }
+
+        if (usernameField) usernameField.addEventListener('input', validatePasswords);
+        if (passwordField) passwordField.addEventListener('input', validatePasswords);
+        if (confirmField) confirmField.addEventListener('input', validatePasswords);
+    })();
+</script>
 {% endblock %}
