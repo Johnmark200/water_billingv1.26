@@ -3,8 +3,6 @@
 {% block content %}
 <section class="page-wrap grid-2">
     <div class="form-card" style="margin: 0; max-width: none;">
-        <h2 class="page-title">Reading Panel</h2>
-        <p class="muted">This panel is restricted to meter reading input only. Saving a reading updates the consumer bill and notifies admin, secretary, and the consumer.</p>
         <form method="post">
             {% csrf_token %}
             {{ form.as_p }}
@@ -12,7 +10,6 @@
         </form>
     </div>
     <div class="table-card">
-        <h2 class="page-title">Recent Submitted Readings</h2>
         <table>
             <thead><tr><th>Consumer</th><th>Month</th><th>Current</th><th>Usage</th></tr></thead>
             <tbody>

@@ -2,8 +2,6 @@
 {% block title %}Treasurer Panel{% endblock %}
 {% block content %}
 <section class="page-wrap">
-    <h2 class="page-title">Treasurer Panel</h2>
-    <p class="muted">Collection-focused workspace for payment monitoring and financial follow-up.</p>
     <div class="stats-grid">
         <div class="mini-card"><h3>Month</h3><p>{{ current_month|date:'M Y' }}</p></div>
         <div class="mini-card"><h3>Collected</h3><p>&#8369;{{ monthly_collected }}</p></div>
