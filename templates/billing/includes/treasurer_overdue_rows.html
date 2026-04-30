@@ -1,0 +1,17 @@
+{% for bill in overdue_bills %}
+    <tr>
+        <td data-label="Consumer">{{ bill.consumer.full_name }}</td>
+        <td data-label="Billing Month">{{ bill.billing_month|date:'F Y' }}</td>
+        <td data-label="Amount Due">&#8369;{{ bill.amount_due }}</td>
+        <td data-label="Due Date">{{ bill.due_date|date:'Y-m-d' }}</td>
+        <td data-label="Status">{{ bill.panel_status_label|default:bill.get_status_display }}</td>
+        <td data-label="Actions">
+            <div class="status-actions">
+                <a href="{% url 'payments' %}?consumer={{ bill.consumer_id }}" class="btn secondary">Record Payment</a>
+                <a href="{% url 'reports' %}?month={{ bill.billing_month|date:'Y-m' }}&consumer={{ bill.consumer_id }}" class="btn secondary">View SOA</a>
+            </div>
+        </td>
+    </tr>
+{% empty %}
+    <tr><td colspan="6" class="empty-state">No overdue accounts need follow-up right now.</td></tr>
+{% endfor %}

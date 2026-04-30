@@ -3,20 +3,34 @@ import json
 import re
 from datetime import date, timedelta
 from decimal import Decimal
+from email.utils import formataddr
 from urllib import error, parse, request
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from django.core.mail import send_mail
+from django.core.mail import EmailMultiAlternatives, send_mail
 from django.core.validators import validate_email
 from django.db.models import Q
 from django.utils import timezone
+from django.utils.html import escape
 
-from .models import BillingRecord, Consumer, ConsumerProfile, MeterReading, Notification, Payment, SMSBlast, SystemSettings
+from .models import AuditLog, BillingRecord, Consumer, ConsumerProfile, MeterReading, Notification, Payment, SMSBlast, SystemSettings
 
 
 User = get_user_model()
+
+
+def log_audit_action(user, action, target='', details=''):
+    profile = ConsumerProfile.objects.filter(user=user).first() if getattr(user, 'is_authenticated', False) else None
+    role = profile.role if profile else ''
+    return AuditLog.objects.create(
+        user=user if getattr(user, 'is_authenticated', False) else None,
+        role=role,
+        action=action,
+        target=str(target or ''),
+        details=str(details or ''),
+    )
 
 
 def _truncate_response_text(value, limit=400):
@@ -132,13 +146,27 @@ def _twilio_configuration_error():
 def _sms_api_ph_configuration_error():
     api_key = getattr(settings, 'SMS_API_PH_API_KEY', '')
     endpoint = getattr(settings, 'SMS_API_PH_ENDPOINT', '')
+    recipient_field = getattr(settings, 'SMS_API_PH_RECIPIENT_FIELD', 'recipient')
+    message_field = getattr(settings, 'SMS_API_PH_MESSAGE_FIELD', 'message')
+    sender_id = getattr(settings, 'SMS_API_PH_SENDER_ID', '')
+    message_type = getattr(settings, 'SMS_API_PH_MESSAGE_TYPE', 'plain')
 
     if not endpoint:
         return 'SMS_API_PH_ENDPOINT is missing.'
     if not api_key:
         return 'SMS_API_PH_API_KEY is missing.'
-    if not api_key.startswith('sk-'):
-        return 'SMS_API_PH_API_KEY should start with sk-.'
+    if '|' not in api_key:
+        return 'SMS_API_PH_API_KEY should be the PhilSMS API token from the Developers page.'
+    if not recipient_field:
+        return 'SMS_API_PH_RECIPIENT_FIELD is missing.'
+    if not message_field:
+        return 'SMS_API_PH_MESSAGE_FIELD is missing.'
+    if not sender_id:
+        return 'SMS_API_PH_SENDER_ID is missing.'
+    if len(sender_id) > 11:
+        return 'SMS_API_PH_SENDER_ID must be 11 characters or fewer.'
+    if message_type not in {'plain', 'unicode'}:
+        return 'SMS_API_PH_MESSAGE_TYPE must be plain or unicode.'
     return ''
 
 
@@ -242,14 +270,18 @@ def get_delivery_configuration_summary():
 
     if sms_provider == 'sms_api_ph':
         sms_setup_note = (
-            'Use your SMS API Philippines API key. Requests are sent with the x-api-key header '
-            'to the configured SMS_API_PH_ENDPOINT.'
+            'Use your PhilSMS API token from the Developers page. Requests are sent with the '
+            'Authorization: Bearer header to /sms/send.'
         )
         sms_error = _sms_api_ph_configuration_error()
         sms_env_keys = [
             'SMS_DELIVERY_PROVIDER',
             'SMS_API_PH_ENDPOINT',
             'SMS_API_PH_API_KEY',
+            'SMS_API_PH_RECIPIENT_FIELD',
+            'SMS_API_PH_MESSAGE_FIELD',
+            'SMS_API_PH_SENDER_ID',
+            'SMS_API_PH_MESSAGE_TYPE',
         ]
     else:
         sms_setup_note = (
@@ -375,6 +407,41 @@ def _send_via_sendgrid(email_address, subject, message):
     return _truncate_response_text(response_body) or f'SendGrid accepted the email for {email_address}.'
 
 
+def _send_via_sendgrid_html(email_address, subject, plain_message, html_message):
+    api_key = getattr(settings, 'SENDGRID_API_KEY', '')
+    from_email = getattr(settings, 'SENDGRID_FROM_EMAIL', '') or getattr(settings, 'DEFAULT_FROM_EMAIL', '')
+    from_name = getattr(settings, 'SENDGRID_FROM_NAME', 'Water Billing System')
+
+    if not api_key or not from_email:
+        raise ValueError('SendGrid settings are incomplete. Add SENDGRID_API_KEY and SENDGRID_FROM_EMAIL in the .env file.')
+
+    payload = json.dumps(
+        {
+            'personalizations': [{'to': [{'email': email_address}]}],
+            'from': {'email': from_email, 'name': from_name},
+            'subject': subject,
+            'content': [
+                {'type': 'text/plain', 'value': plain_message},
+                {'type': 'text/html', 'value': html_message},
+            ],
+        }
+    ).encode()
+    sendgrid_request = request.Request(
+        'https://api.sendgrid.com/v3/mail/send',
+        data=payload,
+        headers={
+            'Authorization': f'Bearer {api_key}',
+            'Content-Type': 'application/json',
+        },
+        method='POST',
+    )
+
+    with request.urlopen(sendgrid_request, timeout=getattr(settings, 'EMAIL_API_TIMEOUT', 10)) as response:  # pragma: no cover - network-dependent
+        response_body = response.read().decode()
+
+    return _truncate_response_text(response_body) or f'SendGrid accepted the email for {email_address}.'
+
+
 def _send_via_smtp(email_address, subject, message):
     provider_configured = is_email_delivery_configured()
     if not provider_configured:
@@ -385,10 +452,38 @@ def _send_via_smtp(email_address, subject, message):
     send_mail(
         subject,
         message,
-        getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@waterbilling.local'),
+        formataddr(
+            (
+                getattr(settings, 'DEFAULT_FROM_NAME', 'Tabuan Waterbilling'),
+                getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@waterbilling.local'),
+            )
+        ),
         [email_address],
         fail_silently=False,
     )
+    return f'SMTP email sent to {email_address}.'
+
+
+def _send_via_smtp_html(email_address, subject, plain_message, html_message):
+    provider_configured = is_email_delivery_configured()
+    if not provider_configured:
+        raise ValueError(
+            'SMTP email settings are incomplete. Add EMAIL_HOST, EMAIL_HOST_USER, EMAIL_HOST_PASSWORD, and DEFAULT_FROM_EMAIL in the .env file.'
+        )
+
+    email = EmailMultiAlternatives(
+        subject,
+        plain_message,
+        formataddr(
+            (
+                getattr(settings, 'DEFAULT_FROM_NAME', 'Tabuan Waterbilling'),
+                getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@waterbilling.local'),
+            )
+        ),
+        [email_address],
+    )
+    email.attach_alternative(html_message, 'text/html')
+    email.send(fail_silently=False)
     return f'SMTP email sent to {email_address}.'
 
 
@@ -397,14 +492,30 @@ def _send_via_sms_api_ph(phone_number, message):
     if config_error:
         raise ValueError(config_error)
 
-    payload = json.dumps({'recipient': phone_number, 'message': message}).encode()
+    recipient_field = getattr(settings, 'SMS_API_PH_RECIPIENT_FIELD', 'recipient')
+    message_field = getattr(settings, 'SMS_API_PH_MESSAGE_FIELD', 'message')
+    recipient = normalize_phone_number(phone_number).lstrip('+')
+    endpoint = getattr(settings, 'SMS_API_PH_ENDPOINT', '').rstrip('/')
+    if not endpoint.endswith('/sms/send'):
+        endpoint = f'{endpoint}/sms/send'
+
+    payload = json.dumps(
+        {
+            recipient_field: recipient,
+            'sender_id': getattr(settings, 'SMS_API_PH_SENDER_ID', 'TABUANWATER')[:11],
+            'type': getattr(settings, 'SMS_API_PH_MESSAGE_TYPE', 'plain'),
+            message_field: message,
+        }
+    ).encode()
     sms_request = request.Request(
-        getattr(settings, 'SMS_API_PH_ENDPOINT', ''),
+        endpoint,
         data=payload,
         headers={
             'Content-Type': 'application/json',
             'Accept': 'application/json',
-            'x-api-key': getattr(settings, 'SMS_API_PH_API_KEY', ''),
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Authorization': f"Bearer {getattr(settings, 'SMS_API_PH_API_KEY', '')}",
+            'User-Agent': 'TabuanWaterBilling/1.26 Django SMS Client',
         },
         method='POST',
     )
@@ -568,8 +679,10 @@ def _latest_paymongo_payment(payment_intent):
     return payments[-1] if payments else {}
 
 
-def create_paymongo_ewallet_payment(payment, success_url, cancel_url):
-    ewallet_type = _paymongo_ewallet_type()
+def create_paymongo_ewallet_payment(payment, success_url, cancel_url, ewallet_type=None):
+    ewallet_type = (ewallet_type or _paymongo_ewallet_type()).strip().lower()
+    if ewallet_type not in {'gcash', 'paymaya'}:
+        raise ValueError('Choose a supported PayMongo wallet: GCash or Maya.')
     covered_month = payment.display_covered_month
     billing_label = covered_month.strftime('%B %Y') if covered_month else 'Water bill'
     intent_payload = {
@@ -667,7 +780,102 @@ def paymongo_intent_is_paid(payment_intent):
     return False
 
 
-def send_email_notification(consumer, subject, message, notification_type, **related_objects):
+def _professional_plain_message(title, intro, details, total_label='', total_value='', footer_note=''):
+    lines = [
+        'Tabuan Water Billing System',
+        'System v1.26 | 2026 | Created by Omale J Ohn',
+        '',
+        title,
+        intro,
+        '',
+        'Details:',
+    ]
+    for label, value in details:
+        lines.append(f'- {label}: {value}')
+    if total_label and total_value:
+        lines.extend(['', f'{total_label}: {total_value}'])
+    if footer_note:
+        lines.extend(['', footer_note])
+    lines.extend(['', 'Thank you for Choosing Tabuan Water Billing.'])
+    return '\n'.join(lines)
+
+
+def _professional_email_html(title, intro, details, total_label='', total_value='', footer_note=''):
+    detail_rows = ''.join(
+        (
+            '<tr>'
+            f'<td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;color:#6b7280;">{escape(label)}</td>'
+            f'<td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#111827;font-weight:600;">{escape(str(value))}</td>'
+            '</tr>'
+        )
+        for label, value in details
+    )
+    total_block = ''
+    if total_label and total_value:
+        total_block = (
+            '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:24px;">'
+            '<tr><td></td>'
+            '<td width="260" style="background:#dc2626;color:#ffffff;padding:14px 18px;text-align:center;'
+            'font-size:18px;font-weight:800;letter-spacing:.04em;">'
+            f'{escape(total_label)} &nbsp; {escape(str(total_value))}'
+            '</td></tr></table>'
+        )
+    footer_html = f'<p style="margin:18px 0 0;color:#6b7280;font-size:14px;">{escape(footer_note)}</p>' if footer_note else ''
+    return f'''
+<!doctype html>
+<html>
+<body style="margin:0;background:#f3f4f6;font-family:Arial,Helvetica,sans-serif;color:#111827;">
+  <div style="max-width:680px;margin:0 auto;padding:28px 14px;">
+    <div style="background:#ffffff;border:1px solid #e5e7eb;box-shadow:0 18px 40px rgba(17,24,39,.12);">
+      <div style="height:9px;background:#dc2626;"></div>
+      <div style="padding:34px 42px 24px;">
+        <div style="text-align:center;font-size:20px;font-weight:800;letter-spacing:.08em;color:#111827;">TABUAN WATER BILLING</div>
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:30px;">
+          <tr>
+            <td style="vertical-align:top;">
+              <div style="font-size:24px;font-weight:900;letter-spacing:.02em;">{escape(title)}</div>
+              <p style="margin:10px 0 0;color:#4b5563;line-height:1.5;">{escape(intro)}</p>
+            </td>
+            <td width="180" style="vertical-align:top;text-align:right;color:#6b7280;font-size:13px;line-height:1.7;">
+              <strong style="color:#111827;">System v1.26</strong><br>
+              2026<br>
+              Tabuan, Bayawan City
+            </td>
+          </tr>
+        </table>
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:28px;border-collapse:collapse;">
+          <thead>
+            <tr>
+              <th align="left" style="padding:10px 12px;border-bottom:2px solid #dc2626;color:#dc2626;font-size:12px;text-transform:uppercase;">Description</th>
+              <th align="right" style="padding:10px 12px;border-bottom:2px solid #dc2626;color:#dc2626;font-size:12px;text-transform:uppercase;">Value</th>
+            </tr>
+          </thead>
+          <tbody>{detail_rows}</tbody>
+        </table>
+        {total_block}
+        {footer_html}
+        <div style="margin-top:34px;padding:18px 0;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;text-align:center;font-size:22px;font-style:italic;">
+          Thank you for choosing Tabuan Water Billing.
+        </div>
+      </div>
+      <div style="background:#dc2626;color:#ffffff;padding:18px 42px;font-size:12px;">
+        System v1.26 | 2026 | Created by Omale J. Ohn
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+'''
+
+
+def _professional_notification_messages(title, intro, details, total_label='', total_value='', footer_note=''):
+    return (
+        _professional_plain_message(title, intro, details, total_label, total_value, footer_note),
+        _professional_email_html(title, intro, details, total_label, total_value, footer_note),
+    )
+
+
+def send_email_notification(consumer, subject, message, notification_type, html_message=None, **related_objects):
     email_address = normalize_email_address(_consumer_email(consumer))
     if not email_address:
         return _log_outbound_notification(
@@ -708,9 +916,15 @@ def send_email_notification(consumer, subject, message, notification_type, **rel
     provider = email_provider_name()
     try:
         if provider == 'sendgrid':
-            response_message = _send_via_sendgrid(email_address, subject, message)
+            if html_message:
+                response_message = _send_via_sendgrid_html(email_address, subject, message, html_message)
+            else:
+                response_message = _send_via_sendgrid(email_address, subject, message)
         elif provider == 'smtp':
-            response_message = _send_via_smtp(email_address, subject, message)
+            if html_message:
+                response_message = _send_via_smtp_html(email_address, subject, message, html_message)
+            else:
+                response_message = _send_via_smtp(email_address, subject, message)
         else:
             raise ValueError(
                 'EMAIL_DELIVERY_PROVIDER is set to console. Change it to sendgrid or smtp in the .env file for live email delivery.'
@@ -1014,7 +1228,17 @@ def send_test_sms(phone_number, message):
     )
 
 
-def notify_consumer(consumer, title, message, notification_type, send_email=False, send_sms=False, **related_objects):
+def notify_consumer(
+    consumer,
+    title,
+    message,
+    notification_type,
+    send_email=False,
+    send_sms=False,
+    email_html_message=None,
+    sms_message=None,
+    **related_objects,
+):
     results = {}
 
     if consumer.portal_user:
@@ -1028,10 +1252,17 @@ def notify_consumer(consumer, title, message, notification_type, send_email=Fals
         )
 
     if send_email:
-        results['email'] = send_email_notification(consumer, title, message, notification_type, **related_objects)
+        results['email'] = send_email_notification(
+            consumer,
+            title,
+            message,
+            notification_type,
+            html_message=email_html_message,
+            **related_objects,
+        )
 
     if send_sms:
-        results['sms'] = send_sms_notification(consumer, message, notification_type, **related_objects)
+        results['sms'] = send_sms_notification(consumer, sms_message or message, notification_type, **related_objects)
 
     return results
 
@@ -1057,20 +1288,28 @@ def _billing_rank(record):
     )
 
 
+def get_preferred_billing_records(queryset, limit=None):
+    billings_by_month = {}
+    for record in queryset.select_related('consumer').order_by('-billing_month', '-created_at'):
+        billing_month = month_start(record.billing_month)
+        key = (record.consumer_id, billing_month)
+        current = billings_by_month.get(key)
+        if current is None or _billing_rank(record) > _billing_rank(current):
+            billings_by_month[key] = record
+
+    ordered_records = sorted(
+        billings_by_month.values(),
+        key=lambda record: (month_start(record.billing_month), record.created_at),
+        reverse=True,
+    )
+    return ordered_records[:limit] if limit else ordered_records
+
+
 def get_consumer_monthly_billings(consumer, limit=None):
     if consumer is None:
         return []
 
-    billings_by_month = {}
-    for record in consumer.billings.all().order_by('-billing_month', '-created_at'):
-        billing_month = month_start(record.billing_month)
-        current = billings_by_month.get(billing_month)
-        if current is None or _billing_rank(record) > _billing_rank(current):
-            billings_by_month[billing_month] = record
-
-    months = sorted(billings_by_month.keys(), reverse=True)
-    records = [billings_by_month[item] for item in months]
-    return records[:limit] if limit else records
+    return get_preferred_billing_records(consumer.billings.all(), limit=limit)
 
 
 def get_existing_billing_for_month(consumer, billing_month):
@@ -1151,6 +1390,237 @@ def build_consumer_payment_month_choices(consumer, advance_months=6):
     return choices
 
 
+def get_statement_payment_records(selected_month, consumer=None):
+    selected_month = month_start(selected_month)
+    queryset = Payment.objects.filter(
+        Q(covered_month=selected_month)
+        | Q(covered_month__isnull=True, billing__billing_month=selected_month)
+        | Q(covered_month__isnull=True, billing__isnull=True, payment_date__year=selected_month.year, payment_date__month=selected_month.month)
+    ).select_related('consumer', 'billing').order_by('-payment_date', '-created_at')
+
+    if consumer is not None:
+        queryset = queryset.filter(consumer=consumer)
+
+    return list(queryset)
+
+
+def build_consumer_chart_data(consumer, months=6):
+    recent_billings = list(reversed(get_consumer_monthly_billings(consumer, limit=months))) if consumer else []
+    status_counts = {
+        BillingRecord.Statuses.PAID: 0,
+        BillingRecord.Statuses.PENDING: 0,
+        BillingRecord.Statuses.OVERDUE: 0,
+    }
+
+    for billing in recent_billings:
+        status_counts[billing.status] = status_counts.get(billing.status, 0) + 1
+
+    outstanding_balance = sum((billing.amount_due for billing in recent_billings), Decimal('0'))
+    total_billed = sum((billing.total_amount for billing in recent_billings), Decimal('0'))
+    total_paid = sum((billing.amount_paid for billing in recent_billings), Decimal('0'))
+    latest_billing = recent_billings[-1] if recent_billings else None
+
+    return {
+        'points': [
+            {
+                'label': billing.billing_month.strftime('%b %Y'),
+                'usage': str(billing.usage_m3),
+                'bill': str(billing.total_amount),
+                'paid': str(billing.amount_paid),
+                'balance': str(billing.amount_due),
+                'status': billing.status,
+                'status_label': billing.get_status_display(),
+            }
+            for billing in recent_billings
+        ],
+        'status_counts': {
+            'paid': status_counts.get(BillingRecord.Statuses.PAID, 0),
+            'pending': status_counts.get(BillingRecord.Statuses.PENDING, 0),
+            'overdue': status_counts.get(BillingRecord.Statuses.OVERDUE, 0),
+        },
+        'summary': {
+            'tracked_months': len(recent_billings),
+            'total_billed': str(total_billed),
+            'total_paid': str(total_paid),
+            'outstanding_balance': str(outstanding_balance),
+            'latest_usage': str(latest_billing.usage_m3 if latest_billing else Decimal('0')),
+            'latest_bill': str(latest_billing.total_amount if latest_billing else Decimal('0')),
+            'paid_ratio': round((status_counts.get(BillingRecord.Statuses.PAID, 0) / len(recent_billings)) * 100)
+            if recent_billings
+            else 0,
+        },
+    }
+
+
+def build_system_monitoring_data(months=6):
+    billings = get_preferred_billing_records(BillingRecord.objects.all())
+    if not billings:
+        return {
+            'points': [],
+            'status_counts': {
+                'paid': 0,
+                'pending': 0,
+                'overdue': 0,
+                'unpaid': 0,
+            },
+            'summary': {
+                'tracked_months': 0,
+                'latest_label': 'No billing month',
+                'latest_accounts': 0,
+                'latest_usage': '0',
+                'latest_billed': '0',
+                'latest_collected': '0',
+                'outstanding_balance': '0',
+                'paid_ratio': 0,
+            },
+        }
+
+    monthly_totals = {}
+    for billing in billings:
+        billing_month = month_start(billing.billing_month)
+        snapshot = monthly_totals.setdefault(
+            billing_month,
+            {
+                'month': billing_month,
+                'usage': Decimal('0'),
+                'bill': Decimal('0'),
+                'paid': Decimal('0'),
+                'balance': Decimal('0'),
+                'accounts': 0,
+                'paid_accounts': 0,
+                'pending_accounts': 0,
+                'overdue_accounts': 0,
+            },
+        )
+
+        snapshot['usage'] += billing.usage_m3 or Decimal('0')
+        snapshot['bill'] += billing.total_amount or Decimal('0')
+        snapshot['paid'] += billing.amount_paid or Decimal('0')
+        snapshot['balance'] += billing.amount_due or Decimal('0')
+        snapshot['accounts'] += 1
+
+        if billing.status == BillingRecord.Statuses.PAID:
+            snapshot['paid_accounts'] += 1
+        elif billing.status == BillingRecord.Statuses.OVERDUE:
+            snapshot['overdue_accounts'] += 1
+        else:
+            snapshot['pending_accounts'] += 1
+
+    selected_months = sorted(monthly_totals.keys(), reverse=True)[:months]
+    ordered_snapshots = [monthly_totals[item] for item in reversed(selected_months)]
+    latest_snapshot = monthly_totals[selected_months[0]]
+
+    return {
+        'points': [
+            {
+                'label': snapshot['month'].strftime('%b %Y'),
+                'usage': str(snapshot['usage']),
+                'bill': str(snapshot['bill']),
+                'paid': str(snapshot['paid']),
+                'balance': str(snapshot['balance']),
+                'accounts': snapshot['accounts'],
+                'paid_accounts': snapshot['paid_accounts'],
+                'pending_accounts': snapshot['pending_accounts'],
+                'overdue_accounts': snapshot['overdue_accounts'],
+            }
+            for snapshot in ordered_snapshots
+        ],
+        'status_counts': {
+            'paid': latest_snapshot['paid_accounts'],
+            'pending': latest_snapshot['pending_accounts'],
+            'overdue': latest_snapshot['overdue_accounts'],
+            'unpaid': latest_snapshot['pending_accounts'] + latest_snapshot['overdue_accounts'],
+        },
+        'summary': {
+            'tracked_months': len(ordered_snapshots),
+            'latest_label': latest_snapshot['month'].strftime('%B %Y'),
+            'latest_accounts': latest_snapshot['accounts'],
+            'latest_usage': str(latest_snapshot['usage']),
+            'latest_billed': str(latest_snapshot['bill']),
+            'latest_collected': str(latest_snapshot['paid']),
+            'outstanding_balance': str(latest_snapshot['balance']),
+            'paid_ratio': round((latest_snapshot['paid_accounts'] / latest_snapshot['accounts']) * 100)
+            if latest_snapshot['accounts']
+            else 0,
+        },
+    }
+
+
+def resolve_billing_status(billing):
+    today = timezone.localdate()
+    if (billing.total_amount or Decimal('0')) > 0 and (billing.amount_paid or Decimal('0')) >= (billing.total_amount or Decimal('0')):
+        return BillingRecord.Statuses.PAID
+    if billing.amount_due > 0 and billing.due_date and billing.due_date < today:
+        return BillingRecord.Statuses.OVERDUE
+    return BillingRecord.Statuses.PENDING
+
+
+def apply_panel_billing_status(billing):
+    resolved_status = resolve_billing_status(billing)
+    billing.panel_status = resolved_status
+    billing.panel_status_label = dict(BillingRecord.Statuses.choices).get(resolved_status, resolved_status.title())
+    return billing
+
+
+def build_settlement_snapshot(selected_month=None, consumer=None):
+    queryset = BillingRecord.objects.all()
+    target_month = month_start(selected_month)
+    if target_month is not None:
+        queryset = queryset.filter(billing_month=target_month)
+    if consumer is not None:
+        queryset = queryset.filter(consumer=consumer)
+
+    pending_records = []
+    overdue_records = []
+
+    for billing in get_preferred_billing_records(queryset):
+        billing = apply_panel_billing_status(billing)
+        if billing.amount_due <= 0 or billing.panel_status == BillingRecord.Statuses.PAID:
+            continue
+
+        if billing.panel_status == BillingRecord.Statuses.OVERDUE:
+            overdue_records.append(billing)
+        else:
+            pending_records.append(billing)
+
+    pending_records.sort(
+        key=lambda billing: (
+            billing.due_date or date.max,
+            month_start(billing.billing_month) or date.max,
+            (billing.consumer.full_name or '').lower(),
+        )
+    )
+    overdue_records.sort(
+        key=lambda billing: (
+            billing.due_date or date.max,
+            month_start(billing.billing_month) or date.max,
+            (billing.consumer.full_name or '').lower(),
+        )
+    )
+
+    unsettled_records = sorted(
+        overdue_records + pending_records,
+        key=lambda billing: (
+            0 if billing.panel_status == BillingRecord.Statuses.OVERDUE else 1,
+            billing.due_date or date.max,
+            month_start(billing.billing_month) or date.max,
+            (billing.consumer.full_name or '').lower(),
+        ),
+    )
+
+    return {
+        'all_records': unsettled_records,
+        'pending_records': pending_records,
+        'overdue_records': overdue_records,
+        'unsettled_count': len(unsettled_records),
+        'pending_count': len(pending_records),
+        'overdue_count': len(overdue_records),
+        'pending_total': sum((billing.amount_due for billing in pending_records), Decimal('0')),
+        'overdue_total': sum((billing.amount_due for billing in overdue_records), Decimal('0')),
+        'unsettled_total': sum((billing.amount_due for billing in unsettled_records), Decimal('0')),
+    }
+
+
 def get_previous_reading_details(consumer, billing_month):
     target_month = month_start(billing_month)
     prior_reading = (
@@ -1166,11 +1636,10 @@ def get_previous_reading_details(consumer, billing_month):
             'record': prior_reading,
         }
 
-    prior_billing = (
+    prior_billings = get_preferred_billing_records(
         BillingRecord.objects.filter(consumer=consumer, billing_month__lt=target_month)
-        .order_by('-billing_month', '-created_at')
-        .first()
     )
+    prior_billing = prior_billings[0] if prior_billings else None
     if prior_billing:
         return {
             'value': prior_billing.current_reading,
@@ -1208,7 +1677,7 @@ def _sync_advance_payments_to_billing(billing):
 
 def create_or_update_billing_from_reading(reading, system_settings=None):
     system_settings = system_settings or SystemSettings.load()
-    billing = BillingRecord.objects.filter(consumer=reading.consumer, billing_month=reading.billing_month).first()
+    billing = get_existing_billing_for_month(reading.consumer, reading.billing_month)
     if billing is None:
         billing = BillingRecord(
             consumer=reading.consumer,
@@ -1249,10 +1718,24 @@ def handle_meter_reading_submission(form, submitted_by):
         f'New meter reading for {consumer.full_name}: current reading {reading.current_reading}, '
         f'usage {reading.usage_m3} cubic meters.'
     )
-    consumer_message = (
-        f'Your meter reading for {reading.billing_month:%B %Y} has been posted. '
-        f'Usage: {reading.usage_m3} cubic meters. Bill total: PHP {billing.total_amount}. '
-        f'Due date: {billing.due_date:%B %d, %Y}.'
+    consumer_message, consumer_email_html = _professional_notification_messages(
+        'Meter Reading Statement',
+        f'Dear {consumer.full_name}, your latest meter reading has been posted and your billing record has been updated.',
+        [
+            ('Billing Month', f'{reading.billing_month:%B %Y}'),
+            ('Previous Reading', f'{reading.previous_reading} m3'),
+            ('Current Reading', f'{reading.current_reading} m3'),
+            ('Usage', f'{reading.usage_m3} m3'),
+            ('Due Date', f'{billing.due_date:%B %d, %Y}'),
+        ],
+        total_label='TOTAL DUE',
+        total_value=f'PHP {billing.total_amount}',
+        footer_note='Please settle your bill on or before the due date to avoid penalties.',
+    )
+    consumer_sms_message = (
+        f'Tabuan Water Billing: Reading posted for {reading.billing_month:%b %Y}. '
+        f'Usage {reading.usage_m3} m3. Amount due PHP {billing.total_amount}. '
+        f'Due {billing.due_date:%b %d, %Y}.'
     )
 
     notify_roles(
@@ -1271,6 +1754,8 @@ def handle_meter_reading_submission(form, submitted_by):
         Notification.Types.READING,
         send_email=system_settings.notify_by_email,
         send_sms=system_settings.notify_by_sms,
+        email_html_message=consumer_email_html,
+        sms_message=consumer_sms_message,
         billing=billing,
         meter_reading=reading,
     )
@@ -1280,9 +1765,25 @@ def handle_meter_reading_submission(form, submitted_by):
 
 def send_billing_due_notification(billing, system_settings=None):
     system_settings = system_settings or SystemSettings.load()
-    message = (
-        f'Your water bill for {billing.billing_month:%B %Y} is now available. '
-        f'Amount due: PHP {billing.total_amount}. Due date: {billing.due_date:%B %d, %Y}.'
+    message, email_html = _professional_notification_messages(
+        'Statement of Account',
+        f'Dear {billing.consumer.full_name}, your water bill for {billing.billing_month:%B %Y} is now available.',
+        [
+            ('Billing Month', f'{billing.billing_month:%B %Y}'),
+            ('Previous Reading', f'{billing.previous_reading} m3'),
+            ('Current Reading', f'{billing.current_reading} m3'),
+            ('Consumption', f'{billing.usage_m3} m3'),
+            ('Rate', f'PHP {billing.rate_per_m3} per m3'),
+            ('Amount Paid', f'PHP {billing.amount_paid}'),
+            ('Due Date', f'{billing.due_date:%B %d, %Y}'),
+        ],
+        total_label='AMOUNT DUE',
+        total_value=f'PHP {billing.amount_due}',
+        footer_note='Payment is due on or before the due date shown above.',
+    )
+    sms_message = (
+        f'Tabuan Water Billing: SOA for {billing.billing_month:%b %Y}. '
+        f'Amount due PHP {billing.amount_due}. Due {billing.due_date:%b %d, %Y}.'
     )
     return notify_consumer(
         billing.consumer,
@@ -1291,6 +1792,8 @@ def send_billing_due_notification(billing, system_settings=None):
         Notification.Types.BILL_DUE,
         send_email=system_settings.notify_by_email,
         send_sms=system_settings.notify_by_sms,
+        email_html_message=email_html,
+        sms_message=sms_message,
         billing=billing,
     )
 
@@ -1299,10 +1802,26 @@ def send_payment_notification(payment, system_settings=None):
     system_settings = system_settings or SystemSettings.load()
     covered_month = payment.display_covered_month
     covered_label = covered_month.strftime('%B %Y') if covered_month else 'the selected billing month'
-    discount_message = f' Discount applied: PHP {payment.discount_amount}.' if payment.discount_amount else ''
-    message = (
-        f'Your payment for {covered_label} was marked as {payment.get_status_display().lower()} '
-        f'on {payment.payment_date:%B %d, %Y}. Amount paid: PHP {payment.amount_paid}.{discount_message}'
+    message, email_html = _professional_notification_messages(
+        'Payment Confirmation',
+        f'Dear {payment.consumer.full_name}, this confirms the latest status of your water billing payment.',
+        [
+            ('Covered Month', covered_label),
+            ('Payment Date', f'{payment.payment_date:%B %d, %Y}'),
+            ('Payment Method', payment.get_payment_method_display()),
+            ('Payment Option', payment.get_payment_option_display()),
+            ('Payment Status', payment.get_status_display()),
+            ('Reference Number', '-' if payment.payment_method == Payment.Methods.CASH else (payment.reference_number or payment.gateway_reference or '-')),
+            ('Discount Applied', f'PHP {payment.discount_amount}'),
+        ],
+        total_label='AMOUNT PAID',
+        total_value=f'PHP {payment.amount_paid}',
+        footer_note='Please keep this confirmation for your records.',
+    )
+    sms_message = (
+        f'Tabuan Water Billing: Payment for {covered_label} is {payment.get_status_display().lower()}. '
+        f'{payment.get_payment_option_display()}. Amount PHP {payment.amount_paid}. '
+        f'Ref: {"-" if payment.payment_method == Payment.Methods.CASH else (payment.reference_number or payment.gateway_reference or "-")}'
     )
     return notify_consumer(
         payment.consumer,
@@ -1311,6 +1830,8 @@ def send_payment_notification(payment, system_settings=None):
         Notification.Types.PAYMENT,
         send_email=system_settings.notify_by_email,
         send_sms=system_settings.notify_by_sms,
+        email_html_message=email_html,
+        sms_message=sms_message,
         payment=payment,
         billing=payment.billing,
     )

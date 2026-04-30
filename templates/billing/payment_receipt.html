@@ -1,0 +1,223 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Payment Receipt{% endblock %}
+{% block extra_css %}
+<style>
+    .receipt-shell {
+        max-width: 900px;
+        margin: 30px auto;
+        padding: 0 18px;
+    }
+
+    .receipt-paper {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 24px 54px rgba(24, 54, 66, 0.16);
+    }
+
+    .receipt-strip {
+        height: 10px;
+        background: #dc2626;
+    }
+
+    .receipt-body {
+        padding: 42px 54px 34px;
+    }
+
+    .receipt-logo {
+        display: block;
+        width: 86px;
+        height: 86px;
+        object-fit: contain;
+        margin: 0 auto 12px;
+    }
+
+    .receipt-brand {
+        text-align: center;
+        font-size: 20px;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+
+    .receipt-top {
+        display: grid;
+        grid-template-columns: 1fr 240px;
+        gap: 28px;
+        margin-top: 34px;
+        align-items: start;
+    }
+
+    .receipt-title {
+        font-size: 54px;
+        line-height: 1;
+        font-weight: 900;
+        letter-spacing: 0.02em;
+        color: #222;
+        text-align: right;
+    }
+
+    .receipt-meta p,
+    .bill-to p {
+        margin: 6px 0;
+    }
+
+    .bill-to h3 {
+        margin: 0 0 8px;
+        font-size: 28px;
+        text-transform: uppercase;
+    }
+
+    .receipt-table {
+        width: 100%;
+        margin-top: 34px;
+        border-collapse: collapse;
+    }
+
+    .receipt-table th {
+        color: #dc2626;
+        border-bottom: 2px solid #dc2626;
+        font-size: 12px;
+    }
+
+    .receipt-table td {
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    .receipt-total {
+        width: min(320px, 100%);
+        margin: 28px 0 0 auto;
+        background: #dc2626;
+        color: #fff;
+        display: flex;
+        justify-content: space-between;
+        padding: 14px 18px;
+        font-size: 20px;
+        font-weight: 900;
+        text-transform: uppercase;
+    }
+
+    .receipt-thanks {
+        margin: 42px 0 24px;
+        padding: 22px 0;
+        border-top: 1px solid #e5e7eb;
+        border-bottom: 1px solid #e5e7eb;
+        text-align: center;
+        font-size: 30px;
+        font-style: italic;
+    }
+
+    .receipt-footer {
+        background: #dc2626;
+        color: #fff;
+        padding: 18px 54px;
+        display: flex;
+        justify-content: space-between;
+        gap: 18px;
+        flex-wrap: wrap;
+        font-size: 13px;
+    }
+
+    @media (max-width: 720px) {
+        .receipt-body {
+            padding: 28px 22px;
+        }
+
+        .receipt-top {
+            grid-template-columns: 1fr;
+        }
+
+        .receipt-title {
+            text-align: left;
+            font-size: 42px;
+        }
+
+        .receipt-footer {
+            padding: 18px 22px;
+        }
+    }
+</style>
+{% endblock %}
+{% block content %}
+<section class="receipt-shell">
+    <div class="receipt-paper">
+        <div class="receipt-strip"></div>
+        <div class="receipt-body">
+            <img src="{% static 'legacy_img/tabuan-logo.png' %}" alt="Tabuan Water Billing logo" class="receipt-logo">
+            <div class="receipt-brand">{{ system_name }}</div>
+
+            <div class="receipt-top">
+                <div class="bill-to">
+                    <h3>Bill To</h3>
+                    <p><strong>{{ consumer.full_name }}</strong></p>
+                    <p>{{ consumer.address|default:'Tabuan, Bayawan City, Negros Oriental' }}</p>
+                    <p>{{ consumer.contact_number|default:'No contact number on file' }}</p>
+                    <p>{{ consumer.profile.email|default:'No email on file' }}</p>
+                </div>
+                <div>
+                    <div class="receipt-meta">
+                        <p><strong>Receipt:</strong> {{ receipt_number }}</p>
+                        <p><strong>Payment Date:</strong> {{ payment.payment_date|date:'m/d/Y' }}</p>
+                        <p><strong>Covered Month:</strong> {{ covered_month|date:'F Y'|default:'-' }}</p>
+                        <p><strong>Payment Option:</strong> {{ payment.get_payment_option_display }}</p>
+                        <p><strong>Status:</strong> {{ payment.get_status_display }}</p>
+                    </div>
+                    <div class="receipt-title">RECEIPT</div>
+                </div>
+            </div>
+
+            <table class="receipt-table">
+                <thead>
+                    <tr>
+                        <th>No</th>
+                        <th>Description</th>
+                        <th>Method</th>
+                        <th>Reference</th>
+                        <th>Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>1</td>
+                        <td>Water billing payment{% if covered_month %} for {{ covered_month|date:'F Y' }}{% endif %}</td>
+                        <td>{{ payment.get_payment_method_display }}</td>
+                        <td>{% if payment.payment_method == 'cash' %}-{% else %}{{ reference_number }}{% endif %}</td>
+                        <td>&#8369;{{ payment.amount_paid }}</td>
+                    </tr>
+                    {% if payment.discount_amount %}
+                        <tr>
+                            <td>2</td>
+                            <td>Discount applied</td>
+                            <td>-</td>
+                            <td>-</td>
+                            <td>&#8369;{{ payment.discount_amount }}</td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+
+            <div class="receipt-total">
+                <span>Total</span>
+                <span>&#8369;{{ payment.amount_paid }}</span>
+            </div>
+
+            <div style="margin-top: 30px;">
+                <h3>Terms & Conditions</h3>
+                <p class="muted">This receipt confirms that the payment status was verified after returning from PayMongo. Please keep this receipt for your records.</p>
+            </div>
+
+            <div class="receipt-thanks">Thanks for your payment!</div>
+
+            <div class="btn-row" style="justify-content: center;">
+                <a href="{% url dashboard_url_name %}" class="btn">Back to Home</a>
+                <a href="{% url 'account_center' %}" class="btn secondary">Account Center</a>
+            </div>
+        </div>
+        <div class="receipt-footer">
+            <span>Tabuan, Bayawan City, Negros Oriental</span>
+            <span>{{ system_version }} | {{ system_year }}</span>
+            <span>Created by {{ creator_name }}</span>
+        </div>
+    </div>
+</section>
+{% endblock %}

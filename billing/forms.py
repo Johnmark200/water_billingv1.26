@@ -21,6 +21,7 @@ from .models import (
 from .services import (
     build_consumer_payment_month_choices,
     get_existing_billing_for_month,
+    get_preferred_billing_records,
     get_previous_reading_for_month,
     is_e164_phone_number,
     is_valid_email_address,
@@ -28,7 +29,6 @@ from .services import (
 )
 
 
-MAX_REASONABLE_MONTHLY_USAGE = Decimal('500')
 SPECIAL_CHARACTER_PATTERN = re.compile(r'[!@#$%^&*(),.?":{}|<>_\-+=/\\[\]~`]')
 
 
@@ -181,6 +181,18 @@ class BillingRecordForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields['consumer'].queryset = Consumer.objects.order_by('full_name')
 
+    def clean(self):
+        cleaned_data = super().clean()
+        consumer = cleaned_data.get('consumer')
+        billing_month = cleaned_data.get('billing_month')
+
+        if consumer and billing_month:
+            existing_billing = get_existing_billing_for_month(consumer, billing_month)
+            if existing_billing and existing_billing.pk != self.instance.pk:
+                self.add_error('billing_month', 'A billing record for this consumer and month already exists.')
+
+        return cleaned_data
+
 
 class AdminPaymentForm(forms.ModelForm):
     class Meta:
@@ -189,6 +201,7 @@ class AdminPaymentForm(forms.ModelForm):
             'consumer',
             'billing',
             'payment_method',
+            'payment_option',
             'amount_paid',
             'discount_amount',
             'payment_date',
@@ -201,14 +214,44 @@ class AdminPaymentForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        consumer_id = None
+        if self.is_bound:
+            consumer_id = self.data.get(self.add_prefix('consumer')) or self.data.get('consumer')
+        else:
+            consumer_id = self.initial.get('consumer')
+
         self.fields['consumer'].queryset = Consumer.objects.order_by('full_name')
-        self.fields['billing'].queryset = BillingRecord.objects.select_related('consumer').order_by('-billing_month')
+        billings_queryset = BillingRecord.objects.select_related('consumer')
+        if consumer_id:
+            billings_queryset = billings_queryset.filter(consumer_id=consumer_id)
+        billing_ids = [billing.id for billing in get_preferred_billing_records(billings_queryset)]
+        self.fields['billing'].queryset = BillingRecord.objects.filter(id__in=billing_ids).select_related('consumer').order_by(
+            '-billing_month',
+            '-created_at',
+        )
         self.fields['payment_method'].choices = [
             (Payment.Methods.CASH, Payment.Methods.CASH.label),
             (Payment.Methods.ONLINE, Payment.Methods.ONLINE.label),
         ]
+        self.fields['payment_option'].widget = forms.RadioSelect(choices=Payment.PaymentOptions.choices)
+        self.fields['payment_option'].initial = Payment.PaymentOptions.FULL
         self.fields['discount_amount'].required = False
         self.fields['discount_amount'].label = 'Discount applied'
+        self.fields['reference_number'].required = False
+        self.fields['amount_paid'].required = False
+        self.fields['amount_paid'].widget.attrs.update({'readonly': 'readonly'})
+
+    def clean(self):
+        cleaned_data = super().clean()
+        billing = cleaned_data.get('billing')
+        payment_option = cleaned_data.get('payment_option') or Payment.PaymentOptions.FULL
+        payment_method = cleaned_data.get('payment_method')
+        if billing:
+            balance = billing.amount_due
+            cleaned_data['amount_paid'] = balance if payment_option == Payment.PaymentOptions.FULL else (balance * Decimal('0.75')).quantize(Decimal('0.01'))
+        if payment_method == Payment.Methods.CASH:
+            cleaned_data['reference_number'] = ''
+        return cleaned_data
 
 
 def build_payment_method_choices(system_settings):
@@ -222,10 +265,23 @@ def build_payment_method_choices(system_settings):
 
 class ConsumerPaymentForm(forms.ModelForm):
     covered_month = forms.ChoiceField(label='Payment month')
+    payment_option = forms.ChoiceField(
+        choices=Payment.PaymentOptions.choices,
+        initial=Payment.PaymentOptions.FULL,
+        widget=forms.RadioSelect,
+    )
+    online_wallet = forms.ChoiceField(
+        choices=[
+            ('gcash', 'GCash'),
+            ('paymaya', 'Maya'),
+        ],
+        required=False,
+        widget=forms.HiddenInput(),
+    )
 
     class Meta:
         model = Payment
-        fields = ['payment_method', 'amount_paid', 'reference_number']
+        fields = ['payment_method', 'payment_option', 'amount_paid', 'reference_number', 'online_wallet']
 
     def __init__(self, *args, consumer=None, system_settings=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -234,8 +290,9 @@ class ConsumerPaymentForm(forms.ModelForm):
         self.available_months = []
         self.fields['payment_method'].choices = build_payment_method_choices(self.system_settings)
         self.fields['reference_number'].required = False
-        self.fields['reference_number'].label = 'Reference number (cash only, optional)'
-        self.fields['reference_number'].help_text = 'Online payment references are generated automatically by PayMongo.'
+        self.fields['reference_number'].widget = forms.HiddenInput()
+        self.fields['amount_paid'].required = False
+        self.fields['amount_paid'].widget.attrs.update({'readonly': 'readonly'})
         self.fields['covered_month'].help_text = 'Select the next due month or make an advance payment for an upcoming month.'
         self.fields['covered_month'].choices = []
 
@@ -264,12 +321,24 @@ class ConsumerPaymentForm(forms.ModelForm):
             raise forms.ValidationError('Payment channels are not enabled yet. Please contact the administrator.')
         if self.consumer and not self.available_months:
             raise forms.ValidationError('No payment months are available right now. Please contact the administrator.')
+        if cleaned_data.get('payment_method') == Payment.Methods.ONLINE and cleaned_data.get('online_wallet') not in {
+            'gcash',
+            'paymaya',
+        }:
+            self.add_error('online_wallet', 'Choose GCash or Maya before continuing to PayMongo.')
+
+        billing = cleaned_data.get('billing')
+        payment_option = cleaned_data.get('payment_option') or Payment.PaymentOptions.FULL
+        if billing:
+            balance = billing.amount_due
+            cleaned_data['amount_paid'] = balance if payment_option == Payment.PaymentOptions.FULL else (balance * Decimal('0.75')).quantize(Decimal('0.01'))
+        cleaned_data['reference_number'] = ''
 
         return cleaned_data
 
     def clean_amount_paid(self):
-        amount_paid = self.cleaned_data['amount_paid']
-        if amount_paid <= 0:
+        amount_paid = self.cleaned_data.get('amount_paid') or Decimal('0')
+        if amount_paid < 0:
             raise forms.ValidationError('Amount paid must be greater than zero.')
         return amount_paid
 
@@ -336,21 +405,6 @@ class MeterReadingForm(forms.ModelForm):
         if consumer and reading_date and current_reading is not None:
             previous_reading = get_previous_reading_for_month(consumer, reading_date.replace(day=1))
             cleaned_data['previous_reading_snapshot'] = previous_reading
-            usage_delta = current_reading - previous_reading
-
-            if current_reading < previous_reading:
-                self.add_error(
-                    'current_reading',
-                    'Current reading cannot be lower than the previous reading shown for this consumer.',
-                )
-            elif usage_delta > MAX_REASONABLE_MONTHLY_USAGE:
-                self.add_error(
-                    'current_reading',
-                    (
-                        f'The reading jump looks unrealistic ({usage_delta} m3). '
-                        'Please verify the meter number and cubic reading before saving.'
-                    ),
-                )
 
         return cleaned_data
 

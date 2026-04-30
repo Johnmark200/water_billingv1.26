@@ -1,12 +1,12 @@
 {% for reading in recent_readings %}
     <tr>
-        <td>{{ reading.consumer.full_name }}</td>
-        <td>{{ reading.billing_month|date:'F Y' }}</td>
-        <td>{{ reading.previous_reading }}</td>
-        <td>{{ reading.current_reading }}</td>
-        <td>{{ reading.usage_m3 }} m3</td>
-        <td>{{ reading.reading_date }}</td>
-        <td>
+        <td data-label="Consumer">{{ reading.consumer.full_name }}</td>
+        <td data-label="Month">{{ reading.billing_month|date:'F Y' }}</td>
+        <td data-label="Previous">{{ reading.previous_reading }}</td>
+        <td data-label="Current">{{ reading.current_reading }}</td>
+        <td data-label="Usage">{{ reading.usage_m3 }} m3</td>
+        <td data-label="Date">{{ reading.reading_date }}</td>
+        <td data-label="Action" class="table-action-cell">
             <button
                 type="button"
                 class="btn secondary reader-edit-trigger"

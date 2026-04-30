@@ -1,0 +1,13 @@
+{% for payment in recent_receipts %}
+    <tr>
+        <td data-label="Consumer">{{ payment.consumer.full_name }}</td>
+        <td data-label="Billing Month">{% if payment.display_covered_month %}{{ payment.display_covered_month|date:'F Y' }}{% else %}-{% endif %}</td>
+        <td data-label="Amount">&#8369;{{ payment.amount_paid }}</td>
+        <td data-label="Method">{{ payment.get_payment_method_display }}</td>
+        <td data-label="Option">{{ payment.get_payment_option_display }}</td>
+        <td data-label="Date">{{ payment.payment_date|date:'Y-m-d' }}</td>
+        <td data-label="Receipt"><a href="{% url 'payment_receipt' payment.id %}" class="btn secondary">View</a></td>
+    </tr>
+{% empty %}
+    <tr><td colspan="7" class="empty-state">No completed receipts found.</td></tr>
+{% endfor %}

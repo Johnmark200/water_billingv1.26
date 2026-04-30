@@ -126,10 +126,14 @@ def build_navigation_items(role):
             ]
         )
 
+    if role == ConsumerProfile.Roles.SECRETARY:
+        items.append({'label': 'Communications', 'url_name': 'communications'})
+
     if role in READING_ENTRY_ROLES:
         items.append({'label': 'Meter Readings', 'url_name': 'reader_panel'})
 
     if role == ConsumerProfile.Roles.CONSUMER:
+        items.append({'label': 'Account Center', 'url_name': 'account_center'})
         items.append({'label': 'Notifications', 'url_name': 'notifications'})
 
     items.append({'label': 'Profile', 'url_name': 'profile'})

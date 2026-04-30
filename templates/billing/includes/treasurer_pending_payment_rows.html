@@ -1,0 +1,26 @@
+{% for payment in pending_payment_requests %}
+    <tr>
+        <td data-label="Consumer">{{ payment.consumer.full_name }}</td>
+        <td data-label="Billing Month">{% if payment.display_covered_month %}{{ payment.display_covered_month|date:'F Y' }}{% else %}-{% endif %}</td>
+        <td data-label="Amount">&#8369;{{ payment.amount_paid }}</td>
+        <td data-label="Method">{{ payment.get_payment_method_display }}</td>
+        <td data-label="Reference">{% if payment.payment_method == 'cash' %}-{% else %}{{ payment.reference_number|default:payment.gateway_reference|default:'-' }}{% endif %}</td>
+        <td data-label="Date">{{ payment.payment_date|date:'Y-m-d' }}</td>
+        <td data-label="Payment Status" class="payment-status-display">{{ payment.get_status_display }}</td>
+        <td data-label="Bill Due" class="billing-due-display">{% if payment.billing %}PHP {{ payment.billing.amount_due }}{% else %}-{% endif %}</td>
+        <td data-label="Bill Status" class="billing-status-display">{% if payment.billing %}{{ payment.billing.panel_status_label|default:payment.billing.get_status_display }}{% else %}-{% endif %}</td>
+        <td data-label="Receipt"><a href="{% url 'payment_receipt' payment.id %}" class="btn secondary">View</a></td>
+        <td data-label="Update">
+            <form method="post" class="payment-status-form status-actions" data-url="{% url 'update_payment_status' payment.id %}" data-current-status="{{ payment.status }}">
+                {% csrf_token %}
+                <select name="status" class="status-select">
+                    {% for value, label in payment_status_choices %}
+                        <option value="{{ value }}" {% if payment.status == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </form>
+        </td>
+    </tr>
+{% empty %}
+    <tr><td colspan="11" class="empty-state">No pending payment transactions require verification.</td></tr>
+{% endfor %}

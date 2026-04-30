@@ -1,50 +1,73 @@
 {% extends 'base.html' %}
 {% block title %}Reading Panel{% endblock %}
+{% block extra_css %}
+<style>
+    .reader-stats-grid {
+        margin-top: 18px;
+    }
+
+    .reader-panel-grid {
+        align-items: start;
+    }
+
+    .reader-context-list {
+        display: grid;
+        gap: 10px;
+    }
+
+    .reader-context-list p {
+        margin: 0;
+    }
+
+    .reader-status-note {
+        margin: 0;
+    }
+</style>
+{% endblock %}
 {% block content %}
 <section class="page-wrap">
     <div class="toolbar" style="justify-content: space-between; margin-bottom: 20px;">
         <div>
             <h2 class="page-title">Reading Panel</h2>
-            <p class="muted">Compare the previous reading before saving, correct submitted readings when needed, and keep your profile details up to date without refreshing the page.</p>
+            <p class="muted">Use the previous reading as reference only, then save the actual current reading or current-cycle usage that was read on site.</p>
         </div>
     </div>
     <div class="status-feedback" id="reader-live-feedback" hidden></div>
+    <div class="stats-grid reader-stats-grid">
+        <div class="mini-card"><h3>Submitted Readings</h3><p data-reader-total-readings>{{ reader_total_readings }}</p></div>
+        <div class="mini-card"><h3>Linked Billings</h3><p data-reader-total-billings>{{ reader_total_billings }}</p></div>
+        <div class="mini-card"><h3>Total Usage</h3><p data-reader-total-usage>{{ reader_total_usage }} m3</p></div>
+        <div class="mini-card"><h3>Last Sync</h3><p data-reader-latest-sync style="font-size: 18px;">{{ reader_latest_sync|date:'Y-m-d H:i'|default:'-' }}</p></div>
+    </div>
 </section>
 
-<section class="page-wrap grid-3">
+<section class="page-wrap grid-3 reader-panel-grid">
     <div id="reader-profile-summary">
         {% include 'billing/includes/profile_summary.html' %}
     </div>
     <div class="card">
         <h3>Previous and Current Reading Check</h3>
-        <p><strong>Selected Month:</strong> <span id="reading-context-month">-</span></p>
-        <p><strong>Previous Reading:</strong> <span id="reading-context-previous">0.00</span></p>
-        <p><strong>Latest Submitted Reading:</strong> <span id="reading-context-current">-</span></p>
-        <p class="muted">Pick a consumer and date before saving so unrealistic or mismatched readings are easier to catch.</p>
+        <div class="reader-context-list">
+            <p><strong>Selected Month:</strong> <span id="reading-context-month">-</span></p>
+            <p><strong>Previous Reading:</strong> <span id="reading-context-previous">0.00</span></p>
+            <p><strong>Latest Submitted Reading:</strong> <span id="reading-context-current">-</span></p>
+            <p class="muted">Pick a consumer and date before saving so you can review the last saved reading, but the current input is not blocked by the previous value.</p>
+        </div>
     </div>
     <div class="card">
         <h3>Live Update Status</h3>
-        <p>Reading corrections and profile changes are saved directly to the database.</p>
-        <p class="muted">The submitted readings list refreshes automatically, and linked billing records are updated as soon as the save completes.</p>
+        <p class="reader-status-note">Reading corrections are saved directly to the database.</p>
+        <p class="muted reader-status-note">The submitted readings list refreshes automatically, and linked billing records are updated as soon as the save completes.</p>
     </div>
 </section>
 
-<section class="page-wrap grid-2">
+<section class="page-wrap grid-2 reader-panel-grid">
     <div class="form-card">
         <h3>Submit Meter Reading</h3>
         <div id="reader-reading-form-container">
             {% include 'billing/includes/reader_reading_form.html' %}
         </div>
     </div>
-    <div class="form-card">
-        <h3>Update Profile</h3>
-        <div id="reader-profile-form">
-            {% include 'billing/includes/profile_form.html' %}
-        </div>
-    </div>
-</section>
-
-<section class="page-wrap">
     <div class="form-card">
         <h3>Edit Submitted Reading</h3>
         <p class="muted">Use this to correct a misread or overlooked current reading before final review.</p>
@@ -57,12 +80,29 @@
 <section class="page-wrap">
     <div class="table-card">
         <h2 class="page-title">Recent Submitted Readings</h2>
-        <table>
-            <thead><tr><th>Consumer</th><th>Month</th><th>Previous</th><th>Current</th><th>Usage</th><th>Date</th><th>Action</th></tr></thead>
-            <tbody id="reader-reading-rows">
-                {% include 'billing/includes/reader_reading_rows.html' %}
-            </tbody>
-        </table>
+        <div class="table-shell table-shell-xl" data-stack-on-mobile="true">
+            <table>
+                <thead><tr><th>Consumer</th><th>Month</th><th>Previous</th><th>Current</th><th>Usage</th><th>Date</th><th>Action</th></tr></thead>
+                <tbody id="reader-reading-rows">
+                    {% include 'billing/includes/reader_reading_rows.html' %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<section class="page-wrap">
+    <div class="table-card">
+        <h2 class="page-title">Recent Billing From Readings</h2>
+        <p class="muted">These billing records are generated or updated from the latest submitted meter readings.</p>
+        <div class="table-shell table-shell-xl" data-stack-on-mobile="true">
+            <table>
+                <thead><tr><th>Consumer</th><th>Month</th><th>Previous</th><th>Current</th><th>Usage</th><th>Total</th><th>Status</th></tr></thead>
+                <tbody id="reader-billing-rows">
+                    {% include 'billing/includes/reader_billing_rows.html' %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </section>
 {% endblock %}
@@ -72,10 +112,10 @@
     (function () {
         const feedback = document.getElementById('reader-live-feedback');
         const profileSummaryContainer = document.getElementById('reader-profile-summary');
-        const profileFormContainer = document.getElementById('reader-profile-form');
         const readingFormContainer = document.getElementById('reader-reading-form-container');
         const editFormContainer = document.getElementById('reader-edit-form-container');
         const readingRows = document.getElementById('reader-reading-rows');
+        const billingRows = document.getElementById('reader-billing-rows');
 
         function showFeedback(message, isError) {
             if (!feedback || !message) return;
@@ -112,27 +152,6 @@
             }
         }
 
-        function bindProfileForm() {
-            const form = profileFormContainer ? profileFormContainer.querySelector('.ajax-profile-form') : null;
-            if (!form) return;
-
-            form.addEventListener('submit', async function (event) {
-                event.preventDefault();
-                const response = await fetch(form.action, {
-                    method: 'POST',
-                    body: new FormData(form),
-                    headers: {
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }
-                });
-                const payload = await response.json();
-                if (payload.summary_html && profileSummaryContainer) profileSummaryContainer.innerHTML = payload.summary_html;
-                if (payload.form_html && profileFormContainer) profileFormContainer.innerHTML = payload.form_html;
-                bindProfileForm();
-                showFeedback(payload.message, !payload.ok);
-            });
-        }
-
         function bindReadingForm() {
             const form = readingFormContainer ? readingFormContainer.querySelector('.ajax-reader-form') : null;
             if (!form) return;
@@ -155,12 +174,25 @@
                 const payload = await response.json();
                 if (payload.form_html && readingFormContainer) readingFormContainer.innerHTML = payload.form_html;
                 if (payload.rows_html && readingRows) readingRows.innerHTML = payload.rows_html;
+                if (payload.billing_rows_html && billingRows) billingRows.innerHTML = payload.billing_rows_html;
                 if (payload.edit_form_html && editFormContainer) editFormContainer.innerHTML = payload.edit_form_html;
+                const totalReadings = document.querySelector('[data-reader-total-readings]');
+                const totalBillings = document.querySelector('[data-reader-total-billings]');
+                const totalUsage = document.querySelector('[data-reader-total-usage]');
+                const latestSync = document.querySelector('[data-reader-latest-sync]');
+                if (totalReadings) totalReadings.textContent = payload.total_readings;
+                if (totalBillings) totalBillings.textContent = payload.total_billings;
+                if (totalUsage) totalUsage.textContent = `${payload.total_usage} m3`;
+                if (latestSync) latestSync.textContent = payload.latest_sync;
                 bindReadingForm();
                 bindEditTriggers();
                 bindEditForm();
                 loadReadingContext();
                 showFeedback(payload.message, !payload.ok);
+                window.showTransactionOverlay && window.showTransactionOverlay('Reading Saved', 'The reading and linked billing record were updated.', 100, 'success');
+                setTimeout(function () {
+                    window.hideTransactionOverlay && window.hideTransactionOverlay();
+                }, 700);
             });
 
             loadReadingContext();
@@ -199,6 +231,7 @@
                     return;
                 }
 
+                window.showTransactionOverlay && window.showTransactionOverlay('Updating Reading', 'Saving the correction and syncing billing.', 45);
                 const response = await fetch(form.action, {
                     method: 'POST',
                     body: new FormData(form),
@@ -209,9 +242,22 @@
                 const payload = await response.json();
                 if (payload.edit_form_html && editFormContainer) editFormContainer.innerHTML = payload.edit_form_html;
                 if (payload.rows_html && readingRows) readingRows.innerHTML = payload.rows_html;
+                if (payload.billing_rows_html && billingRows) billingRows.innerHTML = payload.billing_rows_html;
+                const totalReadings = document.querySelector('[data-reader-total-readings]');
+                const totalBillings = document.querySelector('[data-reader-total-billings]');
+                const totalUsage = document.querySelector('[data-reader-total-usage]');
+                const latestSync = document.querySelector('[data-reader-latest-sync]');
+                if (totalReadings) totalReadings.textContent = payload.total_readings;
+                if (totalBillings) totalBillings.textContent = payload.total_billings;
+                if (totalUsage) totalUsage.textContent = `${payload.total_usage} m3`;
+                if (latestSync) latestSync.textContent = payload.latest_sync;
                 bindEditTriggers();
                 bindEditForm();
                 showFeedback(payload.message, !payload.ok);
+                window.showTransactionOverlay && window.showTransactionOverlay('Reading Updated', 'The corrected reading was saved.', 100, 'success');
+                setTimeout(function () {
+                    window.hideTransactionOverlay && window.hideTransactionOverlay();
+                }, 700);
             });
         }
 
@@ -226,13 +272,21 @@
                 const payload = await response.json();
                 if (payload.summary_html && profileSummaryContainer) profileSummaryContainer.innerHTML = payload.summary_html;
                 if (payload.rows_html && readingRows) readingRows.innerHTML = payload.rows_html;
+                if (payload.billing_rows_html && billingRows) billingRows.innerHTML = payload.billing_rows_html;
+                const totalReadings = document.querySelector('[data-reader-total-readings]');
+                const totalBillings = document.querySelector('[data-reader-total-billings]');
+                const totalUsage = document.querySelector('[data-reader-total-usage]');
+                const latestSync = document.querySelector('[data-reader-latest-sync]');
+                if (totalReadings) totalReadings.textContent = payload.total_readings;
+                if (totalBillings) totalBillings.textContent = payload.total_billings;
+                if (totalUsage) totalUsage.textContent = `${payload.total_usage} m3`;
+                if (latestSync) latestSync.textContent = payload.latest_sync;
                 bindEditTriggers();
             } catch (error) {
                 console.error(error);
             }
         }
 
-        bindProfileForm();
         bindReadingForm();
         bindEditTriggers();
         bindEditForm();

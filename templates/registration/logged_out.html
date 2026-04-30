@@ -1,11 +1,18 @@
-{% extends 'base.html' %}
+{% extends 'registration/auth_layout.html' %}
 {% block title %}Logged Out{% endblock %}
-{% block content %}
-<div class="auth-card">
-    <h2>You Have Been Logged Out</h2>
-    <p>Your session has ended. Continue to the login page to sign in again.</p>
-    <div class="btn-row">
-        <a href="{% url 'login' %}" class="btn">Go to Login</a>
-    </div>
+{% block auth_shell_class %}auth-cover-shell{% endblock %}
+{% block auth_kicker %}Session Closed{% endblock %}
+{% block auth_heading %}You Have Been Logged Out{% endblock %}
+{% block auth_subtitle %}Your session has ended cleanly. Sign back in when you need to continue working with the Tabuan Water Billing System.{% endblock %}
+{% block auth_visual_title %}Tabuan Waterbilling.{% endblock %}
+{% block auth_visual_copy %}Access to the admin, reader, secretary, treasurer, and consumer panels is closed until the next authenticated login.{% endblock %}
+
+{% block auth_body %}
+<div class="status-feedback">
+    Your account session has been closed. No billing, receipt, or meter-reading actions can be performed until you log in again.
+</div>
+<div class="auth-actions">
+    <a href="{% url 'login' %}" class="btn auth-primary">Go to Login</a>
+    <a href="{% url 'home' %}" class="btn secondary">Back to Home</a>
 </div>
 {% endblock %}

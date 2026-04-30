@@ -1,13 +1,30 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Water Billing System{% endblock %}</title>
+    <script>
+        (function () {
+            try {
+                const storedTheme = localStorage.getItem('waterbilling-theme');
+                const systemTheme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+                    ? 'dark'
+                    : 'light';
+                document.documentElement.dataset.theme = storedTheme || systemTheme;
+            } catch (error) {
+                document.documentElement.dataset.theme = 'light';
+            }
+        })();
+    </script>
     <style>
         :root {
-            --bg: #f3f8fb;
+            color-scheme: light;
+            --bg-top: #f7fbfd;
+            --bg: #eef6fa;
             --panel: #ffffff;
+            --panel-elevated: #ffffff;
             --ink: #183642;
             --muted: #5c7985;
             --line: #d6e3ea;
@@ -15,20 +32,87 @@
             --brand-dark: #115e59;
             --accent: #f59e0b;
             --danger: #dc2626;
+            --header-bg: rgba(255, 255, 255, 0.92);
+            --sidebar-bg: rgba(255, 255, 255, 0.9);
+            --sidebar-soft: rgba(15, 118, 110, 0.08);
+            --sidebar-soft-strong: rgba(15, 118, 110, 0.12);
+            --sidebar-user-bg: linear-gradient(160deg, rgba(15, 118, 110, 0.12), rgba(245, 158, 11, 0.1));
+            --panel-border: rgba(214, 227, 234, 0.9);
+            --shadow: 0 18px 32px rgba(24, 54, 66, 0.08);
+            --shadow-strong: 0 24px 60px rgba(24, 54, 66, 0.24);
+            --soft-fill: rgba(15, 118, 110, 0.08);
+            --soft-fill-strong: rgba(15, 118, 110, 0.12);
+            --soft-fill-alt: rgba(245, 158, 11, 0.08);
+            --input-bg: #ffffff;
+            --footer-bg: rgba(255, 255, 255, 0.9);
+            --overlay: rgba(24, 54, 66, 0.48);
+            --sidebar-overlay-bg: rgba(24, 54, 66, 0.36);
+            --message-bg: rgba(15, 118, 110, 0.08);
+            --message-border: rgba(15, 118, 110, 0.16);
+            --danger-bg: rgba(220, 38, 38, 0.08);
+            --danger-border: rgba(220, 38, 38, 0.16);
+            --loading-bg: #64748b;
+            --watermark-opacity: 0.12;
             --sidebar-width: 272px;
+        }
+
+        html[data-theme="dark"] {
+            color-scheme: dark;
+            --bg-top: #0b1220;
+            --bg: #101827;
+            --panel: #121d30;
+            --panel-elevated: #162236;
+            --ink: #e6edf6;
+            --muted: #9eb1c4;
+            --line: rgba(148, 163, 184, 0.2);
+            --brand: #22c3a6;
+            --brand-dark: #7ee7d1;
+            --accent: #f6b74e;
+            --danger: #f87171;
+            --header-bg: rgba(10, 16, 29, 0.92);
+            --sidebar-bg: rgba(11, 18, 32, 0.9);
+            --sidebar-soft: rgba(34, 195, 166, 0.12);
+            --sidebar-soft-strong: rgba(34, 195, 166, 0.18);
+            --sidebar-user-bg: linear-gradient(160deg, rgba(34, 195, 166, 0.18), rgba(246, 183, 78, 0.14));
+            --panel-border: rgba(148, 163, 184, 0.18);
+            --shadow: 0 18px 32px rgba(2, 6, 23, 0.42);
+            --shadow-strong: 0 24px 60px rgba(2, 6, 23, 0.5);
+            --soft-fill: rgba(34, 195, 166, 0.12);
+            --soft-fill-strong: rgba(34, 195, 166, 0.18);
+            --soft-fill-alt: rgba(246, 183, 78, 0.14);
+            --input-bg: #0f1a2b;
+            --footer-bg: rgba(10, 16, 29, 0.94);
+            --overlay: rgba(2, 6, 23, 0.7);
+            --sidebar-overlay-bg: rgba(2, 6, 23, 0.62);
+            --message-bg: rgba(34, 195, 166, 0.14);
+            --message-border: rgba(34, 195, 166, 0.24);
+            --danger-bg: rgba(248, 113, 113, 0.14);
+            --danger-border: rgba(248, 113, 113, 0.24);
+            --loading-bg: #475569;
+            --watermark-opacity: 0.08;
         }
 
         * { box-sizing: border-box; }
 
         body {
+            position: relative;
+            isolation: isolate;
             margin: 0;
             font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-            background:
-                radial-gradient(circle at top left, rgba(15, 118, 110, 0.18), transparent 28%),
-                radial-gradient(circle at top right, rgba(245, 158, 11, 0.15), transparent 22%),
-                linear-gradient(180deg, #eef8fb 0%, var(--bg) 100%);
+            background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg) 100%);
             color: var(--ink);
             min-height: 100vh;
+            transition: background 0.2s ease, color 0.2s ease;
+        }
+
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            background: url("{% static 'legacy_img/tabuan-logo.png' %}") center 92px / min(72vw, 680px) auto no-repeat;
+            opacity: var(--watermark-opacity);
+            pointer-events: none;
+            z-index: -1;
         }
 
         body.sidebar-open {
@@ -42,8 +126,8 @@
             top: 0;
             z-index: 30;
             backdrop-filter: blur(14px);
-            background: rgba(255, 255, 255, 0.92);
-            border-bottom: 1px solid rgba(214, 227, 234, 0.9);
+            background: var(--header-bg);
+            border-bottom: 1px solid var(--panel-border);
         }
 
         .header-wrap {
@@ -55,6 +139,19 @@
         }
 
         .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .brand-logo {
+            width: 56px;
+            height: 56px;
+            object-fit: contain;
+            flex-shrink: 0;
+        }
+
+        .header-actions {
             display: flex;
             align-items: center;
             gap: 12px;
@@ -80,11 +177,67 @@
         .sidebar-toggle {
             border: 0;
             border-radius: 12px;
-            background: rgba(15, 118, 110, 0.08);
+            background: var(--sidebar-soft);
             color: var(--ink);
             padding: 10px 12px;
             cursor: pointer;
             font-size: 18px;
+        }
+
+        .theme-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 124px;
+            padding: 8px 12px;
+            border: 1px solid var(--panel-border);
+            border-radius: 999px;
+            background: var(--panel);
+            color: var(--ink);
+            box-shadow: var(--shadow);
+        }
+
+        .theme-toggle-track {
+            position: relative;
+            width: 42px;
+            height: 24px;
+            border-radius: 999px;
+            background: var(--soft-fill-strong);
+            flex: 0 0 auto;
+        }
+
+        .theme-toggle-knob {
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: var(--brand);
+            box-shadow: 0 4px 10px rgba(15, 23, 42, 0.2);
+            transition: transform 0.2s ease, background 0.2s ease;
+        }
+
+        html[data-theme="dark"] .theme-toggle-knob {
+            transform: translateX(18px);
+        }
+
+        .theme-toggle-copy {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            line-height: 1.1;
+        }
+
+        .theme-toggle-copy span {
+            font-size: 11px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .theme-toggle-copy strong {
+            font-size: 13px;
         }
 
         .top-nav {
@@ -99,7 +252,7 @@
         .nav-link-button {
             padding: 10px 14px;
             border-radius: 999px;
-            background: rgba(15, 118, 110, 0.08);
+            background: var(--sidebar-soft);
             color: var(--ink);
             font-size: 14px;
             transition: background 0.2s ease, color 0.2s ease;
@@ -127,7 +280,7 @@
         }
 
         .role-chip {
-            background: rgba(24, 54, 66, 0.08);
+            background: var(--soft-fill);
             color: var(--muted);
         }
 
@@ -156,23 +309,36 @@
             top: 78px;
             height: calc(100vh - 78px);
             padding: 24px 18px;
-            border-right: 1px solid rgba(214, 227, 234, 0.9);
-            background: rgba(255, 255, 255, 0.88);
+            border-right: 1px solid var(--panel-border);
+            background: var(--sidebar-bg);
             backdrop-filter: blur(16px);
             overflow-y: auto;
+            overflow-x: hidden;
         }
 
         .sidebar-panel {
+            position: relative;
             display: flex;
             flex-direction: column;
             gap: 18px;
+            isolation: isolate;
+        }
+
+        .sidebar-panel::before {
+            content: "";
+            position: absolute;
+            inset: 16px 12px;
+            background: url("{% static 'legacy_img/tabuan-logo.png' %}") center center / 88% auto no-repeat;
+            opacity: 0.4;
+            z-index: -1;
+            pointer-events: none;
         }
 
         .sidebar-user {
             padding: 18px;
             border-radius: 20px;
-            background: linear-gradient(160deg, rgba(15, 118, 110, 0.12), rgba(245, 158, 11, 0.1));
-            border: 1px solid rgba(214, 227, 234, 0.9);
+            background: var(--sidebar-user-bg);
+            border: 1px solid var(--panel-border);
         }
 
         .sidebar-user strong {
@@ -204,9 +370,31 @@
 
         .sidebar-link:hover,
         .sidebar-link.active {
-            background: rgba(15, 118, 110, 0.12);
+            background: var(--sidebar-soft-strong);
             color: var(--brand-dark);
             transform: translateX(2px);
+        }
+
+        .sidebar-link-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .sidebar-sublink {
+            margin-left: 14px;
+            padding: 8px 12px;
+            border-radius: 12px;
+            color: var(--muted);
+            background: color-mix(in srgb, var(--panel) 72%, transparent);
+            font-size: 13px;
+            transition: background 0.2s ease, color 0.2s ease;
+        }
+
+        .sidebar-sublink:hover,
+        .sidebar-sublink.active {
+            background: var(--sidebar-soft-strong);
+            color: var(--brand-dark);
         }
 
         .sidebar-footer {
@@ -215,6 +403,112 @@
 
         .app-main {
             min-width: 0;
+        }
+
+        .system-footer {
+            padding: 18px 24px;
+            border-top: 1px solid var(--panel-border);
+            background: var(--footer-bg);
+            color: var(--muted);
+            text-align: center;
+            font-size: 14px;
+        }
+
+        .transaction-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 100;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            background: var(--overlay);
+        }
+
+        .transaction-overlay.visible {
+            display: flex;
+        }
+
+        .transaction-panel {
+            width: min(440px, 100%);
+            padding: 26px;
+            border-radius: 8px;
+            background: var(--panel-elevated);
+            box-shadow: var(--shadow-strong);
+            text-align: center;
+        }
+
+        .transaction-spinner {
+            width: 54px;
+            height: 54px;
+            margin: 0 auto 18px;
+            border-radius: 50%;
+            border: 5px solid rgba(15, 118, 110, 0.16);
+            border-top-color: var(--brand);
+            animation: transactionSpin 0.8s linear infinite;
+        }
+
+        .transaction-progress {
+            height: 10px;
+            border-radius: 999px;
+            background: #e5e7eb;
+            overflow: hidden;
+            margin-top: 16px;
+        }
+
+        .transaction-progress-bar {
+            width: 25%;
+            height: 100%;
+            background: var(--brand);
+            transition: width 0.25s ease, background 0.25s ease;
+        }
+
+        .transaction-overlay.success .transaction-spinner {
+            border: 0;
+            background: #16a34a;
+            color: #fff;
+            animation: none;
+        }
+
+        .transaction-overlay.success .transaction-spinner::after {
+            content: "✓";
+            display: grid;
+            place-items: center;
+            width: 54px;
+            height: 54px;
+            font-size: 34px;
+            font-weight: 800;
+        }
+
+        .transaction-overlay.error .transaction-spinner {
+            border: 0;
+            background: var(--danger);
+            color: #fff;
+            animation: none;
+        }
+
+        .transaction-overlay.error .transaction-spinner::after {
+            content: "!";
+            display: grid;
+            place-items: center;
+            width: 54px;
+            height: 54px;
+            font-size: 34px;
+            font-weight: 800;
+        }
+
+        .btn.loading,
+        button.loading,
+        input[type="submit"].loading {
+            opacity: 0.68;
+            pointer-events: none;
+            background: var(--loading-bg);
+        }
+
+        @keyframes transactionSpin {
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         .page-wrap,
@@ -254,9 +548,9 @@
         .feature-card,
         .mini-card {
             background: var(--panel);
-            border: 1px solid rgba(214, 227, 234, 0.9);
+            border: 1px solid var(--panel-border);
             border-radius: 20px;
-            box-shadow: 0 18px 32px rgba(24, 54, 66, 0.08);
+            box-shadow: var(--shadow);
         }
 
         .card,
@@ -317,19 +611,36 @@
         .comparison-card {
             padding: 18px;
             border-radius: 18px;
-            background: rgba(15, 118, 110, 0.06);
-            border: 1px solid rgba(214, 227, 234, 0.9);
+            background: var(--soft-fill);
+            border: 1px solid var(--panel-border);
         }
 
         .comparison-card-secondary {
-            background: rgba(245, 158, 11, 0.08);
+            background: var(--soft-fill-alt);
         }
 
         .comparison-card h4 {
             margin-top: 0;
         }
 
-        .table-card { overflow-x: auto; }
+        .table-card { overflow: hidden; }
+
+        .table-shell {
+            width: 100%;
+            overflow-x: auto;
+        }
+
+        .table-shell table {
+            min-width: 100%;
+        }
+
+        .table-shell.table-shell-wide table {
+            min-width: 920px;
+        }
+
+        .table-shell.table-shell-xl table {
+            min-width: 1120px;
+        }
 
         table {
             width: 100%;
@@ -349,6 +660,26 @@
             font-size: 13px;
             text-transform: uppercase;
             letter-spacing: 0.05em;
+        }
+
+        .status-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            align-items: stretch;
+        }
+
+        .status-button {
+            min-width: 78px;
+            padding: 8px 10px;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+
+        .table-action-cell .btn,
+        .table-action-cell button,
+        .table-action-cell a {
+            white-space: nowrap;
         }
 
         .btn,
@@ -400,7 +731,7 @@
             padding: 11px 12px;
             border: 1px solid var(--line);
             border-radius: 12px;
-            background: #fff;
+            background: var(--input-bg);
             color: var(--ink);
         }
 
@@ -408,17 +739,17 @@
             max-width: 620px;
             margin: 64px auto;
             padding: 28px;
-            background: rgba(255, 255, 255, 0.96);
-            border: 1px solid rgba(214, 227, 234, 0.9);
+            background: color-mix(in srgb, var(--panel) 96%, transparent);
+            border: 1px solid var(--panel-border);
             border-radius: 22px;
-            box-shadow: 0 18px 34px rgba(24, 54, 66, 0.1);
+            box-shadow: var(--shadow);
         }
 
         .message {
             padding: 12px 14px;
             border-radius: 14px;
-            background: rgba(15, 118, 110, 0.08);
-            border: 1px solid rgba(15, 118, 110, 0.16);
+            background: var(--message-bg);
+            border: 1px solid var(--message-border);
             color: var(--brand-dark);
             margin-bottom: 10px;
         }
@@ -432,8 +763,8 @@
             margin-bottom: 14px;
             padding: 12px 14px;
             border-radius: 14px;
-            background: rgba(15, 118, 110, 0.08);
-            border: 1px solid rgba(15, 118, 110, 0.16);
+            background: var(--message-bg);
+            border: 1px solid var(--message-border);
             color: var(--brand-dark);
         }
 
@@ -443,8 +774,8 @@
         }
 
         .status-feedback.error {
-            background: rgba(220, 38, 38, 0.08);
-            border-color: rgba(220, 38, 38, 0.16);
+            background: var(--danger-bg);
+            border-color: var(--danger-border);
         }
 
         .field-error {
@@ -458,7 +789,7 @@
             align-items: center;
             padding: 8px 12px;
             border-radius: 999px;
-            background: rgba(15, 118, 110, 0.12);
+            background: var(--soft-fill-strong);
             color: var(--brand-dark);
             font-size: 13px;
             font-weight: 600;
@@ -502,7 +833,7 @@
         .sidebar-overlay {
             position: fixed;
             inset: 0;
-            background: rgba(24, 54, 66, 0.36);
+            background: var(--sidebar-overlay-bg);
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.2s ease;
@@ -515,8 +846,9 @@
         }
 
         @media (max-width: 1180px) {
-            .top-nav {
-                display: none;
+            .header-actions {
+                flex-wrap: wrap;
+                justify-content: flex-end;
             }
         }
 
@@ -550,6 +882,70 @@
             }
         }
 
+        @media (max-width: 760px) {
+            .table-shell[data-stack-on-mobile="true"] table,
+            .table-shell[data-stack-on-mobile="true"] thead,
+            .table-shell[data-stack-on-mobile="true"] tbody,
+            .table-shell[data-stack-on-mobile="true"] th,
+            .table-shell[data-stack-on-mobile="true"] td,
+            .table-shell[data-stack-on-mobile="true"] tr {
+                display: block;
+                width: 100%;
+            }
+
+            .table-shell[data-stack-on-mobile="true"] thead {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                padding: 0;
+                margin: -1px;
+                overflow: hidden;
+                clip: rect(0, 0, 0, 0);
+                white-space: nowrap;
+                border: 0;
+            }
+
+            .table-shell[data-stack-on-mobile="true"] tbody tr {
+                padding: 16px 0;
+                border-bottom: 1px solid var(--line);
+            }
+
+            .table-shell[data-stack-on-mobile="true"] tbody tr:last-child {
+                border-bottom: 0;
+            }
+
+            .table-shell[data-stack-on-mobile="true"] td {
+                display: grid;
+                grid-template-columns: minmax(108px, 128px) minmax(0, 1fr);
+                gap: 12px;
+                padding: 0 0 10px;
+                border-bottom: 0;
+                align-items: start;
+            }
+
+            .table-shell[data-stack-on-mobile="true"] td:last-child {
+                padding-bottom: 0;
+            }
+
+            .table-shell[data-stack-on-mobile="true"] td::before {
+                content: attr(data-label);
+                color: var(--muted);
+                font-size: 12px;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.04em;
+            }
+
+            .table-shell[data-stack-on-mobile="true"] td.empty-state {
+                display: block;
+                padding: 0;
+            }
+
+            .table-shell[data-stack-on-mobile="true"] td.empty-state::before {
+                content: none;
+            }
+        }
+
         @media (min-width: 961px) {
             .sidebar-toggle {
                 display: none;
@@ -563,34 +959,32 @@
         <div class="header-wrap">
             <div class="header-brand">
                 {% if user.is_authenticated %}
-                    <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="Toggle sidebar">☰</button>
+                    <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="Toggle sidebar">&#9776;</button>
                 {% endif %}
+                <img src="{% static 'legacy_img/tabuan-logo.png' %}" alt="Tabuan Water Billing System Logo" class="brand-logo">
                 <div class="brand-block">
-                    <strong>Tabuan Water Billing </strong>
-                    <span>Responsive billing, reading, payments, and profile management</span>
+                    <strong>Tabuan Water Billing</strong>
+                    <span>System v1.26 | 2026 | Created by Omale J. Ohn</span>
                 </div>
             </div>
-            <nav class="top-nav">
-                {% if user.is_authenticated %}
-                    {% for item in navigation_items %}
-                        <a href="{% url item.url_name %}" class="{% if item.active %}active{% endif %}">
-                            {{ item.label }}
-                            {% if item.url_name == 'notifications' and unread_notifications %}
-                                <span class="badge">{{ unread_notifications }}</span>
-                            {% endif %}
-                        </a>
-                    {% endfor %}
-                    <form method="post" action="{% url 'logout' %}" class="nav-inline-form">
-                        {% csrf_token %}
-                        <button type="submit" class="nav-link-button">Logout</button>
-                    </form>
-                    <span class="role-chip">{{ current_profile.get_role_display|default:current_role|title }}</span>
-                {% else %}
-                    <a href="{% url 'home' %}">Home</a>
-                    <a href="{% url 'login' %}">Login</a>
-                    <a href="{% url 'signup' %}">Sign Up</a>
-                {% endif %}
-            </nav>
+            <div class="header-actions">
+                <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Switch theme">
+                    <span class="theme-toggle-track" aria-hidden="true">
+                        <span class="theme-toggle-knob"></span>
+                    </span>
+                    <span class="theme-toggle-copy">
+                        <span>Theme</span>
+                        <strong id="theme-toggle-label">Light</strong>
+                    </span>
+                </button>
+                <nav class="top-nav">
+                    {% if not user.is_authenticated %}
+                        <a href="{% url 'home' %}">Home</a>
+                        <a href="{% url 'login' %}">Login</a>
+                        <a href="{% url 'signup' %}">Sign Up</a>
+                    {% endif %}
+                </nav>
+            </div>
         </div>
     </header>
 
@@ -605,12 +999,17 @@
                     </div>
                     <nav class="sidebar-nav">
                         {% for item in navigation_items %}
-                            <a href="{% url item.url_name %}" class="sidebar-link {% if item.active %}active{% endif %}">
-                                <span>{{ item.label }}</span>
-                                {% if item.url_name == 'notifications' and unread_notifications %}
-                                    <span class="badge">{{ unread_notifications }}</span>
+                            <div class="sidebar-link-stack">
+                                <a href="{% url item.url_name %}" class="sidebar-link {% if item.active %}active{% endif %}">
+                                    <span>{{ item.label }}</span>
+                                    {% if item.url_name == 'notifications' and unread_notifications %}
+                                        <span class="badge">{{ unread_notifications }}</span>
+                                    {% endif %}
+                                </a>
+                                {% if item.url_name == 'profile' %}
+                                    <a href="{% url 'profile' %}" class="sidebar-sublink {% if current_url_name == 'profile' %}active{% endif %}">Update Profile</a>
                                 {% endif %}
-                            </a>
+                            </div>
                         {% endfor %}
                     </nav>
                     <div class="sidebar-footer">
@@ -638,6 +1037,48 @@
         </div>
     {% endif %}
 
+    <div class="transaction-overlay" id="transaction-overlay" aria-hidden="true">
+        <div class="transaction-panel" role="status" aria-live="polite">
+            <div class="transaction-spinner"></div>
+            <h3 id="transaction-title">Processing</h3>
+            <p class="muted" id="transaction-message">Please wait while the transaction is being processed.</p>
+            <div class="transaction-progress">
+                <div class="transaction-progress-bar" id="transaction-progress-bar"></div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="system-footer">System v1.26 | 2026 | Created by Omale J. Ohn</footer>
+
+    <script>
+        (function () {
+            const root = document.documentElement;
+            const toggle = document.getElementById('theme-toggle');
+            const label = document.getElementById('theme-toggle-label');
+
+            function applyTheme(theme) {
+                root.dataset.theme = theme;
+                if (label) {
+                    label.textContent = theme === 'dark' ? 'Dark' : 'Light';
+                }
+                window.dispatchEvent(new CustomEvent('themechange', { detail: { theme: theme } }));
+            }
+
+            applyTheme(root.dataset.theme || 'light');
+
+            if (toggle) {
+                toggle.addEventListener('click', function () {
+                    const nextTheme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+                    applyTheme(nextTheme);
+                    try {
+                        localStorage.setItem('waterbilling-theme', nextTheme);
+                    } catch (error) {
+                        console.error(error);
+                    }
+                });
+            }
+        })();
+    </script>
     <script>
         (function () {
             const toggle = document.getElementById('sidebar-toggle');
@@ -661,6 +1102,48 @@
             });
         })();
     </script>
+    <script>
+        (function () {
+            const overlay = document.getElementById('transaction-overlay');
+            const title = document.getElementById('transaction-title');
+            const message = document.getElementById('transaction-message');
+            const bar = document.getElementById('transaction-progress-bar');
+
+            window.showTransactionOverlay = function (nextTitle, nextMessage, percent, state) {
+                if (!overlay) return;
+                overlay.classList.add('visible');
+                overlay.classList.toggle('success', state === 'success');
+                overlay.classList.toggle('error', state === 'error');
+                overlay.setAttribute('aria-hidden', 'false');
+                if (title) title.textContent = nextTitle || 'Processing';
+                if (message) message.textContent = nextMessage || 'Please wait while the transaction is being processed.';
+                if (bar) {
+                    bar.style.width = `${percent || 25}%`;
+                    bar.style.background = state === 'error' ? 'var(--danger)' : state === 'success' ? '#16a34a' : 'var(--brand)';
+                }
+            };
+
+            window.hideTransactionOverlay = function () {
+                if (!overlay) return;
+                overlay.classList.remove('visible', 'success', 'error');
+                overlay.setAttribute('aria-hidden', 'true');
+            };
+
+            document.querySelectorAll('form[data-transaction-form]').forEach(function (form) {
+                form.addEventListener('submit', function () {
+                    const button = form.querySelector('button[type="submit"], input[type="submit"]');
+                    if (button) {
+                        button.classList.add('loading');
+                        button.disabled = true;
+                        if (button.tagName === 'BUTTON') button.dataset.originalText = button.textContent;
+                        if (button.tagName === 'BUTTON') button.textContent = 'Processing...';
+                    }
+                    window.showTransactionOverlay('Processing Transaction', 'Submitting your request. Please wait.', 35);
+                });
+            });
+        })();
+    </script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>
+

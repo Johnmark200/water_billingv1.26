@@ -7,6 +7,19 @@ from django.db.models import Sum
 from django.utils import timezone
 
 
+def calculate_usage_m3(previous_reading, current_reading):
+    previous_value = previous_reading or Decimal('0')
+    current_value = current_reading or Decimal('0')
+    usage_value = current_value - previous_value
+
+    # Readers may enter the actual current meter figure or the current-cycle usage.
+    # When the new input is lower than the prior snapshot, bill the entered amount.
+    if usage_value < 0:
+        return current_value
+
+    return usage_value
+
+
 class ConsumerProfile(models.Model):
     class Roles(models.TextChoices):
         ADMIN = 'admin', 'Admin'
@@ -129,15 +142,12 @@ class BillingRecord(models.Model):
     def save(self, *args, **kwargs):
         if self.billing_month:
             self.billing_month = self.billing_month.replace(day=1)
-        self.usage_m3 = (self.current_reading or Decimal('0')) - (self.previous_reading or Decimal('0'))
-        if self.usage_m3 < 0:
-            self.usage_m3 = Decimal('0')
-
+        self.usage_m3 = calculate_usage_m3(self.previous_reading, self.current_reading)
         self.total_amount = self.usage_m3 * (self.rate_per_m3 or Decimal('0'))
         today = timezone.localdate()
         if self.total_amount > 0 and self.amount_paid >= self.total_amount:
             self.status = self.Statuses.PAID
-        elif self.due_date and self.due_date < today:
+        elif self.amount_due > 0 and self.due_date and self.due_date < today:
             self.status = self.Statuses.OVERDUE
         else:
             self.status = self.Statuses.PENDING
@@ -161,9 +171,14 @@ class Payment(models.Model):
         PAYMAYA = 'paymaya', 'PayMaya'
         BANK = 'bank', 'Bank'
 
+    class PaymentOptions(models.TextChoices):
+        FULL = 'full', 'Full Payment'
+        PARTIAL = 'partial', 'Partial Payment'
+
     consumer = models.ForeignKey(Consumer, on_delete=models.CASCADE, related_name='payments')
     billing = models.ForeignKey(BillingRecord, on_delete=models.SET_NULL, null=True, blank=True, related_name='payments')
     payment_method = models.CharField(max_length=20, choices=Methods.choices, default=Methods.CASH)
+    payment_option = models.CharField(max_length=20, choices=PaymentOptions.choices, default=PaymentOptions.FULL)
     amount_paid = models.DecimalField(max_digits=10, decimal_places=2)
     discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     payment_date = models.DateField()
@@ -242,9 +257,7 @@ class MeterReading(models.Model):
 
     def save(self, *args, **kwargs):
         self.billing_month = self.reading_date.replace(day=1)
-        self.usage_m3 = (self.current_reading or Decimal('0')) - (self.previous_reading or Decimal('0'))
-        if self.usage_m3 < 0:
-            self.usage_m3 = Decimal('0')
+        self.usage_m3 = calculate_usage_m3(self.previous_reading, self.current_reading)
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -345,3 +358,25 @@ class SMSBlast(models.Model):
 
     def __str__(self):
         return f'SMS Blast - {self.get_audience_display()}'
+
+
+class AuditLog(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='billing_audit_logs',
+    )
+    role = models.CharField(max_length=30, blank=True)
+    action = models.CharField(max_length=120)
+    target = models.CharField(max_length=255, blank=True)
+    details = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        actor = self.user.username if self.user_id else 'System'
+        return f'{actor} - {self.action}'

@@ -3,16 +3,10 @@
 {% block content %}
 <section class="page-wrap">
     <div class="card">
-        <h2 class="page-title">Live Communications Control </h2>
-        <p class="muted">Send your announcements through communication blasts send through the real email and SMS providers below.</p>
+        <h2 class="page-title">Live Communications Control</h2>
+        <p class="muted">Send announcements, payment confirmations, reminders, and alerts through the configured email and SMS providers. Every successful or failed send is logged below.</p>
         <div class="grid-2">
-            <div>
-               
-            </div>
-            <div>
-              
-                </ul>
-            </div>
+          
         </div>
     </div>
 </section>
@@ -21,7 +15,7 @@
 <section class="page-wrap grid-2">
     <div class="form-card" style="margin: 0; max-width: none;">
         <h2 class="page-title">Send SMS Blast</h2>
-        <p class="muted">Admin-only communication tool for sending bulk SMS updates to selected consumer groups through the configured SMS provider.</p>
+        <p class="muted">Send bulk SMS updates to selected consumer groups through the configured SMS provider.</p>
         <form method="post">
             {% csrf_token %}
             <input type="hidden" name="action" value="sms">
@@ -40,7 +34,30 @@
         </form>
     </div>
 </section>
-
+{% comment %}
+<section class="page-wrap grid-2">
+    <div class="form-card" style="margin: 0; max-width: none;">
+        <h2 class="page-title">Test SMS Environment</h2>
+        <p class="muted">Send a single test SMS through the configured provider. The result is written to the outbound notification log.</p>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="test_sms">
+            {{ test_sms_form.as_p }}
+            <button type="submit" class="btn secondary">Send Test SMS</button>
+        </form>
+    </div>
+    <div class="form-card" style="margin: 0; max-width: none;">
+        <h2 class="page-title">Test Email Environment</h2>
+        <p class="muted">Send a single test email through the configured provider and log the success or failure response.</p>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="test_email">
+            {{ test_email_form.as_p }}
+            <button type="submit" class="btn secondary">Send Test Email</button>
+        </form>
+    </div>
+</section>
+{% endcomment %}
 <section class="page-wrap grid-2">
     <div class="table-card">
         <h3>Recent SMS Blasts</h3>

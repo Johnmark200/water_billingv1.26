@@ -1,0 +1,13 @@
+{% for bill in recent_billings %}
+    <tr>
+        <td data-label="Consumer">{{ bill.consumer.full_name }}</td>
+        <td data-label="Month">{{ bill.billing_month|date:'F Y' }}</td>
+        <td data-label="Previous">{{ bill.previous_reading }}</td>
+        <td data-label="Current">{{ bill.current_reading }}</td>
+        <td data-label="Usage">{{ bill.usage_m3 }} m3</td>
+        <td data-label="Total">&#8369;{{ bill.total_amount }}</td>
+        <td data-label="Status">{{ bill.get_status_display }}</td>
+    </tr>
+{% empty %}
+    <tr><td colspan="7" class="empty-state">No linked billing records are available yet.</td></tr>
+{% endfor %}

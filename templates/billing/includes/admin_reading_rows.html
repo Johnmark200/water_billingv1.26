@@ -1,0 +1,10 @@
+{% for reading in recent_readings %}
+    <tr>
+        <td data-label="Consumer">{{ reading.consumer.full_name }}</td>
+        <td data-label="Current">{{ reading.current_reading }}</td>
+        <td data-label="Usage">{{ reading.usage_m3 }} m3</td>
+        <td data-label="Submitted By">{{ reading.submitted_by.username|default:'System' }}</td>
+    </tr>
+{% empty %}
+    <tr><td colspan="4" class="empty-state">No reading activity available.</td></tr>
+{% endfor %}

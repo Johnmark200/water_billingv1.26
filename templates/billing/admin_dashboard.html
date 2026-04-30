@@ -1,29 +1,228 @@
 {% extends 'base.html' %}
 {% block title %}Admin Panel{% endblock %}
+{% block extra_css %}
+<style>
+    :root {
+        --admin-monitor-card: #ffffff;
+        --admin-monitor-border: rgba(214, 227, 234, 0.95);
+        --admin-monitor-shadow: 0 18px 34px rgba(24, 54, 66, 0.08);
+        --admin-monitor-ink: #183642;
+        --admin-monitor-muted: #5c7985;
+        --admin-monitor-chip-bg: rgba(15, 118, 110, 0.1);
+        --admin-monitor-chip-ink: #115e59;
+        --admin-monitor-grid: rgba(92, 121, 133, 0.18);
+        --admin-monitor-track: rgba(92, 121, 133, 0.12);
+        --admin-monitor-hole: #ffffff;
+        --admin-monitor-usage: #3ea0ff;
+        --admin-monitor-bill: #ff905f;
+        --admin-monitor-paid: #22c55e;
+        --admin-monitor-overdue: #ef4444;
+    }
+
+    html[data-theme="dark"] {
+        --admin-monitor-card: #162236;
+        --admin-monitor-border: rgba(148, 163, 184, 0.18);
+        --admin-monitor-shadow: 0 22px 40px rgba(2, 6, 23, 0.42);
+        --admin-monitor-ink: #f8fafc;
+        --admin-monitor-muted: #b8bfdb;
+        --admin-monitor-chip-bg: rgba(148, 163, 184, 0.14);
+        --admin-monitor-chip-ink: #d8ddf5;
+        --admin-monitor-grid: rgba(184, 191, 219, 0.14);
+        --admin-monitor-track: rgba(148, 163, 184, 0.14);
+        --admin-monitor-hole: #162236;
+    }
+
+    .admin-monitor-grid {
+        display: grid;
+        grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+        gap: 18px;
+    }
+
+    .admin-monitor-card {
+        min-height: 100%;
+        padding: 22px;
+        border-radius: 20px;
+        background: var(--admin-monitor-card);
+        border: 1px solid var(--admin-monitor-border);
+        box-shadow: var(--admin-monitor-shadow);
+        color: var(--admin-monitor-ink);
+    }
+
+    .admin-monitor-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 12px;
+        margin-bottom: 18px;
+    }
+
+    .admin-monitor-head h3 {
+        margin: 0 0 4px;
+    }
+
+    .admin-monitor-head p,
+    .admin-monitor-card span {
+        color: var(--admin-monitor-muted);
+    }
+
+    .admin-monitor-chip {
+        display: inline-flex;
+        align-items: center;
+        padding: 7px 10px;
+        border-radius: 999px;
+        background: var(--admin-monitor-chip-bg);
+        color: var(--admin-monitor-chip-ink);
+        font-size: 12px;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
+    .admin-monitor-donut-shell {
+        display: grid;
+        place-items: center;
+        min-height: 230px;
+    }
+
+    #admin-status-donut,
+    #admin-usage-trend-chart {
+        width: 100%;
+        display: block;
+    }
+
+    .admin-monitor-donut-copy {
+        text-align: center;
+        margin-top: -4px;
+    }
+
+    .admin-monitor-donut-copy strong {
+        display: block;
+        font-size: 42px;
+        line-height: 1;
+        color: var(--admin-monitor-ink);
+    }
+
+    .admin-monitor-status-list {
+        margin-top: 18px;
+        display: grid;
+        gap: 14px;
+    }
+
+    .admin-monitor-status-row {
+        display: grid;
+        gap: 8px;
+    }
+
+    .admin-monitor-status-copy,
+    .admin-monitor-meta-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        font-size: 14px;
+    }
+
+    .admin-monitor-status-copy strong,
+    .admin-monitor-meta-row strong {
+        color: var(--admin-monitor-ink);
+    }
+
+    .admin-monitor-track {
+        height: 10px;
+        border-radius: 999px;
+        background: var(--admin-monitor-track);
+        overflow: hidden;
+    }
+
+    .admin-monitor-fill {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+    }
+
+    .admin-monitor-fill.paid { background: var(--admin-monitor-usage); }
+    .admin-monitor-fill.pending { background: var(--admin-monitor-bill); }
+    .admin-monitor-fill.overdue { background: var(--admin-monitor-overdue); }
+
+    .admin-monitor-meta-row {
+        padding-top: 6px;
+        border-top: 1px solid var(--line);
+    }
+
+    .admin-monitor-legend {
+        display: flex;
+        gap: 18px;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-top: 12px;
+        font-size: 13px;
+    }
+
+    .admin-monitor-legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--admin-monitor-muted);
+    }
+
+    .admin-monitor-legend i {
+        width: 18px;
+        height: 4px;
+        border-radius: 999px;
+        display: inline-block;
+    }
+
+    .admin-monitor-legend i.usage { background: var(--admin-monitor-usage); }
+    .admin-monitor-legend i.bill { background: var(--admin-monitor-bill); }
+    .admin-monitor-legend i.paid { background: var(--admin-monitor-paid); }
+
+    .admin-panel-grid {
+        align-items: start;
+    }
+
+    @media (max-width: 980px) {
+        .admin-monitor-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
 {% block content %}
 <section class="page-wrap">
-    <div class="toolbar" style="justify-content: space-between; margin-bottom: 20px;">
-        <div>
-            <h2 class="page-title">Admin Panel</h2>
-            <p class="muted">Full system access for consumer management, communications, payment monitoring, and monthly analytics.</p>
-        </div>
-        <div class="toolbar">
-            <a href="{% url 'communications' %}" class="btn">Send Notifications</a>
-            <a href="{% url 'payment_settings' %}" class="btn secondary">Configure Payments</a>
-        </div>
-    </div>
+    <h2 class="page-title">Admin Panel</h2>
+    <p class="muted">Full system access for consumer management, communications, payment monitoring, and monthly analytics.</p>
     <div class="stats-grid">
-        <div class="mini-card"><h3>Total Consumers</h3><p>{{ total_consumers }}</p></div>
-        <div class="mini-card"><h3>Active Connections</h3><p>{{ active_connections }}</p></div>
+        <div class="mini-card"><h3>Total Consumers</h3><p data-total-consumers>{{ total_consumers }}</p></div>
+        <div class="mini-card"><h3>Active Connections</h3><p data-active-connections>{{ active_connections }}</p></div>
         <div class="mini-card"><h3>Pending Payments</h3><p data-pending-payments-count>{{ pending_payments }}</p></div>
-        <div class="mini-card"><h3>Overdue Bills</h3><p>{{ overdue_bills }}</p></div>
+        <div class="mini-card"><h3>Overdue Bills</h3><p data-overdue-bills>{{ overdue_bills }}</p></div>
     </div>
 </section>
 
-<section class="page-wrap grid-2">
+<section id="admin-monitoring-section">
+    {% include 'billing/includes/admin_monitoring_section.html' %}
+</section>
+
+<section class="page-wrap grid-3">
+    <div class="card">
+        <h3>Email API</h3>
+        <p class="status-chip">{{ delivery_config.email_configured|yesno:'Configured,Needs Setup' }}</p>
+        <p class="muted">{{ delivery_config.email_provider_label }} handles payment confirmations and notification emails.</p>
+    </div>
+    <div class="card">
+        <h3>SMS API</h3>
+        <p class="status-chip">{{ delivery_config.sms_configured|yesno:'Configured,Needs Setup' }}</p>
+        <p class="muted">{{ delivery_config.sms_provider_label }} handles OTP-ready SMS, payment alerts, and blast logs.</p>
+    </div>
+    <div class="card">
+        <h3>Payment Gateway</h3>
+        <p class="status-chip">{{ paymongo_configured|yesno:'Configured,Needs Setup' }}</p>
+        <p class="muted">PayMongo online payment references and statuses are stored on payment records.</p>
+    </div>
+</section>
+
+<section class="page-wrap grid-2 admin-panel-grid">
     <div class="table-card">
         <h3>{{ current_month|date:'F Y' }} Sales Snapshot</h3>
-        <p><strong>Total billed:</strong> &#8369;{{ monthly_billed }}</p>
+        <p><strong>Total billed:</strong> <span data-monthly-billed-total>PHP {{ monthly_billed }}</span></p>
         <p><strong>Total collected:</strong> <span data-monthly-collected-total>PHP {{ monthly_collected }}</span></p>
         <p><strong>Cash enabled:</strong> {{ system_settings.enable_cash_payments|yesno:'Yes,No' }}</p>
         <p><strong>Online enabled:</strong> {{ system_settings.enable_online_payments|yesno:'Yes,No' }}</p>
@@ -31,111 +230,261 @@
     </div>
     <div class="table-card">
         <h3>Recent SMS Blasts</h3>
-        <table>
-            <thead><tr><th>Audience</th><th>Status</th><th>Sent</th><th>Failed</th></tr></thead>
-            <tbody>
-                {% for blast in recent_blasts %}
-                    <tr>
-                        <td>{{ blast.get_audience_display }}</td>
-                        <td>{{ blast.get_status_display }}</td>
-                        <td>{{ blast.sent_count }}</td>
-                        <td>{{ blast.failed_count }}</td>
-                    </tr>
-                {% empty %}
-                    <tr><td colspan="4" class="empty-state">No SMS blasts have been recorded yet.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        <div class="table-shell table-shell-wide">
+            <table>
+                <thead><tr><th>Audience</th><th>Status</th><th>Sent</th><th>Failed</th></tr></thead>
+                <tbody>
+                    {% for blast in recent_blasts %}
+                        <tr>
+                            <td>{{ blast.get_audience_display }}</td>
+                            <td>{{ blast.get_status_display }}</td>
+                            <td>{{ blast.sent_count }}</td>
+                            <td>{{ blast.failed_count }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="4" class="empty-state">No SMS blasts have been recorded yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </section>
 
-<section class="page-wrap grid-2">
+<section class="page-wrap grid-2 admin-panel-grid">
     <div class="table-card">
         <h3>Recent Payments</h3>
         <p class="muted">Change a payment status here to update the linked consumer account immediately and send the status update through the configured notification providers.</p>
         <div class="status-feedback" data-payment-status-feedback hidden></div>
-        <table>
-            <thead><tr><th>Consumer</th><th>Method</th><th>Amount</th><th>Status</th><th>Bill Status</th><th>Email</th><th>SMS</th><th>Update</th></tr></thead>
-            <tbody>
-                {% for payment in recent_payments %}
-                    <tr>
-                        <td>{{ payment.consumer.full_name }}</td>
-                        <td>{{ payment.get_payment_method_display }}</td>
-                        <td>&#8369;{{ payment.amount_paid }}</td>
-                        <td class="payment-status-display">{{ payment.get_status_display }}</td>
-                        <td class="billing-status-display">{% if payment.billing %}{{ payment.billing.get_status_display }}{% else %}-{% endif %}</td>
-                        <td class="email-notification-display">-</td>
-                        <td class="sms-notification-display">-</td>
-                        <td>
-                            <form method="post" class="payment-status-form status-actions" data-url="{% url 'update_payment_status' payment.id %}" data-current-status="{{ payment.status }}">
-                                {% csrf_token %}
-                                {% for value, label in payment_status_choices %}
-                                    <button
-                                        type="submit"
-                                        name="status"
-                                        value="{{ value }}"
-                                        class="status-button {% if payment.status == value %}active{% endif %}"
-                                        {% if payment.status == value %}disabled{% endif %}
-                                    >
-                                        {{ label }}
-                                    </button>
-                                {% endfor %}
-                            </form>
-                        </td>
-                    </tr>
-                {% empty %}
-                    <tr><td colspan="8" class="empty-state">No payments recorded yet.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        <div class="table-shell table-shell-xl" data-stack-on-mobile="true">
+            <table>
+                <thead><tr><th>Consumer</th><th>Method</th><th>Option</th><th>Amount</th><th>Status</th><th>Bill Status</th><th>Email</th><th>SMS</th><th>Receipt</th><th>Update</th></tr></thead>
+                <tbody id="admin-payment-rows">
+                    {% include 'billing/includes/admin_payment_rows.html' %}
+                </tbody>
+            </table>
+        </div>
     </div>
     <div class="table-card">
         <h3>Recent Billing Records</h3>
-        <table>
-            <thead><tr><th>Consumer</th><th>Month</th><th>Total</th><th>Status</th></tr></thead>
-            <tbody>
-                {% for bill in recent_bills %}
-                    <tr>
-                        <td>{{ bill.consumer.full_name }}</td>
-                        <td>{{ bill.billing_month|date:'F Y' }}</td>
-                        <td>&#8369;{{ bill.total_amount }}</td>
-                        <td>{{ bill.get_status_display }}</td>
-                    </tr>
-                {% empty %}
-                    <tr><td colspan="4" class="empty-state">No billing activity available.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        <div class="table-shell table-shell-wide" data-stack-on-mobile="true">
+            <table>
+                <thead><tr><th>Consumer</th><th>Month</th><th>Total</th><th>Status</th></tr></thead>
+                <tbody id="admin-billing-rows">
+                    {% include 'billing/includes/admin_billing_rows.html' %}
+                </tbody>
+            </table>
+        </div>
     </div>
     <div class="table-card">
         <h3>Recent Meter Readings</h3>
-        <table>
-            <thead><tr><th>Consumer</th><th>Current</th><th>Usage</th><th>Submitted By</th></tr></thead>
-            <tbody>
-                {% for reading in recent_readings %}
-                    <tr>
-                        <td>{{ reading.consumer.full_name }}</td>
-                        <td>{{ reading.current_reading }}</td>
-                        <td>{{ reading.usage_m3 }} m3</td>
-                        <td>{{ reading.submitted_by.username|default:'System' }}</td>
-                    </tr>
-                {% empty %}
-                    <tr><td colspan="4" class="empty-state">No reading activity available.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        <div class="table-shell table-shell-wide" data-stack-on-mobile="true">
+            <table>
+                <thead><tr><th>Consumer</th><th>Current</th><th>Usage</th><th>Submitted By</th></tr></thead>
+                <tbody id="admin-reading-rows">
+                    {% include 'billing/includes/admin_reading_rows.html' %}
+                </tbody>
+            </table>
+        </div>
     </div>
     <div class="card">
-        <h3>Admin Tools</h3>
-        <p>Use the communications page to send SMS or email campaigns, the payment settings page to configure consumer payment channels, and the billing pages to manage full account data.</p>
-        <div class="btn-row" style="margin-top: 16px;">
-            <a href="{% url 'consumers' %}" class="btn secondary">Manage Consumers</a>
-            <a href="{% url 'payments' %}" class="btn secondary">Monitor Payments</a>
-            <a href="{% url 'reports' %}" class="btn secondary">View Reports</a>
-        </div>
+        <h3>Recent Audit Trail</h3>
+        {% for item in recent_audit_logs %}
+            <p><strong>{{ item.action }}</strong><br><span class="muted">{{ item.user.username|default:'System' }} | {{ item.created_at|date:'Y-m-d H:i' }}</span></p>
+        {% empty %}
+            <p class="empty-state">No audited staff activity has been recorded yet.</p>
+        {% endfor %}
     </div>
 </section>
 {% endblock %}
 {% block extra_js %}
     {% include 'billing/includes/payment_status_script.html' %}
+    <script>
+        (function () {
+            const monitoringSection = document.getElementById('admin-monitoring-section');
+            const paymentRows = document.getElementById('admin-payment-rows');
+            const billingRows = document.getElementById('admin-billing-rows');
+            const readingRows = document.getElementById('admin-reading-rows');
+
+            function renderAdminStatusDonut(svg, counts, summary) {
+                if (!svg) return;
+
+                const styles = getComputedStyle(document.documentElement);
+                const paid = Number(counts.paid || 0);
+                const pending = Number(counts.pending || 0);
+                const overdue = Number(counts.overdue || 0);
+                const total = paid + pending + overdue;
+                const radius = 78;
+                const circumference = 2 * Math.PI * radius;
+                const center = 110;
+                const segments = [
+                    { value: paid, color: styles.getPropertyValue('--admin-monitor-usage').trim() || '#3ea0ff' },
+                    { value: pending, color: styles.getPropertyValue('--admin-monitor-bill').trim() || '#ff905f' },
+                    { value: overdue, color: styles.getPropertyValue('--admin-monitor-overdue').trim() || '#ef4444' }
+                ];
+                const trackColor = styles.getPropertyValue('--admin-monitor-track').trim() || 'rgba(92, 121, 133, 0.12)';
+                const holeColor = styles.getPropertyValue('--admin-monitor-hole').trim() || '#ffffff';
+                const textColor = styles.getPropertyValue('--admin-monitor-ink').trim() || '#183642';
+                const mutedColor = styles.getPropertyValue('--admin-monitor-muted').trim() || '#5c7985';
+
+                let offset = 0;
+                const arcs = segments.map(function (segment) {
+                    const length = total ? (segment.value / total) * circumference : 0;
+                    const arc = `<circle cx="${center}" cy="${center}" r="${radius}" fill="none" stroke="${segment.color}" stroke-width="22" stroke-linecap="round" stroke-dasharray="${length} ${circumference - length}" stroke-dashoffset="${-offset}" transform="rotate(-90 ${center} ${center})"></circle>`;
+                    offset += length;
+                    return arc;
+                }).join('');
+
+                svg.innerHTML = `
+                    <circle cx="${center}" cy="${center}" r="${radius}" fill="none" stroke="${trackColor}" stroke-width="22"></circle>
+                    ${arcs}
+                    <circle cx="${center}" cy="${center}" r="54" fill="${holeColor}"></circle>
+                    <text x="${center}" y="${center - 4}" text-anchor="middle" fill="${textColor}" font-size="28" font-weight="700">${summary.paid_ratio || 0}%</text>
+                    <text x="${center}" y="${center + 22}" text-anchor="middle" fill="${mutedColor}" font-size="12">paid</text>
+                `;
+            }
+
+            function renderAdminTrendChart(svg, points) {
+                if (!svg) return;
+
+                const styles = getComputedStyle(document.documentElement);
+                const usageColor = styles.getPropertyValue('--admin-monitor-usage').trim() || '#3ea0ff';
+                const billColor = styles.getPropertyValue('--admin-monitor-bill').trim() || '#ff905f';
+                const paidColor = styles.getPropertyValue('--admin-monitor-paid').trim() || '#22c55e';
+                const gridColor = styles.getPropertyValue('--admin-monitor-grid').trim() || 'rgba(92, 121, 133, 0.18)';
+                const textColor = styles.getPropertyValue('--admin-monitor-ink').trim() || '#183642';
+                const mutedColor = styles.getPropertyValue('--admin-monitor-muted').trim() || '#5c7985';
+                const surfaceColor = styles.getPropertyValue('--admin-monitor-card').trim() || '#ffffff';
+
+                if (!points.length) {
+                    svg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="${mutedColor}" font-size="16">No system billing history available yet.</text>`;
+                    return;
+                }
+
+                const width = 760;
+                const height = 340;
+                const margin = { top: 28, right: 68, bottom: 52, left: 64 };
+                const chartWidth = width - margin.left - margin.right;
+                const chartHeight = height - margin.top - margin.bottom;
+                const usageValues = points.map((point) => Number(point.usage || 0));
+                const billValues = points.map((point) => Number(point.bill || 0));
+                const paidValues = points.map((point) => Number(point.paid || 0));
+                const usageMax = Math.max(...usageValues, 1);
+                const moneyMax = Math.max(...billValues, ...paidValues, 1);
+                const stepX = points.length > 1 ? chartWidth / (points.length - 1) : 0;
+                const gridLines = 4;
+
+                const usageY = function (value) {
+                    return margin.top + chartHeight - (Number(value || 0) / usageMax) * chartHeight;
+                };
+
+                const moneyY = function (value) {
+                    return margin.top + chartHeight - (Number(value || 0) / moneyMax) * chartHeight;
+                };
+
+                const xFor = function (index) {
+                    return margin.left + (points.length > 1 ? stepX * index : chartWidth / 2);
+                };
+
+                const usagePolyline = points.map((point, index) => `${xFor(index)},${usageY(point.usage)}`).join(' ');
+                const billPolyline = points.map((point, index) => `${xFor(index)},${moneyY(point.bill)}`).join(' ');
+                const paidPolyline = points.map((point, index) => `${xFor(index)},${moneyY(point.paid)}`).join(' ');
+                const usageArea = `${margin.left},${margin.top + chartHeight} ${usagePolyline} ${margin.left + chartWidth},${margin.top + chartHeight}`;
+
+                const gridMarkup = Array.from({ length: gridLines + 1 }, function (_, index) {
+                    const ratio = index / gridLines;
+                    const y = margin.top + chartHeight * ratio;
+                    const usageLabel = Math.round(usageMax * (1 - ratio));
+                    const moneyLabel = Math.round(moneyMax * (1 - ratio));
+
+                    return `
+                        <line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" stroke="${gridColor}" stroke-width="1"></line>
+                        <text x="${margin.left - 14}" y="${y + 4}" text-anchor="end" fill="${mutedColor}" font-size="12">${usageLabel}</text>
+                        <text x="${width - margin.right + 14}" y="${y + 4}" text-anchor="start" fill="${mutedColor}" font-size="12">${moneyLabel}</text>
+                    `;
+                }).join('');
+
+                const labelMarkup = points.map(function (point, index) {
+                    return `<text x="${xFor(index)}" y="${height - 18}" text-anchor="middle" fill="${mutedColor}" font-size="12">${point.label}</text>`;
+                }).join('');
+
+                const pointDots = function (source, color, mapper) {
+                    return points.map(function (point, index) {
+                        return `<circle cx="${xFor(index)}" cy="${mapper(point[source])}" r="4" fill="${surfaceColor}" stroke="${color}" stroke-width="3"></circle>`;
+                    }).join('');
+                };
+
+                svg.innerHTML = `
+                    ${gridMarkup}
+                    <text x="${margin.left}" y="16" fill="${textColor}" font-size="12">Usage (m3)</text>
+                    <text x="${width - margin.right}" y="16" text-anchor="end" fill="${textColor}" font-size="12">Amount (PHP)</text>
+                    <polygon points="${usageArea}" fill="${usageColor}" opacity="0.12"></polygon>
+                    <polyline fill="none" stroke="${usageColor}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" points="${usagePolyline}"></polyline>
+                    <polyline fill="none" stroke="${billColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="${billPolyline}"></polyline>
+                    <polyline fill="none" stroke="${paidColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="${paidPolyline}"></polyline>
+                    ${pointDots('usage', usageColor, usageY)}
+                    ${pointDots('bill', billColor, moneyY)}
+                    ${pointDots('paid', paidColor, moneyY)}
+                    ${labelMarkup}
+                `;
+            }
+
+            function renderAdminMonitoring() {
+                const dataElement = document.getElementById('admin-monitoring-data');
+                if (!dataElement) return;
+
+                const payload = JSON.parse(dataElement.textContent || '{}');
+                renderAdminStatusDonut(
+                    document.getElementById('admin-status-donut'),
+                    payload.status_counts || {},
+                    payload.summary || {}
+                );
+                renderAdminTrendChart(
+                    document.getElementById('admin-usage-trend-chart'),
+                    payload.points || []
+                );
+            }
+
+            async function refreshAdminPanel() {
+                try {
+                    const response = await fetch("{% url 'admin_panel_data' %}", {
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    });
+                    if (!response.ok) return;
+                    const payload = await response.json();
+                    if (monitoringSection && payload.monitoring_html) {
+                        monitoringSection.innerHTML = payload.monitoring_html;
+                        renderAdminMonitoring();
+                    }
+                    if (paymentRows && payload.payment_rows_html) {
+                        paymentRows.innerHTML = payload.payment_rows_html;
+                        window.initPaymentStatusForms && window.initPaymentStatusForms(paymentRows);
+                    }
+                    if (billingRows && payload.billing_rows_html) billingRows.innerHTML = payload.billing_rows_html;
+                    if (readingRows && payload.reading_rows_html) readingRows.innerHTML = payload.reading_rows_html;
+
+                    const totalConsumers = document.querySelector('[data-total-consumers]');
+                    const activeConnections = document.querySelector('[data-active-connections]');
+                    const pendingPayments = document.querySelector('[data-pending-payments-count]');
+                    const overdueBills = document.querySelector('[data-overdue-bills]');
+                    const monthlyBilled = document.querySelector('[data-monthly-billed-total]');
+                    const monthlyCollected = document.querySelector('[data-monthly-collected-total]');
+
+                    if (totalConsumers) totalConsumers.textContent = payload.total_consumers;
+                    if (activeConnections) activeConnections.textContent = payload.active_connections;
+                    if (pendingPayments) pendingPayments.textContent = payload.pending_payments;
+                    if (overdueBills) overdueBills.textContent = payload.overdue_bills;
+                    if (monthlyBilled) monthlyBilled.textContent = `PHP ${payload.monthly_billed}`;
+                    if (monthlyCollected) monthlyCollected.textContent = `PHP ${payload.monthly_collected}`;
+                } catch (error) {
+                    console.error(error);
+                }
+            }
+
+            renderAdminMonitoring();
+            window.addEventListener('themechange', renderAdminMonitoring);
+            setInterval(refreshAdminPanel, 10000);
+        })();
+    </script>
 {% endblock %}

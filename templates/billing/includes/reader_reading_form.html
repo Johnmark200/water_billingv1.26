@@ -26,6 +26,7 @@
     <p>
         <label for="{{ form.current_reading.id_for_label }}">Current reading</label>
         {{ form.current_reading }}
+        <span class="muted">Enter the actual current meter figure or the current-cycle usage read in the field.</span>
         {% for error in form.current_reading.errors %}
             <span class="field-error">{{ error }}</span>
         {% endfor %}

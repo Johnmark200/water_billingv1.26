@@ -1,10 +1,43 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block title %}Home | Tabuan Water Billing System{% endblock %}
+{% block extra_css %}
+<style>
+    .landing-hero {
+        min-height: 74vh;
+        display: grid;
+        align-items: center;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .landing-hero::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(90deg, rgba(243, 248, 251, 0.96) 0%, rgba(243, 248, 251, 0.82) 36%, rgba(243, 248, 251, 0.56) 100%), url("{% static 'legacy_img/tabuan-logo.png' %}") center center / cover no-repeat;
+        opacity: 0.95;
+        z-index: -1;
+    }
+
+    .feature-card,
+    .mini-card {
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .feature-card:hover,
+    .mini-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 24px 42px rgba(24, 54, 66, 0.12);
+    }
+</style>
+{% endblock %}
 {% block content %}
-<section class="hero">
-    <h1>Water Billing System</h1>
+<section class="hero landing-hero">
+    <h1>Tabuan Water Billing System</h1>
     <p class="lead">
-        Manage consumers, meter readings, payments, billing notices, and monthly reports from a single Django application.
+        System v1.26 supports billing, readings, payments, payment alerts, and reports for Tabuan, Bayawan City, Negros Oriental.
+        The goal is to make water billing more accurate, reduce manual reconciliation work, give consumers a clear payment history, and help staff monitor collections with proper records.
     </p>
     {% if user.is_authenticated %}
         <div class="toolbar" style="margin-top: 20px;">
@@ -40,19 +73,37 @@
 </section>
 
 <section class="section">
-    <h2>What This Build Covers</h2>
+    <h2>Goals and Objectives</h2>
     <div class="features">
         <div class="feature-card">
-            <h3>Admin Controls</h3>
-            <p>Admin accounts can configure payment channels, send SMS or email campaigns, monitor transactions, and manage consumer records.</p>
+            <h3>Accurate Billing</h3>
+            <p>Record meter readings, compute charges, track payments, and keep account balances updated from one system.</p>
         </div>
         <div class="feature-card">
-            <h3>Operational Panels</h3>
-            <p>Secretary, treasurer, and reading roles each get a focused workspace with only the actions they are allowed to perform.</p>
+            <h3>Transparent Collections</h3>
+            <p>Monitor pending, confirmed, and failed payments with audit logs for staff activity and consumer notifications.</p>
         </div>
         <div class="feature-card">
-            <h3>Consumer Portal</h3>
-            <p>Consumers can review their own bills, readings, receipts, notifications, and payment submissions without seeing admin controls.</p>
+            <h3>Consumer Access</h3>
+            <p>Give consumers a secure portal for personal details, bills, payment history, alerts, and account information.</p>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <h2>Teams Behind the System</h2>
+    <div class="features">
+        <div class="feature-card">
+            <h3>John Mark Omale</h3>
+            <p>Backend/Technical Lead</p>
+        </div>
+        <div class="feature-card">
+            <h3>Angelito Feliciano</h3>
+            <p>Front End Developer</p>
+        </div>
+        <div class="feature-card">
+            <h3>Consumer Support Team</h3>
+            <p>Monitors inquiries, payment reminders, notifications, and account updates for consumers.</p>
         </div>
     </div>
 </section>

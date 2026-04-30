@@ -1,18 +1,281 @@
 {% extends 'base.html' %}
 {% block title %}Consumer Portal{% endblock %}
+{% block extra_css %}
+<style>
+    :root {
+        --consumer-chart-card: #ffffff;
+        --consumer-chart-border: rgba(214, 227, 234, 0.95);
+        --consumer-chart-shadow: 0 18px 34px rgba(24, 54, 66, 0.08);
+        --consumer-chart-ink: #183642;
+        --consumer-chart-muted: #5c7985;
+        --consumer-chart-chip-bg: rgba(15, 118, 110, 0.1);
+        --consumer-chart-chip-ink: #115e59;
+        --consumer-chart-grid: rgba(92, 121, 133, 0.18);
+        --consumer-chart-track: rgba(92, 121, 133, 0.12);
+        --consumer-chart-hole: #ffffff;
+        --consumer-usage-color: #3ea0ff;
+        --consumer-bill-color: #ff905f;
+        --consumer-paid-color: #22c55e;
+        --consumer-overdue-color: #ef4444;
+    }
+
+    html[data-theme="dark"] {
+        --consumer-chart-card: #1a2238;
+        --consumer-chart-border: rgba(148, 163, 184, 0.18);
+        --consumer-chart-shadow: 0 22px 40px rgba(2, 6, 23, 0.42);
+        --consumer-chart-ink: #f8fafc;
+        --consumer-chart-muted: #b8bfdb;
+        --consumer-chart-chip-bg: rgba(148, 163, 184, 0.14);
+        --consumer-chart-chip-ink: #d8ddf5;
+        --consumer-chart-grid: rgba(184, 191, 219, 0.14);
+        --consumer-chart-track: rgba(148, 163, 184, 0.14);
+        --consumer-chart-hole: #1a2238;
+    }
+
+    .payment-wallet-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 80;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        background: var(--overlay);
+    }
+
+    .payment-wallet-modal.visible {
+        display: flex;
+    }
+
+    .wallet-dialog {
+        width: min(520px, 100%);
+        background: var(--panel-elevated);
+        border: 1px solid var(--panel-border);
+        border-radius: 8px;
+        box-shadow: var(--shadow-strong);
+        overflow: hidden;
+    }
+
+    .wallet-dialog-header {
+        padding: 18px 22px;
+        border-top: 8px solid var(--brand);
+        border-bottom: 1px solid var(--line);
+    }
+
+    .wallet-dialog-header h3 {
+        margin: 0 0 6px;
+    }
+
+    .wallet-dialog-body {
+        padding: 22px;
+    }
+
+    .wallet-options {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+    }
+
+    .wallet-option {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-height: 86px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        cursor: pointer;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+    }
+
+    .wallet-option:hover,
+    .wallet-option.selected {
+        border-color: var(--brand);
+        box-shadow: 0 12px 24px rgba(15, 118, 110, 0.12);
+        transform: translateY(-2px);
+    }
+
+    .wallet-mark {
+        display: grid;
+        place-items: center;
+        width: 46px;
+        height: 46px;
+        border-radius: 8px;
+        color: #fff;
+        font-weight: 800;
+        flex: 0 0 auto;
+    }
+
+    .wallet-mark.gcash { background: #1769ff; }
+    .wallet-mark.maya { background: #16a34a; }
+
+    .wallet-copy strong {
+        display: block;
+        margin-bottom: 4px;
+    }
+
+    .wallet-dialog-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        padding: 18px 22px;
+        border-top: 1px solid var(--line);
+        background: color-mix(in srgb, var(--panel) 82%, var(--bg));
+    }
+
+    @media (max-width: 560px) {
+        .wallet-options {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    .consumer-performance-card {
+        padding: 0;
+        border-radius: 20px;
+        background: var(--consumer-chart-card);
+        border: 1px solid var(--consumer-chart-border);
+        box-shadow: var(--consumer-chart-shadow);
+        overflow: hidden;
+    }
+
+    .consumer-performance-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: flex-start;
+        padding: 18px 22px;
+        border-bottom: 1px solid var(--line);
+        background: color-mix(in srgb, var(--consumer-chart-card) 88%, var(--bg));
+    }
+
+    .consumer-performance-title {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .consumer-performance-icon {
+        position: relative;
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--consumer-usage-color) 12%, transparent);
+        border: 1px solid color-mix(in srgb, var(--consumer-usage-color) 24%, transparent);
+        flex: 0 0 auto;
+        margin-top: 2px;
+    }
+
+    .consumer-performance-icon::before,
+    .consumer-performance-icon::after {
+        content: "";
+        position: absolute;
+        left: 6px;
+        right: 6px;
+        border-top: 2px solid var(--consumer-usage-color);
+        border-radius: 999px;
+    }
+
+    .consumer-performance-icon::before {
+        top: 16px;
+        transform: rotate(-18deg);
+    }
+
+    .consumer-performance-icon::after {
+        top: 11px;
+        transform: rotate(14deg);
+    }
+
+    .consumer-performance-title h3 {
+        margin: 0 0 4px;
+        color: var(--consumer-chart-ink);
+    }
+
+    .consumer-performance-title p {
+        margin: 0;
+        color: var(--consumer-chart-muted);
+    }
+
+    .consumer-performance-chips {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
+    .consumer-performance-chip {
+        display: inline-flex;
+        align-items: center;
+        padding: 7px 10px;
+        border-radius: 999px;
+        background: var(--consumer-chart-chip-bg);
+        color: var(--consumer-chart-chip-ink);
+        font-size: 12px;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
+    #consumer-performance-trend-chart {
+        width: 100%;
+        display: block;
+        padding: 16px 18px 6px;
+    }
+
+    .consumer-performance-footer {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 16px;
+        padding: 0 22px 20px;
+    }
+
+    .consumer-performance-metric {
+        display: grid;
+        gap: 6px;
+        padding-top: 14px;
+        border-top: 1px solid var(--line);
+    }
+
+    .consumer-performance-metric span {
+        color: var(--consumer-chart-muted);
+        font-size: 13px;
+    }
+
+    .consumer-performance-metric strong {
+        color: var(--consumer-chart-ink);
+        font-size: 20px;
+    }
+
+    @media (max-width: 980px) {
+        .consumer-performance-header {
+            flex-direction: column;
+        }
+
+        .consumer-performance-chips {
+            justify-content: flex-start;
+        }
+
+        .consumer-performance-footer {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+
+    @media (max-width: 640px) {
+        .consumer-performance-footer {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
 {% block content %}
 <section class="page-wrap">
-    <div class="toolbar" style="justify-content: space-between; margin-bottom: 20px;">
-        <div>
-            <h2 class="page-title">Consumer Portal</h2>
-            <p class="muted">Review your latest billings, compare previous and current readings, manage your profile, and submit payments for the next due or upcoming months.</p>
-        </div>
-        <a href="{% url 'notifications' %}" class="btn secondary">&#128276; Open Notifications</a>
-    </div>
     <div class="status-feedback" id="consumer-live-feedback" hidden></div>
 </section>
 
 {% if consumer %}
+<section id="consumer-usage-charts">
+    {% include 'billing/includes/consumer_usage_charts.html' %}
+</section>
+
 <section class="page-wrap grid-3">
     <div id="consumer-profile-summary">
         {% include 'billing/includes/profile_summary.html' %}
@@ -23,6 +286,9 @@
         <p><strong>Online:</strong> {{ payment_settings.enable_online_payments|yesno:'Enabled,Disabled' }}</p>
         <p><strong>Next payment month:</strong> {{ next_payment_month|date:'F Y'|default:'-' }}</p>
         <p class="muted">After you settle the current month, the next month automatically becomes available. Upcoming months stay open for advance payments.</p>
+        <div class="btn-row" style="margin-top: 16px;">
+            <a href="{% url 'account_center' %}" class="btn secondary">Account Center</a>
+        </div>
     </div>
     <div class="card">
         <h3>Recent Alerts</h3>
@@ -34,19 +300,12 @@
     </div>
 </section>
 
-<section class="page-wrap grid-2">
-    <div class="form-card">
-        <h3>Update Profile</h3>
-        <p class="muted">Changes are saved directly to the database and reflected across your account without reloading the page.</p>
-        <div id="consumer-profile-form">
-            {% include 'billing/includes/profile_form.html' %}
-        </div>
-    </div>
+<section class="page-wrap">
     <div class="form-card">
         <h3>Submit Payment</h3>
         <p class="muted">Choose the next due month or make an advance payment for a future month.</p>
         {% if payment_form %}
-            <form method="post" id="consumer-payment-form">
+            <form method="post" id="consumer-payment-form" data-transaction-form>
                 {% csrf_token %}
                 {% if payment_form.non_field_errors %}
                     <div class="status-feedback error">
@@ -70,6 +329,17 @@
                         <span class="field-error">{{ error }}</span>
                     {% endfor %}
                 </p>
+                <div class="comparison-card" style="margin-bottom: 14px;">
+                    <h4 style="margin: 0 0 8px;">Payment Option</h4>
+                    {{ payment_form.payment_option }}
+                    <p class="muted" style="margin-bottom: 0;">
+                        Current balance: <strong id="consumer-current-balance">PHP 0.00</strong>.
+                        Partial payment is 75% of the current balance.
+                    </p>
+                    {% for error in payment_form.payment_option.errors %}
+                        <span class="field-error">{{ error }}</span>
+                    {% endfor %}
+                </div>
                 <p>
                     <label for="{{ payment_form.amount_paid.id_for_label }}">Amount paid</label>
                     {{ payment_form.amount_paid }}
@@ -77,16 +347,13 @@
                         <span class="field-error">{{ error }}</span>
                     {% endfor %}
                 </p>
-                <p id="payment-reference-row">
-                    <label for="{{ payment_form.reference_number.id_for_label }}">Reference number</label>
-                    {{ payment_form.reference_number }}
-                    <span class="muted">{{ payment_form.reference_number.help_text }}</span>
-                    {% for error in payment_form.reference_number.errors %}
-                        <span class="field-error">{{ error }}</span>
-                    {% endfor %}
-                </p>
+                {{ payment_form.reference_number }}
+                {{ payment_form.online_wallet }}
+                {% for error in payment_form.online_wallet.errors %}
+                    <span class="field-error">{{ error }}</span>
+                {% endfor %}
                 <p class="muted" id="online-payment-note" hidden>
-                    Online Payment redirects you to the PayMongo e-wallet page. The transaction reference and status are saved automatically after PayMongo returns.
+                    Online Payment lets you choose GCash or Maya before redirecting to the secure PayMongo checkout page.
                 </p>
                 <div class="btn-row">
                     <button type="submit" class="btn" id="payment-submit-button">Submit Payment</button>
@@ -97,6 +364,38 @@
         {% endif %}
     </div>
 </section>
+
+<div class="payment-wallet-modal" id="payment-wallet-modal" aria-hidden="true">
+    <div class="wallet-dialog" role="dialog" aria-modal="true" aria-labelledby="wallet-dialog-title">
+        <div class="wallet-dialog-header">
+            <h3 id="wallet-dialog-title">Choose E-Wallet</h3>
+            <p class="muted">Select the wallet you want to use for this PayMongo online payment.</p>
+        </div>
+        <div class="wallet-dialog-body">
+            <p class="status-chip" style="margin-top: 0;">Current balance: <span id="wallet-current-balance" style="margin-left: 6px;">PHP 0.00</span></p>
+            <div class="wallet-options">
+                <button type="button" class="wallet-option" data-wallet="gcash">
+                    <span class="wallet-mark gcash">G</span>
+                    <span class="wallet-copy">
+                        <strong>GCash</strong>
+                        <span class="muted">Pay using your GCash wallet.</span>
+                    </span>
+                </button>
+                <button type="button" class="wallet-option" data-wallet="paymaya">
+                    <span class="wallet-mark maya">M</span>
+                    <span class="wallet-copy">
+                        <strong>Maya</strong>
+                        <span class="muted">Pay using your Maya wallet.</span>
+                    </span>
+                </button>
+            </div>
+        </div>
+        <div class="wallet-dialog-actions">
+            <button type="button" class="btn secondary" id="wallet-cancel-button">Cancel</button>
+            <button type="button" class="btn" id="wallet-continue-button">Continue to PayMongo</button>
+        </div>
+    </div>
+</div>
 
 <section class="page-wrap" id="consumer-billing-comparison">
     {% include 'billing/includes/consumer_billing_comparison.html' %}
@@ -136,7 +435,7 @@
     <div class="table-card">
         <h3>Payment Submissions</h3>
         <table>
-            <thead><tr><th>Date</th><th>Month Covered</th><th>Method</th><th>Paid</th><th>Discount</th><th>Status</th><th>Reference</th></tr></thead>
+            <thead><tr><th>Date</th><th>Month Covered</th><th>Method</th><th>Option</th><th>Paid</th><th>Discount</th><th>Status</th><th>Reference</th><th>Receipt</th></tr></thead>
             <tbody id="consumer-payment-rows">
                 {% include 'billing/includes/consumer_payment_rows.html' %}
             </tbody>
@@ -154,11 +453,12 @@
 {% endblock %}
 
 {% block extra_js %}
+{{ billing_balance_data|json_script:"consumer-billing-balance-data" }}
 <script>
     (function () {
         const feedback = document.getElementById('consumer-live-feedback');
         const summaryContainer = document.getElementById('consumer-profile-summary');
-        const formContainer = document.getElementById('consumer-profile-form');
+        const chartsContainer = document.getElementById('consumer-usage-charts');
         const comparisonContainer = document.getElementById('consumer-billing-comparison');
         const receiptRows = document.getElementById('consumer-receipt-rows');
         const billingRows = document.getElementById('consumer-billing-rows');
@@ -172,26 +472,104 @@
             feedback.textContent = message;
         }
 
-        function bindProfileForm() {
-            if (!formContainer) return;
-            const profileForm = formContainer.querySelector('.ajax-profile-form');
-            if (!profileForm) return;
+        function renderPerformanceTrendChart(svg, points) {
+            if (!svg) return;
+            const styles = getComputedStyle(document.documentElement);
+            const usageColor = styles.getPropertyValue('--consumer-usage-color').trim() || '#3ea0ff';
+            const billColor = styles.getPropertyValue('--consumer-bill-color').trim() || '#ff905f';
+            const paidColor = styles.getPropertyValue('--consumer-paid-color').trim() || '#22c55e';
+            const gridColor = styles.getPropertyValue('--consumer-chart-grid').trim() || 'rgba(92, 121, 133, 0.18)';
+            const textColor = styles.getPropertyValue('--consumer-chart-ink').trim() || '#183642';
+            const mutedColor = styles.getPropertyValue('--consumer-chart-muted').trim() || '#5c7985';
+            const surfaceColor = styles.getPropertyValue('--consumer-chart-card').trim() || '#ffffff';
+            if (!points.length) {
+                svg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="${mutedColor}" font-size="16">No billing history available yet.</text>`;
+                return;
+            }
 
-            profileForm.addEventListener('submit', async function (event) {
-                event.preventDefault();
-                const response = await fetch(profileForm.action, {
-                    method: 'POST',
-                    body: new FormData(profileForm),
-                    headers: {
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }
-                });
-                const payload = await response.json();
-                if (payload.summary_html && summaryContainer) summaryContainer.innerHTML = payload.summary_html;
-                if (payload.form_html) formContainer.innerHTML = payload.form_html;
-                bindProfileForm();
-                showFeedback(payload.message, !payload.ok);
-            });
+            const width = 980;
+            const height = 350;
+            const margin = { top: 24, right: 76, bottom: 88, left: 68 };
+            const chartWidth = width - margin.left - margin.right;
+            const chartHeight = height - margin.top - margin.bottom;
+            const usageValues = points.map((point) => Number(point.usage || 0));
+            const billValues = points.map((point) => Number(point.bill || 0));
+            const paidValues = points.map((point) => Number(point.paid || 0));
+            const usageMax = Math.max(...usageValues, 1);
+            const moneyMax = Math.max(...billValues, ...paidValues, 1);
+            const stepX = points.length > 1 ? chartWidth / (points.length - 1) : 0;
+            const gridLines = 4;
+
+            const usageY = function (value) {
+                return margin.top + chartHeight - (Number(value || 0) / usageMax) * chartHeight;
+            };
+
+            const billY = function (value) {
+                return margin.top + chartHeight - (Number(value || 0) / moneyMax) * chartHeight;
+            };
+
+            const xFor = function (index) {
+                return margin.left + (points.length > 1 ? stepX * index : chartWidth / 2);
+            };
+
+            const usagePolyline = points.map((point, index) => `${xFor(index)},${usageY(point.usage)}`).join(' ');
+            const billPolyline = points.map((point, index) => `${xFor(index)},${billY(point.bill)}`).join(' ');
+            const paidPolyline = points.map((point, index) => `${xFor(index)},${billY(point.paid)}`).join(' ');
+            const usageArea = `${margin.left},${margin.top + chartHeight} ${usagePolyline} ${margin.left + chartWidth},${margin.top + chartHeight}`;
+
+            const gridMarkup = Array.from({ length: gridLines + 1 }, function (_, index) {
+                const ratio = index / gridLines;
+                const y = margin.top + chartHeight * ratio;
+                const usageLabel = Math.round(usageMax * (1 - ratio));
+                const billLabel = Math.round(moneyMax * (1 - ratio));
+
+                return `
+                    <line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" stroke="${gridColor}" stroke-width="1"></line>
+                    <text x="${margin.left - 14}" y="${y + 4}" text-anchor="end" fill="${mutedColor}" font-size="12">${usageLabel}</text>
+                    <text x="${width - margin.right + 14}" y="${y + 4}" text-anchor="start" fill="${mutedColor}" font-size="12">${billLabel}</text>
+                `;
+            }).join('');
+
+            const labelMarkup = points.map(function (point, index) {
+                return `<text x="${xFor(index)}" y="${height - 20}" text-anchor="end" transform="rotate(-18 ${xFor(index)} ${height - 20})" fill="${mutedColor}" font-size="12">${point.label}</text>`;
+            }).join('');
+
+            const usageDots = points.map(function (point, index) {
+                return `<circle cx="${xFor(index)}" cy="${usageY(point.usage)}" r="4" fill="${surfaceColor}" stroke="${usageColor}" stroke-width="3"></circle>`;
+            }).join('');
+
+            const billDots = points.map(function (point, index) {
+                return `<circle cx="${xFor(index)}" cy="${billY(point.bill)}" r="4" fill="${surfaceColor}" stroke="${billColor}" stroke-width="3"></circle>`;
+            }).join('');
+
+            const paidDots = points.map(function (point, index) {
+                return `<circle cx="${xFor(index)}" cy="${billY(point.paid)}" r="4" fill="${surfaceColor}" stroke="${paidColor}" stroke-width="3"></circle>`;
+            }).join('');
+
+            svg.innerHTML = `
+                ${gridMarkup}
+                <polygon points="${usageArea}" fill="${usageColor}" opacity="0.12"></polygon>
+                <text x="${margin.left}" y="16" fill="${textColor}" font-size="12">Usage (m3)</text>
+                <text x="${width - margin.right}" y="16" text-anchor="end" fill="${textColor}" font-size="12">Bill (PHP)</text>
+                <polyline fill="none" stroke="${usageColor}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" points="${usagePolyline}"></polyline>
+                <polyline fill="none" stroke="${billColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="${billPolyline}"></polyline>
+                <polyline fill="none" stroke="${paidColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="${paidPolyline}"></polyline>
+                ${usageDots}
+                ${billDots}
+                ${paidDots}
+                ${labelMarkup}
+            `;
+        }
+
+        function renderConsumerCharts() {
+            const dataElement = document.getElementById('consumer-chart-data');
+            if (!dataElement) return;
+
+            const payload = JSON.parse(dataElement.textContent || '{}');
+            renderPerformanceTrendChart(
+                document.getElementById('consumer-performance-trend-chart'),
+                payload.points || []
+            );
         }
 
         async function refreshLivePanel() {
@@ -204,6 +582,10 @@
                 if (!response.ok) return;
                 const payload = await response.json();
                 if (payload.summary_html && summaryContainer) summaryContainer.innerHTML = payload.summary_html;
+                if (payload.charts_html && chartsContainer) {
+                    chartsContainer.innerHTML = payload.charts_html;
+                    renderConsumerCharts();
+                }
                 if (payload.comparison_html && comparisonContainer) comparisonContainer.innerHTML = payload.comparison_html;
                 if (payload.receipt_rows_html && receiptRows) receiptRows.innerHTML = payload.receipt_rows_html;
                 if (payload.billing_rows_html && billingRows) billingRows.innerHTML = payload.billing_rows_html;
@@ -222,22 +604,114 @@
             const referenceRow = document.getElementById('payment-reference-row');
             const button = document.getElementById('payment-submit-button');
             const note = document.getElementById('online-payment-note');
+            const walletField = document.getElementById('id_online_wallet');
+            const monthField = document.getElementById('id_covered_month');
+            const amountField = document.getElementById('id_amount_paid');
+            const balanceLabel = document.getElementById('consumer-current-balance');
+            const walletBalanceLabel = document.getElementById('wallet-current-balance');
+            const balanceDataElement = document.getElementById('consumer-billing-balance-data');
+            const balanceData = balanceDataElement ? JSON.parse(balanceDataElement.textContent) : [];
+            const modal = document.getElementById('payment-wallet-modal');
+            const cancelButton = document.getElementById('wallet-cancel-button');
+            const continueButton = document.getElementById('wallet-continue-button');
+            let walletConfirmed = false;
 
             function syncPaymentMode() {
                 const isOnline = method && method.value === 'online';
-                if (button) button.textContent = isOnline ? 'Pay with E-Wallet' : 'Submit Payment';
-                if (referenceRow) referenceRow.hidden = isOnline;
+                if (button) button.textContent = isOnline ? 'Choose Wallet' : 'Submit Payment';
                 if (note) note.hidden = !isOnline;
+                if (!isOnline && walletField) {
+                    walletField.value = '';
+                    walletConfirmed = false;
+                }
+            }
+
+            function selectedPaymentOption() {
+                const selected = form.querySelector('input[name="payment_option"]:checked');
+                return selected ? selected.value : 'full';
+            }
+
+            function syncAmount() {
+                if (!monthField || !amountField) return;
+                const selected = balanceData.find(function (item) {
+                    return item.month === monthField.value;
+                });
+                const balance = selected ? Number(selected.balance) : 0;
+                const amount = selectedPaymentOption() === 'partial' ? balance * 0.75 : balance;
+                amountField.value = amount.toFixed(2);
+                if (balanceLabel) balanceLabel.textContent = `PHP ${balance.toFixed(2)}`;
+                if (walletBalanceLabel) walletBalanceLabel.textContent = `PHP ${balance.toFixed(2)}`;
+            }
+
+            function openWalletModal() {
+                if (!modal) return;
+                modal.classList.add('visible');
+                modal.setAttribute('aria-hidden', 'false');
+            }
+
+            function closeWalletModal() {
+                if (!modal) return;
+                modal.classList.remove('visible');
+                modal.setAttribute('aria-hidden', 'true');
             }
 
             if (method) {
-                method.addEventListener('change', syncPaymentMode);
+                method.addEventListener('change', function () {
+                    syncPaymentMode();
+                    syncAmount();
+                    if (method.value === 'online') openWalletModal();
+                });
                 syncPaymentMode();
             }
+            if (monthField) monthField.addEventListener('change', syncAmount);
+            form.querySelectorAll('input[name="payment_option"]').forEach(function (option) {
+                option.addEventListener('change', syncAmount);
+            });
+            syncAmount();
+
+            document.querySelectorAll('.wallet-option').forEach(function (option) {
+                option.addEventListener('click', function () {
+                    document.querySelectorAll('.wallet-option').forEach(function (item) {
+                        item.classList.remove('selected');
+                    });
+                    option.classList.add('selected');
+                    if (walletField) walletField.value = option.dataset.wallet;
+                });
+            });
+
+            if (cancelButton) {
+                cancelButton.addEventListener('click', function () {
+                    walletConfirmed = false;
+                    closeWalletModal();
+                });
+            }
+
+            if (continueButton) {
+                continueButton.addEventListener('click', function () {
+                    if (!walletField || !walletField.value) {
+                        showFeedback('Choose GCash or Maya before continuing.', true);
+                        return;
+                    }
+                    walletConfirmed = true;
+                    closeWalletModal();
+                    form.requestSubmit();
+                });
+            }
+
+            form.addEventListener('submit', function (event) {
+                const isOnline = method && method.value === 'online';
+                syncAmount();
+                if (isOnline && !walletConfirmed) {
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    openWalletModal();
+                }
+            }, true);
         }
 
-        bindProfileForm();
         initPaymentMode();
+        renderConsumerCharts();
+        window.addEventListener('themechange', renderConsumerCharts);
         {% if consumer %}
         setInterval(refreshLivePanel, 15000);
         {% endif %}

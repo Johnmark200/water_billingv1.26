@@ -1,16 +1,52 @@
-{% extends 'base.html' %}
+{% extends 'registration/auth_layout.html' %}
 {% block title %}Login{% endblock %}
-{% block content %}
-<div class="auth-card">
-    <h2>Login</h2>
-    <p>Use your account to open the correct dashboard for your assigned role.</p>
-    <form method="post">
-        {% csrf_token %}
-        {{ form.as_p }}
-        <div class="btn-row">
-            <button type="submit" class="btn">Login</button>
-            <a href="{% url 'signup' %}" class="btn secondary">Create Consumer Account</a>
-        </div>
-    </form>
-</div>
+{% block auth_shell_class %}auth-cover-shell{% endblock %}
+{% block auth_kicker %}Portal Login{% endblock %}
+{% block auth_heading %}Welcome Back{% endblock %}
+{% block auth_subtitle %}Use your assigned account to open the correct panel for billing, readings, reports, and consumer access.{% endblock %}
+{% block auth_visual_title %}Tabuan Waterbilling.{% endblock %}
+{% block auth_visual_copy %}Live billing records, meter readings, and consumer activity stay synchronized across the system panels.{% endblock %}
+
+{% block auth_body %}
+<form method="post" class="auth-form" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+        <ul class="status-feedback error auth-errors">
+            {% for error in form.non_field_errors %}
+                <li>{{ error }}</li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+
+    <div class="auth-field">
+        <label for="id_username">Username</label>
+        <input type="text" name="username" id="id_username" value="{{ form.username.value|default:'' }}" autocomplete="username" required>
+        {% if form.username.errors %}
+            <ul class="auth-inline-errors">
+                {% for error in form.username.errors %}
+                    <li>{{ error }}</li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+    </div>
+
+    <div class="auth-field">
+        <label for="id_password">Password</label>
+        <input type="password" name="password" id="id_password" autocomplete="current-password" required>
+        {% if form.password.errors %}
+            <ul class="auth-inline-errors">
+                {% for error in form.password.errors %}
+                    <li>{{ error }}</li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+    </div>
+
+    <p class="auth-help">Only registered staff and linked consumer accounts can sign in.</p>
+
+    <div class="auth-actions">
+        <button type="submit" class="btn auth-primary">Continue to System</button>
+        <a href="{% url 'signup' %}" class="auth-secondary-link">Create Consumer Account</a>
+    </div>
+</form>
 {% endblock %}

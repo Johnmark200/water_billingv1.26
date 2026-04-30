@@ -3,11 +3,13 @@
         <td>{{ payment.payment_date }}</td>
         <td>{{ payment.display_covered_month|date:'F Y' }}</td>
         <td>{{ payment.get_payment_method_display }}</td>
+        <td>{{ payment.get_payment_option_display }}</td>
         <td>&#8369;{{ payment.amount_paid }}</td>
         <td>&#8369;{{ payment.discount_amount }}</td>
         <td>{{ payment.get_status_display }}</td>
-        <td>{{ payment.reference_number|default:'-' }}</td>
+        <td>{% if payment.payment_method == 'cash' %}-{% else %}{{ payment.reference_number|default:payment.gateway_reference|default:'-' }}{% endif %}</td>
+        <td><a href="{% url 'payment_receipt' payment.id %}" class="btn secondary">View</a></td>
     </tr>
 {% empty %}
-    <tr><td colspan="7" class="empty-state">No payment submissions available.</td></tr>
+    <tr><td colspan="9" class="empty-state">No payment submissions available.</td></tr>
 {% endfor %}

@@ -25,52 +25,76 @@
 
 <section class="page-wrap grid-3">
     <div class="table-card">
-        <h3>Recent Billing</h3>
+        <h3>{% if show_all_consumer_transactions %}Recent Consumer Billing{% else %}Recent Billing{% endif %}</h3>
         <table>
-            <thead><tr><th>Month</th><th>Total</th><th>Status</th></tr></thead>
+            <thead>
+                <tr>
+                    {% if show_all_consumer_transactions %}<th>Consumer</th>{% endif %}
+                    <th>Month</th>
+                    <th>Total</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
             <tbody>
                 {% for bill in billing_records %}
                     <tr>
+                        {% if show_all_consumer_transactions %}<td>{{ bill.consumer.full_name }}</td>{% endif %}
                         <td>{{ bill.billing_month|date:'F Y' }}</td>
                         <td>&#8369;{{ bill.total_amount }}</td>
                         <td>{{ bill.get_status_display }}</td>
                     </tr>
                 {% empty %}
-                    <tr><td colspan="3" class="empty-state">No billing records available.</td></tr>
+                    <tr><td colspan="{% if show_all_consumer_transactions %}4{% else %}3{% endif %}" class="empty-state">No billing records available.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
     <div class="table-card">
-        <h3>Recent Payments</h3>
+        <h3>{% if show_all_consumer_transactions %}Recent Consumer Payments{% else %}Recent Payments{% endif %}</h3>
         <table>
-            <thead><tr><th>Date</th><th>Method</th><th>Amount</th></tr></thead>
+            <thead>
+                <tr>
+                    {% if show_all_consumer_transactions %}<th>Consumer</th>{% endif %}
+                    <th>Date</th>
+                    <th>Method</th>
+                    <th>Amount</th>
+                </tr>
+            </thead>
             <tbody>
                 {% for payment in payments %}
                     <tr>
+                        {% if show_all_consumer_transactions %}<td>{{ payment.consumer.full_name }}</td>{% endif %}
                         <td>{{ payment.payment_date }}</td>
                         <td>{{ payment.get_payment_method_display }}</td>
                         <td>&#8369;{{ payment.amount_paid }}</td>
                     </tr>
                 {% empty %}
-                    <tr><td colspan="3" class="empty-state">No payments available.</td></tr>
+                    <tr><td colspan="{% if show_all_consumer_transactions %}4{% else %}3{% endif %}" class="empty-state">No payments available.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
     <div class="table-card">
-        <h3>Recent Meter Readings</h3>
+        <h3>{% if show_all_consumer_transactions %}Recent Consumer Meter Readings{% else %}Recent Meter Readings{% endif %}</h3>
         <table>
-            <thead><tr><th>Month</th><th>Current</th><th>Usage</th></tr></thead>
+            <thead>
+                <tr>
+                    {% if show_all_consumer_transactions %}<th>Consumer</th>{% endif %}
+                    <th>Month</th>
+                    <th>Current</th>
+                    <th>Usage</th>
+                </tr>
+            </thead>
             <tbody>
                 {% for reading in meter_readings %}
                     <tr>
+                        {% if show_all_consumer_transactions %}<td>{{ reading.consumer.full_name }}</td>{% endif %}
                         <td>{{ reading.billing_month|date:'F Y' }}</td>
                         <td>{{ reading.current_reading }}</td>
                         <td>{{ reading.usage_m3 }} m3</td>
                     </tr>
                 {% empty %}
-                    <tr><td colspan="3" class="empty-state">No meter readings available.</td></tr>
+                    <tr><td colspan="{% if show_all_consumer_transactions %}4{% else %}3{% endif %}" class="empty-state">No meter readings available.</td></tr>
                 {% endfor %}
             </tbody>
         </table>

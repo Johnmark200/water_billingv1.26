@@ -1,0 +1,40 @@
+{{ consumer_chart_data|json_script:"consumer-chart-data" }}
+<section class="page-wrap">
+    <div class="consumer-performance-card">
+        <div class="consumer-performance-header">
+            <div class="consumer-performance-title">
+                <span class="consumer-performance-icon" aria-hidden="true"></span>
+                <div>
+                    <h3>Performance Trend</h3>
+                    <p>Monthly usage, billing movement, and payment standing</p>
+                </div>
+            </div>
+            <div class="consumer-performance-chips">
+                <span class="consumer-performance-chip">{{ consumer_chart_data.summary.tracked_months }} months</span>
+                <span class="consumer-performance-chip">Latest Bill: PHP {{ consumer_chart_data.summary.latest_bill }}</span>
+                <span class="consumer-performance-chip">Outstanding: PHP {{ consumer_chart_data.summary.outstanding_balance }}</span>
+            </div>
+        </div>
+
+        <svg id="consumer-performance-trend-chart" viewBox="0 0 980 350" aria-label="Consumer performance trend"></svg>
+
+        <div class="consumer-performance-footer">
+            <div class="consumer-performance-metric">
+                <span>Paid Months</span>
+                <strong>{{ consumer_chart_data.status_counts.paid }}</strong>
+            </div>
+            <div class="consumer-performance-metric">
+                <span>Pending Months</span>
+                <strong>{{ consumer_chart_data.status_counts.pending }}</strong>
+            </div>
+            <div class="consumer-performance-metric">
+                <span>Overdue Months</span>
+                <strong>{{ consumer_chart_data.status_counts.overdue }}</strong>
+            </div>
+            <div class="consumer-performance-metric">
+                <span>Paid Rate</span>
+                <strong>{{ consumer_chart_data.summary.paid_ratio }}%</strong>
+            </div>
+        </div>
+    </div>
+</section>

@@ -6,9 +6,49 @@
         <h2 class="page-title">Payment Monitoring</h2>
         {% if can_edit %}
             <p class="muted">Admin and treasurer accounts can record payments, update payment status, and sync linked billing balances.</p>
-            <form method="post">
+            <form method="post" id="admin-payment-form" data-transaction-form>
                 {% csrf_token %}
-                {{ form.as_p }}
+                <p>
+                    <label for="{{ form.consumer.id_for_label }}">Consumer</label>
+                    {{ form.consumer }}
+                </p>
+                <p>
+                    <label for="{{ form.billing.id_for_label }}">Billing record</label>
+                    {{ form.billing }}
+                </p>
+                <p>
+                    <label for="{{ form.payment_method.id_for_label }}">Payment method</label>
+                    {{ form.payment_method }}
+                </p>
+                <div class="comparison-card" style="margin-bottom: 14px;">
+                    <h4 style="margin: 0 0 8px;">Payment Option</h4>
+                    {{ form.payment_option }}
+                    <p class="muted" style="margin-bottom: 0;">
+                        Current balance: <strong id="admin-current-balance">PHP 0.00</strong>.
+                        Partial payment is 75% of the current balance.
+                    </p>
+                </div>
+                <p>
+                    <label for="{{ form.amount_paid.id_for_label }}">Amount paid</label>
+                    {{ form.amount_paid }}
+                </p>
+                <p>
+                    <label for="{{ form.discount_amount.id_for_label }}">Discount applied</label>
+                    {{ form.discount_amount }}
+                </p>
+                <p>
+                    <label for="{{ form.payment_date.id_for_label }}">Payment date</label>
+                    {{ form.payment_date }}
+                </p>
+                <p>
+                    <label for="{{ form.status.id_for_label }}">Status</label>
+                    {{ form.status }}
+                </p>
+                <p id="admin-reference-row">
+                    <label for="{{ form.reference_number.id_for_label }}">Reference number</label>
+                    {{ form.reference_number }}
+                    <span class="muted">Reference numbers are not required for cash transactions.</span>
+                </p>
                 <button type="submit" class="btn">Save Payment</button>
             </form>
         {% else %}
@@ -25,7 +65,9 @@
                     <th>Consumer</th>
                     <th>Billing Month</th>
                     <th>Method</th>
+                    <th>Option</th>
                     <th>Amount</th>
+                    <th>Reference</th>
                     <th>Date</th>
                     <th>Payment Status</th>
                     <th>Bill Paid</th>
@@ -33,6 +75,7 @@
                     <th>Bill Status</th>
                     <th>Email</th>
                     <th>SMS</th>
+                    <th>Receipt</th>
                     {% if can_edit %}<th>Update</th>{% endif %}
                 </tr>
             </thead>
@@ -42,7 +85,9 @@
                         <td>{{ payment.consumer.full_name }}</td>
                         <td>{% if payment.billing %}{{ payment.billing.billing_month|date:'F Y' }}{% else %}-{% endif %}</td>
                         <td>{{ payment.get_payment_method_display }}</td>
+                        <td>{{ payment.get_payment_option_display }}</td>
                         <td>&#8369;{{ payment.amount_paid }}</td>
+                        <td>{% if payment.payment_method == 'cash' %}-{% else %}{{ payment.reference_number|default:payment.gateway_reference|default:'-' }}{% endif %}</td>
                         <td>{{ payment.payment_date }}</td>
                         <td class="payment-status-display">{{ payment.get_status_display }}</td>
                         <td class="billing-paid-display">{% if payment.billing %}PHP {{ payment.billing.amount_paid }}{% else %}-{% endif %}</td>
@@ -50,6 +95,7 @@
                         <td class="billing-status-display">{% if payment.billing %}{{ payment.billing.get_status_display }}{% else %}-{% endif %}</td>
                         <td class="email-notification-display">-</td>
                         <td class="sms-notification-display">-</td>
+                        <td><a href="{% url 'payment_receipt' payment.id %}" class="btn secondary">View</a></td>
                         {% if can_edit %}
                             <td>
                                 <form method="post" class="payment-status-form" data-url="{% url 'update_payment_status' payment.id %}">
@@ -64,7 +110,7 @@
                         {% endif %}
                     </tr>
                 {% empty %}
-                    <tr><td colspan="{% if can_edit %}12{% else %}11{% endif %}" class="empty-state">No payment transactions found.</td></tr>
+                    <tr><td colspan="{% if can_edit %}15{% else %}14{% endif %}" class="empty-state">No payment transactions found.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -72,5 +118,49 @@
 </section>
 {% endblock %}
 {% block extra_js %}
+    {{ billing_balance_data|json_script:"admin-billing-balance-data" }}
     {% include 'billing/includes/payment_status_script.html' %}
+    <script>
+        (function () {
+            const form = document.getElementById('admin-payment-form');
+            if (!form) return;
+            const billingField = document.getElementById('id_billing');
+            const methodField = document.getElementById('id_payment_method');
+            const amountField = document.getElementById('id_amount_paid');
+            const referenceRow = document.getElementById('admin-reference-row');
+            const balanceLabel = document.getElementById('admin-current-balance');
+            const dataElement = document.getElementById('admin-billing-balance-data');
+            const balances = dataElement ? JSON.parse(dataElement.textContent) : [];
+
+            function selectedPaymentOption() {
+                const selected = form.querySelector('input[name="payment_option"]:checked');
+                return selected ? selected.value : 'full';
+            }
+
+            function syncAmount() {
+                const selected = balances.find(function (item) {
+                    return String(item.id) === String(billingField ? billingField.value : '');
+                });
+                const balance = selected ? Number(selected.balance) : 0;
+                const amount = selectedPaymentOption() === 'partial' ? balance * 0.75 : balance;
+                if (amountField) amountField.value = amount.toFixed(2);
+                if (balanceLabel) balanceLabel.textContent = `PHP ${balance.toFixed(2)}`;
+            }
+
+            function syncReference() {
+                if (!referenceRow || !methodField) return;
+                referenceRow.hidden = methodField.value === 'cash';
+                const input = document.getElementById('id_reference_number');
+                if (methodField.value === 'cash' && input) input.value = '';
+            }
+
+            if (billingField) billingField.addEventListener('change', syncAmount);
+            if (methodField) methodField.addEventListener('change', syncReference);
+            form.querySelectorAll('input[name="payment_option"]').forEach(function (option) {
+                option.addEventListener('change', syncAmount);
+            });
+            syncAmount();
+            syncReference();
+        })();
+    </script>
 {% endblock %}

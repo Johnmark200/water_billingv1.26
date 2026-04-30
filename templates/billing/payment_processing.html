@@ -1,0 +1,164 @@
+{% extends 'base.html' %}
+{% block title %}Processing Payment{% endblock %}
+{% block extra_css %}
+<style>
+    .processing-wrap {
+        min-height: 68vh;
+        display: grid;
+        place-items: center;
+        padding: 32px 18px;
+    }
+
+    .processing-card {
+        width: min(560px, 100%);
+        background: #fff;
+        border: 1px solid rgba(214, 227, 234, 0.95);
+        border-radius: 8px;
+        box-shadow: 0 24px 54px rgba(24, 54, 66, 0.14);
+        padding: 30px;
+        text-align: center;
+    }
+
+    .processing-spinner {
+        width: 66px;
+        height: 66px;
+        border-radius: 50%;
+        border: 6px solid rgba(15, 118, 110, 0.14);
+        border-top-color: var(--brand);
+        margin: 0 auto 18px;
+        animation: processingSpin 0.8s linear infinite;
+    }
+
+    .processing-card.success .processing-spinner,
+    .processing-card.error .processing-spinner {
+        border: 0;
+        color: #fff;
+        animation: none;
+        display: grid;
+        place-items: center;
+        font-size: 38px;
+        font-weight: 900;
+    }
+
+    .processing-card.success .processing-spinner { background: #16a34a; }
+    .processing-card.error .processing-spinner { background: var(--danger); }
+    .processing-card.success .processing-spinner::after { content: "✓"; }
+    .processing-card.error .processing-spinner::after { content: "!"; }
+
+    .processing-progress {
+        height: 12px;
+        border-radius: 999px;
+        background: #e5e7eb;
+        overflow: hidden;
+        margin: 20px 0 10px;
+    }
+
+    .processing-progress-bar {
+        height: 100%;
+        width: 25%;
+        background: var(--brand);
+        transition: width 0.35s ease, background 0.35s ease;
+    }
+
+    .processing-steps {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 18px;
+        color: var(--muted);
+        font-size: 12px;
+    }
+
+    .processing-step.active {
+        color: var(--brand-dark);
+        font-weight: 800;
+    }
+
+    @keyframes processingSpin {
+        to { transform: rotate(360deg); }
+    }
+</style>
+{% endblock %}
+{% block content %}
+<section class="processing-wrap">
+    <div class="processing-card" id="processing-card">
+        <div class="processing-spinner"></div>
+        <h2 id="processing-title">Verifying Payment</h2>
+        <p class="muted" id="processing-message">We are checking your PayMongo transaction. Please do not close this page.</p>
+        <div class="processing-progress">
+            <div class="processing-progress-bar" id="processing-progress-bar"></div>
+        </div>
+        <div class="processing-steps">
+            <span class="processing-step active" data-step="25">Verifying</span>
+            <span class="processing-step" data-step="50">Processing</span>
+            <span class="processing-step" data-step="75">Confirming</span>
+            <span class="processing-step" data-step="100">Completed</span>
+        </div>
+        <div class="btn-row" id="processing-actions" style="display: none; justify-content: center; margin-top: 22px;">
+            <a href="{{ home_url }}" class="btn secondary">Back to Home</a>
+            <button type="button" class="btn" id="retry-payment-check">Retry</button>
+        </div>
+    </div>
+</section>
+{% endblock %}
+{% block extra_js %}
+<script>
+    (function () {
+        const card = document.getElementById('processing-card');
+        const title = document.getElementById('processing-title');
+        const message = document.getElementById('processing-message');
+        const bar = document.getElementById('processing-progress-bar');
+        const actions = document.getElementById('processing-actions');
+        const retry = document.getElementById('retry-payment-check');
+        const verifyUrl = "{{ verify_url }}";
+
+        function setProgress(step, nextTitle, nextMessage, state) {
+            if (bar) {
+                bar.style.width = `${step}%`;
+                bar.style.background = state === 'error' ? 'var(--danger)' : state === 'success' ? '#16a34a' : 'var(--brand)';
+            }
+            if (title) title.textContent = nextTitle;
+            if (message) message.textContent = nextMessage;
+            document.querySelectorAll('.processing-step').forEach(function (item) {
+                item.classList.toggle('active', Number(item.dataset.step) <= step);
+            });
+            if (card) {
+                card.classList.toggle('success', state === 'success');
+                card.classList.toggle('error', state === 'error');
+            }
+        }
+
+        async function verifyPayment() {
+            if (actions) actions.style.display = 'none';
+            setProgress(25, 'Verifying Payment', 'Checking the PayMongo payment reference.', '');
+            await new Promise(function (resolve) { setTimeout(resolve, 500); });
+            setProgress(50, 'Processing Transaction', 'Updating your payment record and billing balance.', '');
+            try {
+                const response = await fetch(verifyUrl, {
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+                const payload = await response.json();
+                if (!response.ok || !payload.ok) {
+                    setProgress(100, 'Transaction Issue', payload.message || 'The payment could not be confirmed.', 'error');
+                    if (actions) actions.style.display = 'flex';
+                    return;
+                }
+                setProgress(75, 'Confirming Payment', 'Preparing your receipt and notifications.', '');
+                await new Promise(function (resolve) { setTimeout(resolve, 500); });
+                setProgress(100, 'Payment Completed', payload.message || 'Payment completed successfully.', 'success');
+                setTimeout(function () {
+                    window.location.href = payload.receipt_url;
+                }, 900);
+            } catch (error) {
+                setProgress(100, 'Transaction Issue', 'Unable to verify the payment right now. Please retry or contact support.', 'error');
+                if (actions) actions.style.display = 'flex';
+            }
+        }
+
+        if (retry) retry.addEventListener('click', verifyPayment);
+        verifyPayment();
+    })();
+</script>
+{% endblock %}

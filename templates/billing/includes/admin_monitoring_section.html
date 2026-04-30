@@ -1,0 +1,78 @@
+{{ admin_monitoring_data|json_script:"admin-monitoring-data" }}
+<section class="page-wrap">
+    <div class="admin-monitor-grid">
+        <div class="admin-monitor-card admin-monitor-card-compact">
+            <div class="admin-monitor-head">
+                <div>
+                    <h3>System Billing Snapshot</h3>
+                    <p>Latest monitored billing month</p>
+                </div>
+                <span class="admin-monitor-chip">{{ admin_monitoring_data.summary.latest_label }}</span>
+            </div>
+            <div class="admin-monitor-donut-shell">
+                <svg id="admin-status-donut" viewBox="0 0 220 220" aria-label="System billing status snapshot"></svg>
+            </div>
+            <div class="admin-monitor-donut-copy">
+                <strong>{{ admin_monitoring_data.summary.paid_ratio }}%</strong>
+                <span>Paid accounts in the latest billing month</span>
+            </div>
+            <div class="admin-monitor-status-list">
+                <div class="admin-monitor-status-row">
+                    <div class="admin-monitor-status-copy">
+                        <span>Paid Accounts</span>
+                        <strong>{{ admin_monitoring_data.status_counts.paid }}</strong>
+                    </div>
+                    <div class="admin-monitor-track">
+                        <span class="admin-monitor-fill paid" style="width: {{ admin_monitoring_data.summary.paid_ratio }}%;"></span>
+                    </div>
+                </div>
+                <div class="admin-monitor-status-row">
+                    <div class="admin-monitor-status-copy">
+                        <span>Pending Accounts</span>
+                        <strong>{{ admin_monitoring_data.status_counts.pending }}</strong>
+                    </div>
+                    <div class="admin-monitor-track">
+                        <span class="admin-monitor-fill pending" style="width: {% widthratio admin_monitoring_data.status_counts.pending admin_monitoring_data.summary.latest_accounts 100 %}%;"></span>
+                    </div>
+                </div>
+                <div class="admin-monitor-status-row">
+                    <div class="admin-monitor-status-copy">
+                        <span>Overdue Accounts</span>
+                        <strong>{{ admin_monitoring_data.status_counts.overdue }}</strong>
+                    </div>
+                    <div class="admin-monitor-track">
+                        <span class="admin-monitor-fill overdue" style="width: {% widthratio admin_monitoring_data.status_counts.overdue admin_monitoring_data.summary.latest_accounts 100 %}%;"></span>
+                    </div>
+                </div>
+                <div class="admin-monitor-meta-row">
+                    <span>Outstanding Balance</span>
+                    <strong>PHP {{ admin_monitoring_data.summary.outstanding_balance }}</strong>
+                </div>
+                <div class="admin-monitor-meta-row">
+                    <span>Total Billed</span>
+                    <strong>PHP {{ admin_monitoring_data.summary.latest_billed }}</strong>
+                </div>
+                <div class="admin-monitor-meta-row">
+                    <span>Collected Amount</span>
+                    <strong>PHP {{ admin_monitoring_data.summary.latest_collected }}</strong>
+                </div>
+            </div>
+        </div>
+
+        <div class="admin-monitor-card admin-monitor-card-wide">
+            <div class="admin-monitor-head">
+                <div>
+                    <h3>Consumption and Billing Trend</h3>
+                    <p>System-wide usage, billed amount, and collection trend</p>
+                </div>
+                <span class="admin-monitor-chip">Latest Usage: {{ admin_monitoring_data.summary.latest_usage }} m3</span>
+            </div>
+            <svg id="admin-usage-trend-chart" viewBox="0 0 760 340" aria-label="System consumption and billing trend"></svg>
+            <div class="admin-monitor-legend">
+                <span><i class="usage"></i>Water Usage</span>
+                <span><i class="bill"></i>Total Bill</span>
+                <span><i class="paid"></i>Collected</span>
+            </div>
+        </div>
+    </div>
+</section>

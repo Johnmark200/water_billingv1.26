@@ -9,13 +9,30 @@
         </div>
         <form method="get" class="toolbar">
             <input type="month" name="month" value="{{ selected_month|date:'Y-m' }}">
+            <select name="consumer">
+                <option value="">All consumers</option>
+                {% for consumer in consumers %}
+                    <option value="{{ consumer.id }}" {% if selected_consumer == consumer.id|stringformat:'s' %}selected{% endif %}>
+                        {{ consumer.full_name }}
+                    </option>
+                {% endfor %}
+            </select>
             <button type="submit" class="btn secondary">Load Month</button>
         </form>
     </div>
+    <form method="get" action="{% url 'reports_export' %}" class="toolbar" style="margin-bottom: 20px;">
+        <input type="hidden" name="month" value="{{ selected_month|date:'Y-m' }}">
+        {% if selected_consumer %}<input type="hidden" name="consumer" value="{{ selected_consumer }}">{% endif %}
+        <label for="soa-start-date">From</label>
+        <input type="date" id="soa-start-date" name="start_date" value="{{ soa_start_date|date:'Y-m-d' }}">
+        <label for="soa-end-date">To</label>
+        <input type="date" id="soa-end-date" name="end_date" value="{{ soa_end_date|date:'Y-m-d' }}">
+        <button type="submit" class="btn secondary">Generate SOA PDF</button>
+    </form>
     <div class="stats-grid">
         <div class="mini-card"><h3>Active Consumers</h3><p>{{ active_percent }}%</p></div>
         <div class="mini-card"><h3>Paid Bills</h3><p>{{ paid_percent }}%</p></div>
-        <div class="mini-card"><h3>Overdue Bills</h3><p>{{ pending_percent }}%</p></div>
+        <div class="mini-card"><h3>Overdue Bills</h3><p>{{ overdue_bills }}</p></div>
         <div class="mini-card"><h3>Collection Rate</h3><p>{{ collection_rate }}%</p></div>
     </div>
 </section>

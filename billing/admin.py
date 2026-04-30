@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import BillingRecord, Consumer, ConsumerProfile, MeterReading, Notification, Payment, SMSBlast, SystemSettings
+from .models import AuditLog, BillingRecord, Consumer, ConsumerProfile, MeterReading, Notification, Payment, SMSBlast, SystemSettings
 from .services import send_payment_notification
 
 
@@ -70,3 +70,10 @@ class SystemSettingsAdmin(admin.ModelAdmin):
         'notify_by_sms',
         'updated_at',
     )
+
+
+@admin.register(AuditLog)
+class AuditLogAdmin(admin.ModelAdmin):
+    list_display = ('id', 'user', 'role', 'action', 'target', 'created_at')
+    search_fields = ('user__username', 'role', 'action', 'target', 'details')
+    list_filter = ('role', 'action', 'created_at')

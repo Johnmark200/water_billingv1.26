@@ -1,22 +1,5 @@
 <script>
-document.addEventListener('DOMContentLoaded', () => {
-    const forms = document.querySelectorAll('.payment-status-form');
-    if (!forms.length) {
-        return;
-    }
-
-    const feedback = document.querySelector('[data-payment-status-feedback]');
-
-    const setFeedback = (message, isError) => {
-        if (!feedback) {
-            return;
-        }
-
-        feedback.hidden = false;
-        feedback.textContent = message;
-        feedback.classList.toggle('error', Boolean(isError));
-    };
-
+(function () {
     const setText = (root, selector, value, prefix = '') => {
         if (!root) {
             return;
@@ -70,11 +53,23 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
+    const setFeedback = (message, isError) => {
+        const feedback = document.querySelector('[data-payment-status-feedback]');
+        if (!feedback) {
+            return;
+        }
+
+        feedback.hidden = false;
+        feedback.textContent = message;
+        feedback.classList.toggle('error', Boolean(isError));
+    };
+
     const submitStatus = async (form, status, previousValue) => {
         const row = form.closest('tr');
         const formData = new FormData(form);
         formData.set('status', status);
         setControlsDisabled(form, true);
+        window.showTransactionOverlay && window.showTransactionOverlay('Updating Payment', 'Saving the payment status and sending notifications.', 50);
 
         try {
             const response = await fetch(form.dataset.url, {
@@ -103,39 +98,60 @@ document.addEventListener('DOMContentLoaded', () => {
             setMetric('[data-pending-payments-count]', payload.pending_payments);
             setMetric('[data-monthly-collected-total]', payload.monthly_collected, 'PHP ');
             setFeedback(payload.message, false);
+            window.showTransactionOverlay && window.showTransactionOverlay('Payment Updated', payload.message, 100, 'success');
+            setTimeout(() => {
+                window.hideTransactionOverlay && window.hideTransactionOverlay();
+            }, 700);
         } catch (error) {
             setStatusControls(form, previousValue);
             setFeedback(error.message, true);
+            window.showTransactionOverlay && window.showTransactionOverlay('Transaction Issue', error.message, 100, 'error');
         } finally {
             setControlsDisabled(form, false);
         }
     };
 
-    forms.forEach((form) => {
-        const select = form.querySelector('select[name="status"]');
-        const buttons = form.querySelectorAll('button[name="status"]');
-
-        if (select) {
-            setStatusControls(form, select.value);
-
-            select.addEventListener('change', async () => {
-                await submitStatus(form, select.value, select.dataset.previousValue || select.value);
-            });
+    window.initPaymentStatusForms = function initPaymentStatusForms(root = document) {
+        const forms = root.querySelectorAll('.payment-status-form');
+        if (!forms.length) {
+            return;
         }
 
-        if (buttons.length) {
-            setStatusControls(form, form.dataset.currentStatus || '');
+        forms.forEach((form) => {
+            if (form.dataset.statusBound === 'true') {
+                return;
+            }
+            form.dataset.statusBound = 'true';
 
-            form.addEventListener('submit', async (event) => {
-                event.preventDefault();
-                const button = event.submitter;
-                if (!button || !button.value) {
-                    return;
-                }
+            const select = form.querySelector('select[name="status"]');
+            const buttons = form.querySelectorAll('button[name="status"]');
 
-                await submitStatus(form, button.value, form.dataset.currentStatus || button.value);
-            });
-        }
+            if (select) {
+                setStatusControls(form, select.value);
+
+                select.addEventListener('change', async () => {
+                    await submitStatus(form, select.value, select.dataset.previousValue || select.value);
+                });
+            }
+
+            if (buttons.length) {
+                setStatusControls(form, form.dataset.currentStatus || '');
+
+                form.addEventListener('submit', async (event) => {
+                    event.preventDefault();
+                    const button = event.submitter;
+                    if (!button || !button.value) {
+                        return;
+                    }
+
+                    await submitStatus(form, button.value, form.dataset.currentStatus || button.value);
+                });
+            }
+        });
+    };
+
+    document.addEventListener('DOMContentLoaded', () => {
+        window.initPaymentStatusForms(document);
     });
-});
+})();
 </script>

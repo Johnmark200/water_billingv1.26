@@ -1,90 +1,97 @@
-{% extends 'base.html' %}
-{% block title %}Sign Up{% endblock %}
-{% block content %}
-<section class="page-wrap">
-    <div class="auth-card">
-        <h2>Create Consumer Account</h2>
-        <p class="muted">Registration is for consumer access. Staff accounts should be created and assigned by the administrator.</p>
+{% extends 'registration/auth_layout.html' %}
+{% block title %}Create Consumer Account{% endblock %}
+{% block auth_shell_class %}auth-cover-shell{% endblock %}
+{% block auth_kicker %}Consumer Signup{% endblock %}
+{% block auth_heading %}Create Consumer Account{% endblock %}
+{% block auth_subtitle %}Register a consumer portal account for billing access, receipts, statements of account, and meter-reading history.{% endblock %}
+{% block auth_visual_title %}Tabuan Waterbilling.{% endblock %}
+{% block auth_visual_copy %}Create a consumer account with direct access to billing records, receipts, statements of account, and reading meter history.{% endblock %}
 
-        {% if form.non_field_errors %}
-            <div class="status-feedback error">
-                {% for error in form.non_field_errors %}
-                    <div>{{ error }}</div>
-                {% endfor %}
-            </div>
-        {% endif %}
-
-        <form method="post" novalidate id="signup-form">
-            {% csrf_token %}
-
-            <p>
-                <label for="id_username">Username</label>
-                <input type="text" name="username" id="id_username" maxlength="150" required value="{{ form.username.value|default:'' }}">
-                {% for error in form.username.errors %}
-                    <span class="field-error">{{ error }}</span>
-                {% endfor %}
-            </p>
-
-            <p>
-                <label for="id_full_name">Full Name</label>
-                <input type="text" name="full_name" id="id_full_name" maxlength="255" required value="{{ form.full_name.value|default:'' }}">
-                {% for error in form.full_name.errors %}
-                    <span class="field-error">{{ error }}</span>
-                {% endfor %}
-            </p>
-
-            <p>
-                <label for="id_email">Email</label>
-                <input type="email" name="email" id="id_email" value="{{ form.email.value|default:'' }}">
-                <span class="muted">We use this for billing notices and payment updates.</span>
-                {% for error in form.email.errors %}
-                    <span class="field-error">{{ error }}</span>
-                {% endfor %}
-            </p>
-
-            <p>
-                <label for="id_contact">Contact Number</label>
-                <input type="tel" name="contact" id="id_contact" maxlength="50" value="{{ form.contact.value|default:'' }}" placeholder="+639171234567">
-                <span class="muted">Use E.164 format, for example +639171234567.</span>
-                {% for error in form.contact.errors %}
-                    <span class="field-error">{{ error }}</span>
-                {% endfor %}
-            </p>
-
-            <p>
-                <label for="id_address">Address</label>
-                <textarea name="address" id="id_address">{{ form.address.value|default:'' }}</textarea>
-                {% for error in form.address.errors %}
-                    <span class="field-error">{{ error }}</span>
-                {% endfor %}
-            </p>
-
-            <p>
-                <label for="id_password1">Password</label>
-                <input type="password" name="password1" id="id_password1" required>
-                <span class="muted">Use at least 8 characters with uppercase, lowercase, number, and special character. Your username must not appear in the password.</span>
-                <span class="field-error" id="password-live-error" hidden></span>
-                {% for error in form.password1.errors %}
-                    <span class="field-error">{{ error }}</span>
-                {% endfor %}
-            </p>
-
-            <p>
-                <label for="id_password2">Confirm Password</label>
-                <input type="password" name="password2" id="id_password2" required>
-                <span class="field-error" id="password-match-error" hidden></span>
-                {% for error in form.password2.errors %}
-                    <span class="field-error">{{ error }}</span>
-                {% endfor %}
-            </p>
-
-            <div class="btn-row">
-                <button type="submit" class="btn">Create Account</button>
-                <a href="{% url 'login' %}" class="btn secondary">Back to Login</a>
-            </div>
-        </form>
+{% block auth_body %}
+{% if form.non_field_errors %}
+    <div class="status-feedback error">
+        {% for error in form.non_field_errors %}
+            <div>{{ error }}</div>
+        {% endfor %}
     </div>
-</section>
+{% endif %}
+
+<form method="post" novalidate id="signup-form" class="auth-form">
+    {% csrf_token %}
+
+    <div class="auth-grid">
+        <div class="auth-field">
+            <label for="id_username">Username</label>
+            <input type="text" name="username" id="id_username" maxlength="150" required value="{{ form.username.value|default:'' }}" autocomplete="username">
+            {% for error in form.username.errors %}
+                <span class="field-error">{{ error }}</span>
+            {% endfor %}
+        </div>
+
+        <div class="auth-field">
+            <label for="id_full_name">Full Name</label>
+            <input type="text" name="full_name" id="id_full_name" maxlength="255" required value="{{ form.full_name.value|default:'' }}" autocomplete="name">
+            {% for error in form.full_name.errors %}
+                <span class="field-error">{{ error }}</span>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="auth-grid">
+        <div class="auth-field">
+            <label for="id_email">Email</label>
+            <input type="email" name="email" id="id_email" value="{{ form.email.value|default:'' }}" autocomplete="email">
+            <span class="auth-help">Used for billing notices, payment updates, and account communication.</span>
+            {% for error in form.email.errors %}
+                <span class="field-error">{{ error }}</span>
+            {% endfor %}
+        </div>
+
+        <div class="auth-field">
+            <label for="id_contact">Contact Number</label>
+            <input type="tel" name="contact" id="id_contact" maxlength="50" value="{{ form.contact.value|default:'' }}" placeholder="+639171234567" autocomplete="tel">
+            <span class="auth-help">Use E.164 format, for example +639171234567.</span>
+            {% for error in form.contact.errors %}
+                <span class="field-error">{{ error }}</span>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="auth-field">
+        <label for="id_address">Address</label>
+        <textarea name="address" id="id_address" autocomplete="street-address">{{ form.address.value|default:'' }}</textarea>
+        {% for error in form.address.errors %}
+            <span class="field-error">{{ error }}</span>
+        {% endfor %}
+    </div>
+
+    <div class="auth-grid">
+        <div class="auth-field">
+            <label for="id_password1">Password</label>
+            <input type="password" name="password1" id="id_password1" required autocomplete="new-password">
+            <span class="auth-help">Use at least 8 characters with uppercase, lowercase, number, and special character.</span>
+            <span class="field-error" id="password-live-error" hidden></span>
+            {% for error in form.password1.errors %}
+                <span class="field-error">{{ error }}</span>
+            {% endfor %}
+        </div>
+
+        <div class="auth-field">
+            <label for="id_password2">Confirm Password</label>
+            <input type="password" name="password2" id="id_password2" required autocomplete="new-password">
+            <span class="auth-help">The confirmation password must exactly match the first field.</span>
+            <span class="field-error" id="password-match-error" hidden></span>
+            {% for error in form.password2.errors %}
+                <span class="field-error">{{ error }}</span>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="auth-actions">
+        <button type="submit" class="btn auth-primary">Create Account</button>
+        <a href="{% url 'login' %}" class="btn secondary">Back to Login</a>
+    </div>
+</form>
 {% endblock %}
 
 {% block extra_js %}

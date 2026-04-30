@@ -1,0 +1,31 @@
+{% for payment in recent_payments %}
+    <tr>
+        <td data-label="Consumer">{{ payment.consumer.full_name }}</td>
+        <td data-label="Method">{{ payment.get_payment_method_display }}</td>
+        <td data-label="Option">{{ payment.get_payment_option_display }}</td>
+        <td data-label="Amount">&#8369;{{ payment.amount_paid }}</td>
+        <td data-label="Status" class="payment-status-display">{{ payment.get_status_display }}</td>
+        <td data-label="Bill Status" class="billing-status-display">{% if payment.billing %}{{ payment.billing.get_status_display }}{% else %}-{% endif %}</td>
+        <td data-label="Email" class="email-notification-display">-</td>
+        <td data-label="SMS" class="sms-notification-display">-</td>
+        <td data-label="Receipt" class="table-action-cell"><a href="{% url 'payment_receipt' payment.id %}" class="btn secondary">View</a></td>
+        <td data-label="Update" class="table-action-cell">
+            <form method="post" class="payment-status-form status-actions" data-url="{% url 'update_payment_status' payment.id %}" data-current-status="{{ payment.status }}">
+                {% csrf_token %}
+                {% for value, label in payment_status_choices %}
+                    <button
+                        type="submit"
+                        name="status"
+                        value="{{ value }}"
+                        class="status-button {% if payment.status == value %}active{% endif %}"
+                        {% if payment.status == value %}disabled{% endif %}
+                    >
+                        {{ label }}
+                    </button>
+                {% endfor %}
+            </form>
+        </td>
+    </tr>
+{% empty %}
+    <tr><td colspan="10" class="empty-state">No payments recorded yet.</td></tr>
+{% endfor %}
