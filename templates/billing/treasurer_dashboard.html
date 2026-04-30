@@ -23,10 +23,14 @@
 {% endblock %}
 {% block content %}
 <section class="page-wrap">
+<<<<<<< HEAD
     <h2 class="page-title">Treasurer Panel</h2>
     <p class="muted">Collection-focused workspace for payment monitoring, billing settlement, and financial follow-up.</p>
     <div class="status-feedback" data-payment-status-feedback hidden></div>
     <div class="stats-grid treasurer-stats-grid">
+=======
+    <div class="stats-grid">
+>>>>>>> dc431d5f56436570fb36c95ba627df0516f16a70
         <div class="mini-card"><h3>Month</h3><p>{{ current_month|date:'M Y' }}</p></div>
         <div class="mini-card"><h3>Collected</h3><p data-monthly-collected-total>&#8369;{{ monthly_collected }}</p></div>
         <div class="mini-card"><h3>Pending Bills</h3><p data-pending-bills-count>{{ pending_accounts_count }}</p></div>

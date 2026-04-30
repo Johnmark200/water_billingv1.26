@@ -25,12 +25,22 @@
 </style>
 {% endblock %}
 {% block content %}
+<<<<<<< HEAD
+<section class="page-wrap grid-2">
+    <div class="form-card" style="margin: 0; max-width: none;">
+        <form method="post">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <button type="submit" class="btn">Submit Reading</button>
+        </form>
+=======
 <section class="page-wrap">
     <div class="toolbar" style="justify-content: space-between; margin-bottom: 20px;">
         <div>
             <h2 class="page-title">Reading Panel</h2>
             <p class="muted">Use the previous reading as reference only, then save the actual current reading or current-cycle usage that was read on site.</p>
         </div>
+>>>>>>> d8999ba5f29df50a18146805d2c288c36dcf5a48
     </div>
     <div class="status-feedback" id="reader-live-feedback" hidden></div>
     <div class="stats-grid reader-stats-grid">
@@ -79,6 +89,7 @@
 
 <section class="page-wrap">
     <div class="table-card">
+<<<<<<< HEAD
         <h2 class="page-title">Recent Submitted Readings</h2>
         <div class="table-shell table-shell-xl" data-stack-on-mobile="true">
             <table>
@@ -103,6 +114,14 @@
                 </tbody>
             </table>
         </div>
+=======
+        <table>
+            <thead><tr><th>Consumer</th><th>Month</th><th>Previous</th><th>Current</th><th>Usage</th><th>Date</th><th>Action</th></tr></thead>
+            <tbody id="reader-reading-rows">
+                {% include 'billing/includes/reader_reading_rows.html' %}
+            </tbody>
+        </table>
+>>>>>>> dc431d5f56436570fb36c95ba627df0516f16a70
     </div>
 </section>
 {% endblock %}
