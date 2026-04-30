@@ -1,26 +1,25 @@
 {% extends 'base.html' %}
 {% block title %}Profile{% endblock %}
 {% block content %}
-<section class="page-wrap grid-2">
-    <div class="card">
-        <h2 class="page-title">Account Profile</h2>
-        <p><strong>Full name:</strong> {{ profile.full_name }}</p>
-        <p><strong>Username:</strong> {{ request.user.username }}</p>
-        <p><strong>Email:</strong> {{ profile.email|default:request.user.email|default:'-' }}</p>
-        <p><strong>Contact:</strong> {{ profile.contact|default:'-' }}</p>
-        <p><strong>Address:</strong> {{ profile.address|default:'-' }}</p>
-        <p><strong>Role:</strong> {{ profile.get_role_display }}</p>
+<section class="page-wrap">
+    <div class="toolbar" style="justify-content: space-between; margin-bottom: 20px;">
+        <div>
+            <h2 class="page-title">Profile</h2>
+            <p class="muted">Update your personal details and profile picture here. Changes are saved immediately to the database.</p>
+        </div>
     </div>
-    <div class="card">
-        <h2 class="page-title">Linked Consumer Record</h2>
-        {% if consumer %}
-            <p><strong>Consumer ID:</strong> {{ consumer.id|stringformat:'03d' }}</p>
-            <p><strong>Status:</strong> {{ consumer.get_status_display }}</p>
-            <p><strong>Contact Number:</strong> {{ consumer.contact_number|default:'-' }}</p>
-            <p><strong>Address:</strong> {{ consumer.address|default:'-' }}</p>
-        {% else %}
-            <p class="empty-state">This account is not linked to a consumer record.</p>
-        {% endif %}
+    <div class="status-feedback" id="profile-page-feedback" hidden></div>
+</section>
+
+<section class="page-wrap grid-2">
+    <div id="profile-page-summary">
+        {% include 'billing/includes/profile_summary.html' %}
+    </div>
+    <div class="form-card">
+        <h3>Edit Profile</h3>
+        <div id="profile-page-form">
+            {% include 'billing/includes/profile_form.html' %}
+        </div>
     </div>
 </section>
 
@@ -77,4 +76,45 @@
         </table>
     </div>
 </section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    (function () {
+        const feedback = document.getElementById('profile-page-feedback');
+        const summaryContainer = document.getElementById('profile-page-summary');
+        const formContainer = document.getElementById('profile-page-form');
+        const form = formContainer ? formContainer.querySelector('.ajax-profile-form') : null;
+
+        function showFeedback(message, isError) {
+            if (!feedback || !message) return;
+            feedback.hidden = false;
+            feedback.classList.toggle('error', Boolean(isError));
+            feedback.textContent = message;
+        }
+
+        function bindProfileForm() {
+            const activeForm = formContainer ? formContainer.querySelector('.ajax-profile-form') : null;
+            if (!activeForm) return;
+
+            activeForm.addEventListener('submit', async function (event) {
+                event.preventDefault();
+                const response = await fetch(activeForm.action, {
+                    method: 'POST',
+                    body: new FormData(activeForm),
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+                const payload = await response.json();
+                if (payload.summary_html && summaryContainer) summaryContainer.innerHTML = payload.summary_html;
+                if (payload.form_html && formContainer) formContainer.innerHTML = payload.form_html;
+                bindProfileForm();
+                showFeedback(payload.message, !payload.ok);
+            });
+        }
+
+        if (form) bindProfileForm();
+    })();
+</script>
 {% endblock %}

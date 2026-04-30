@@ -5,25 +5,24 @@
     <div class="toolbar" style="justify-content: space-between; margin-bottom: 20px;">
         <div>
             <h2 class="page-title">Consumer Portal</h2>
-            <p class="muted">Only your own billing, meter readings, payment submissions, receipts, and notifications are visible here.</p>
+            <p class="muted">Review your latest billings, compare previous and current readings, manage your profile, and submit payments for the next due or upcoming months.</p>
         </div>
         <a href="{% url 'notifications' %}" class="btn secondary">&#128276; Open Notifications</a>
     </div>
+    <div class="status-feedback" id="consumer-live-feedback" hidden></div>
 </section>
 
 {% if consumer %}
 <section class="page-wrap grid-3">
-    <div class="card">
-        <h3>Account</h3>
-        <p><strong>Name:</strong> {{ consumer.full_name }}</p>
-        <p><strong>Consumer ID:</strong> {{ consumer.id|stringformat:'03d' }}</p>
-        <p><strong>Status:</strong> {{ consumer.get_status_display }}</p>
+    <div id="consumer-profile-summary">
+        {% include 'billing/includes/profile_summary.html' %}
     </div>
     <div class="card">
-        <h3>Available Payment Channels</h3>
+        <h3>Payment Channels</h3>
         <p><strong>Cash:</strong> {{ payment_settings.enable_cash_payments|yesno:'Enabled,Disabled' }}</p>
         <p><strong>Online:</strong> {{ payment_settings.enable_online_payments|yesno:'Enabled,Disabled' }}</p>
-        <p class="muted">Only the admin can change these settings. This portal only shows channels currently allowed for your account.</p>
+        <p><strong>Next payment month:</strong> {{ next_payment_month|date:'F Y'|default:'-' }}</p>
+        <p class="muted">After you settle the current month, the next month automatically becomes available. Upcoming months stay open for advance payments.</p>
     </div>
     <div class="card">
         <h3>Recent Alerts</h3>
@@ -36,33 +35,89 @@
 </section>
 
 <section class="page-wrap grid-2">
-    <div class="form-card" style="margin: 0; max-width: none;">
+    <div class="form-card">
+        <h3>Update Profile</h3>
+        <p class="muted">Changes are saved directly to the database and reflected across your account without reloading the page.</p>
+        <div id="consumer-profile-form">
+            {% include 'billing/includes/profile_form.html' %}
+        </div>
+    </div>
+    <div class="form-card">
         <h3>Submit Payment</h3>
+        <p class="muted">Choose the next due month or make an advance payment for a future month.</p>
         {% if payment_form %}
-            <form method="post">
+            <form method="post" id="consumer-payment-form">
                 {% csrf_token %}
-                {{ payment_form.as_p }}
-                <button type="submit" class="btn">Submit Payment</button>
+                {% if payment_form.non_field_errors %}
+                    <div class="status-feedback error">
+                        {% for error in payment_form.non_field_errors %}
+                            <div>{{ error }}</div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+                <p>
+                    <label for="{{ payment_form.covered_month.id_for_label }}">Payment month</label>
+                    {{ payment_form.covered_month }}
+                    <span class="muted">{{ payment_form.covered_month.help_text }}</span>
+                    {% for error in payment_form.covered_month.errors %}
+                        <span class="field-error">{{ error }}</span>
+                    {% endfor %}
+                </p>
+                <p>
+                    <label for="{{ payment_form.payment_method.id_for_label }}">Payment method</label>
+                    {{ payment_form.payment_method }}
+                    {% for error in payment_form.payment_method.errors %}
+                        <span class="field-error">{{ error }}</span>
+                    {% endfor %}
+                </p>
+                <p>
+                    <label for="{{ payment_form.amount_paid.id_for_label }}">Amount paid</label>
+                    {{ payment_form.amount_paid }}
+                    {% for error in payment_form.amount_paid.errors %}
+                        <span class="field-error">{{ error }}</span>
+                    {% endfor %}
+                </p>
+                <p id="payment-reference-row">
+                    <label for="{{ payment_form.reference_number.id_for_label }}">Reference number</label>
+                    {{ payment_form.reference_number }}
+                    <span class="muted">{{ payment_form.reference_number.help_text }}</span>
+                    {% for error in payment_form.reference_number.errors %}
+                        <span class="field-error">{{ error }}</span>
+                    {% endfor %}
+                </p>
+                <p class="muted" id="online-payment-note" hidden>
+                    Online Payment redirects you to the PayMongo e-wallet page. The transaction reference and status are saved automatically after PayMongo returns.
+                </p>
+                <div class="btn-row">
+                    <button type="submit" class="btn" id="payment-submit-button">Submit Payment</button>
+                </div>
             </form>
         {% else %}
             <p class="empty-state">No payment channels are currently available.</p>
         {% endif %}
     </div>
+</section>
+
+<section class="page-wrap" id="consumer-billing-comparison">
+    {% include 'billing/includes/consumer_billing_comparison.html' %}
+</section>
+
+<section class="page-wrap grid-2">
     <div class="table-card">
         <h3>Receipts</h3>
         <table>
-            <thead><tr><th>Date</th><th>Method</th><th>Amount</th><th>Reference</th></tr></thead>
-            <tbody>
-                {% for payment in receipts %}
-                    <tr>
-                        <td>{{ payment.payment_date }}</td>
-                        <td>{{ payment.get_payment_method_display }}</td>
-                        <td>&#8369;{{ payment.amount_paid }}</td>
-                        <td>{{ payment.reference_number|default:'-' }}</td>
-                    </tr>
-                {% empty %}
-                    <tr><td colspan="4" class="empty-state">No completed receipts yet.</td></tr>
-                {% endfor %}
+            <thead><tr><th>Date</th><th>Month Covered</th><th>Amount Paid</th><th>Discount</th><th>Total Credit</th><th>Reference</th></tr></thead>
+            <tbody id="consumer-receipt-rows">
+                {% include 'billing/includes/consumer_receipt_rows.html' %}
+            </tbody>
+        </table>
+    </div>
+    <div class="table-card">
+        <h3>Billing Records</h3>
+        <table>
+            <thead><tr><th>Month</th><th>Previous</th><th>Current</th><th>Total</th><th>Paid</th><th>Status</th></tr></thead>
+            <tbody id="consumer-billing-rows">
+                {% include 'billing/includes/consumer_billing_rows.html' %}
             </tbody>
         </table>
     </div>
@@ -70,62 +125,22 @@
 
 <section class="page-wrap grid-2">
     <div class="table-card">
-        <h3>Billing Records</h3>
-        <table>
-            <thead><tr><th>Month</th><th>Total</th><th>Paid</th><th>Status</th></tr></thead>
-            <tbody>
-                {% for bill in billing_records %}
-                    <tr>
-                        <td>{{ bill.billing_month|date:'F Y' }}</td>
-                        <td>&#8369;{{ bill.total_amount }}</td>
-                        <td>&#8369;{{ bill.amount_paid }}</td>
-                        <td>{{ bill.get_status_display }}</td>
-                    </tr>
-                {% empty %}
-                    <tr><td colspan="4" class="empty-state">No billing records available.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    <div class="table-card">
         <h3>Meter Readings</h3>
         <table>
-            <thead><tr><th>Month</th><th>Previous</th><th>Current</th><th>Usage</th></tr></thead>
-            <tbody>
-                {% for reading in meter_readings %}
-                    <tr>
-                        <td>{{ reading.billing_month|date:'F Y' }}</td>
-                        <td>{{ reading.previous_reading }}</td>
-                        <td>{{ reading.current_reading }}</td>
-                        <td>{{ reading.usage_m3 }} m3</td>
-                    </tr>
-                {% empty %}
-                    <tr><td colspan="4" class="empty-state">No meter readings available.</td></tr>
-                {% endfor %}
+            <thead><tr><th>Month</th><th>Previous</th><th>Current</th><th>Usage</th><th>Reading Date</th></tr></thead>
+            <tbody id="consumer-reading-rows">
+                {% include 'billing/includes/consumer_reading_rows.html' %}
             </tbody>
         </table>
     </div>
     <div class="table-card">
         <h3>Payment Submissions</h3>
         <table>
-            <thead><tr><th>Date</th><th>Method</th><th>Amount</th><th>Status</th></tr></thead>
-            <tbody>
-                {% for payment in payments %}
-                    <tr>
-                        <td>{{ payment.payment_date }}</td>
-                        <td>{{ payment.get_payment_method_display }}</td>
-                        <td>&#8369;{{ payment.amount_paid }}</td>
-                        <td>{{ payment.get_status_display }}</td>
-                    </tr>
-                {% empty %}
-                    <tr><td colspan="4" class="empty-state">No payment submissions available.</td></tr>
-                {% endfor %}
+            <thead><tr><th>Date</th><th>Month Covered</th><th>Method</th><th>Paid</th><th>Discount</th><th>Status</th><th>Reference</th></tr></thead>
+            <tbody id="consumer-payment-rows">
+                {% include 'billing/includes/consumer_payment_rows.html' %}
             </tbody>
         </table>
-    </div>
-    <div class="card">
-        <h3>Portal Scope</h3>
-        <p>This consumer panel does not show admin configuration tools. Notification settings and payment channel setup are controlled separately by the administrator.</p>
     </div>
 </section>
 {% else %}
@@ -136,4 +151,96 @@
     </div>
 </section>
 {% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    (function () {
+        const feedback = document.getElementById('consumer-live-feedback');
+        const summaryContainer = document.getElementById('consumer-profile-summary');
+        const formContainer = document.getElementById('consumer-profile-form');
+        const comparisonContainer = document.getElementById('consumer-billing-comparison');
+        const receiptRows = document.getElementById('consumer-receipt-rows');
+        const billingRows = document.getElementById('consumer-billing-rows');
+        const readingRows = document.getElementById('consumer-reading-rows');
+        const paymentRows = document.getElementById('consumer-payment-rows');
+
+        function showFeedback(message, isError) {
+            if (!feedback || !message) return;
+            feedback.hidden = false;
+            feedback.classList.toggle('error', Boolean(isError));
+            feedback.textContent = message;
+        }
+
+        function bindProfileForm() {
+            if (!formContainer) return;
+            const profileForm = formContainer.querySelector('.ajax-profile-form');
+            if (!profileForm) return;
+
+            profileForm.addEventListener('submit', async function (event) {
+                event.preventDefault();
+                const response = await fetch(profileForm.action, {
+                    method: 'POST',
+                    body: new FormData(profileForm),
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+                const payload = await response.json();
+                if (payload.summary_html && summaryContainer) summaryContainer.innerHTML = payload.summary_html;
+                if (payload.form_html) formContainer.innerHTML = payload.form_html;
+                bindProfileForm();
+                showFeedback(payload.message, !payload.ok);
+            });
+        }
+
+        async function refreshLivePanel() {
+            try {
+                const response = await fetch("{% url 'consumer_panel_data' %}", {
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+                if (!response.ok) return;
+                const payload = await response.json();
+                if (payload.summary_html && summaryContainer) summaryContainer.innerHTML = payload.summary_html;
+                if (payload.comparison_html && comparisonContainer) comparisonContainer.innerHTML = payload.comparison_html;
+                if (payload.receipt_rows_html && receiptRows) receiptRows.innerHTML = payload.receipt_rows_html;
+                if (payload.billing_rows_html && billingRows) billingRows.innerHTML = payload.billing_rows_html;
+                if (payload.reading_rows_html && readingRows) readingRows.innerHTML = payload.reading_rows_html;
+                if (payload.payment_rows_html && paymentRows) paymentRows.innerHTML = payload.payment_rows_html;
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        function initPaymentMode() {
+            const form = document.getElementById('consumer-payment-form');
+            if (!form) return;
+
+            const method = document.getElementById('id_payment_method');
+            const referenceRow = document.getElementById('payment-reference-row');
+            const button = document.getElementById('payment-submit-button');
+            const note = document.getElementById('online-payment-note');
+
+            function syncPaymentMode() {
+                const isOnline = method && method.value === 'online';
+                if (button) button.textContent = isOnline ? 'Pay with E-Wallet' : 'Submit Payment';
+                if (referenceRow) referenceRow.hidden = isOnline;
+                if (note) note.hidden = !isOnline;
+            }
+
+            if (method) {
+                method.addEventListener('change', syncPaymentMode);
+                syncPaymentMode();
+            }
+        }
+
+        bindProfileForm();
+        initPaymentMode();
+        {% if consumer %}
+        setInterval(refreshLivePanel, 15000);
+        {% endif %}
+    })();
+</script>
 {% endblock %}

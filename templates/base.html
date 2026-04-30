@@ -15,9 +15,11 @@
             --brand-dark: #115e59;
             --accent: #f59e0b;
             --danger: #dc2626;
+            --sidebar-width: 272px;
         }
 
         * { box-sizing: border-box; }
+
         body {
             margin: 0;
             font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
@@ -29,26 +31,33 @@
             min-height: 100vh;
         }
 
+        body.sidebar-open {
+            overflow: hidden;
+        }
+
         a { color: inherit; text-decoration: none; }
 
         .site-header {
             position: sticky;
             top: 0;
-            z-index: 20;
+            z-index: 30;
             backdrop-filter: blur(14px);
             background: rgba(255, 255, 255, 0.92);
             border-bottom: 1px solid rgba(214, 227, 234, 0.9);
         }
 
         .header-wrap {
-            max-width: 1240px;
-            margin: 0 auto;
-            padding: 18px 24px;
             display: flex;
             justify-content: space-between;
             align-items: center;
             gap: 16px;
-            flex-wrap: wrap;
+            padding: 18px 24px;
+        }
+
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
         }
 
         .brand-block {
@@ -68,15 +77,26 @@
             font-size: 14px;
         }
 
-        nav {
+        .sidebar-toggle {
+            border: 0;
+            border-radius: 12px;
+            background: rgba(15, 118, 110, 0.08);
+            color: var(--ink);
+            padding: 10px 12px;
+            cursor: pointer;
+            font-size: 18px;
+        }
+
+        .top-nav {
             display: flex;
             gap: 10px;
             align-items: center;
             flex-wrap: wrap;
         }
 
-        nav a,
-        .role-chip {
+        .top-nav a,
+        .role-chip,
+        .nav-link-button {
             padding: 10px 14px;
             border-radius: 999px;
             background: rgba(15, 118, 110, 0.08);
@@ -85,7 +105,13 @@
             transition: background 0.2s ease, color 0.2s ease;
         }
 
-        nav a:hover {
+        .top-nav a.active {
+            background: var(--brand);
+            color: #fff;
+        }
+
+        .top-nav a:hover,
+        .nav-link-button:hover {
             background: var(--brand);
             color: #fff;
         }
@@ -97,18 +123,7 @@
 
         .nav-link-button {
             border: 0;
-            padding: 10px 14px;
-            border-radius: 999px;
-            background: rgba(15, 118, 110, 0.08);
-            color: var(--ink);
-            font-size: 14px;
             cursor: pointer;
-            transition: background 0.2s ease, color 0.2s ease;
-        }
-
-        .nav-link-button:hover {
-            background: var(--brand);
-            color: #fff;
         }
 
         .role-chip {
@@ -116,15 +131,10 @@
             color: var(--muted);
         }
 
-        .notification-link {
-            position: relative;
-            padding-right: 18px;
-        }
-
         .badge {
-            position: absolute;
-            top: 2px;
-            right: 2px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
             min-width: 18px;
             height: 18px;
             padding: 0 5px;
@@ -132,8 +142,79 @@
             background: var(--danger);
             color: #fff;
             font-size: 11px;
-            line-height: 18px;
-            text-align: center;
+            margin-left: 6px;
+        }
+
+        .app-shell {
+            display: grid;
+            grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+            min-height: calc(100vh - 78px);
+        }
+
+        .app-sidebar {
+            position: sticky;
+            top: 78px;
+            height: calc(100vh - 78px);
+            padding: 24px 18px;
+            border-right: 1px solid rgba(214, 227, 234, 0.9);
+            background: rgba(255, 255, 255, 0.88);
+            backdrop-filter: blur(16px);
+            overflow-y: auto;
+        }
+
+        .sidebar-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .sidebar-user {
+            padding: 18px;
+            border-radius: 20px;
+            background: linear-gradient(160deg, rgba(15, 118, 110, 0.12), rgba(245, 158, 11, 0.1));
+            border: 1px solid rgba(214, 227, 234, 0.9);
+        }
+
+        .sidebar-user strong {
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .sidebar-user span {
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .sidebar-nav {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .sidebar-link {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 14px;
+            border-radius: 16px;
+            color: var(--ink);
+            background: transparent;
+            transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+        }
+
+        .sidebar-link:hover,
+        .sidebar-link.active {
+            background: rgba(15, 118, 110, 0.12);
+            color: var(--brand-dark);
+            transform: translateX(2px);
+        }
+
+        .sidebar-footer {
+            margin-top: auto;
+        }
+
+        .app-main {
+            min-width: 0;
         }
 
         .page-wrap,
@@ -158,7 +239,8 @@
 
         .hero p,
         .lead,
-        .section p {
+        .section p,
+        .muted {
             color: var(--muted);
         }
 
@@ -226,6 +308,27 @@
             gap: 18px;
         }
 
+        .comparison-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+        }
+
+        .comparison-card {
+            padding: 18px;
+            border-radius: 18px;
+            background: rgba(15, 118, 110, 0.06);
+            border: 1px solid rgba(214, 227, 234, 0.9);
+        }
+
+        .comparison-card-secondary {
+            background: rgba(245, 158, 11, 0.08);
+        }
+
+        .comparison-card h4 {
+            margin-top: 0;
+        }
+
         .table-card { overflow-x: auto; }
 
         table {
@@ -284,6 +387,11 @@
             margin: 0 0 14px;
         }
 
+        label {
+            display: block;
+            font-weight: 600;
+        }
+
         input,
         select,
         textarea {
@@ -297,7 +405,7 @@
         }
 
         .auth-card {
-            max-width: 560px;
+            max-width: 620px;
             margin: 64px auto;
             padding: 28px;
             background: rgba(255, 255, 255, 0.96);
@@ -315,10 +423,6 @@
             margin-bottom: 10px;
         }
 
-        .muted {
-            color: var(--muted);
-        }
-
         .empty-state {
             color: var(--muted);
             padding: 8px 0;
@@ -333,36 +437,122 @@
             color: var(--brand-dark);
         }
 
-        .status-feedback.error {
-            background: rgba(220, 38, 38, 0.08);
-            border-color: rgba(220, 38, 38, 0.16);
+        .status-feedback.error,
+        .field-error {
             color: var(--danger);
         }
 
-        .status-select {
-            min-width: 150px;
+        .status-feedback.error {
+            background: rgba(220, 38, 38, 0.08);
+            border-color: rgba(220, 38, 38, 0.16);
         }
 
-        .config-list {
-            margin: 12px 0 0;
-            padding-left: 18px;
-            color: var(--muted);
+        .field-error {
+            display: block;
+            margin-top: 6px;
+            font-size: 13px;
         }
 
-        .config-list li {
-            margin-bottom: 6px;
+        .status-chip {
+            display: inline-flex;
+            align-items: center;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: rgba(15, 118, 110, 0.12);
+            color: var(--brand-dark);
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .profile-summary {
+            display: flex;
+            gap: 18px;
+            align-items: flex-start;
+        }
+
+        .profile-avatar {
+            width: 86px;
+            height: 86px;
+            border-radius: 24px;
+            overflow: hidden;
+            background: linear-gradient(160deg, rgba(15, 118, 110, 0.18), rgba(245, 158, 11, 0.22));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--brand-dark);
+            font-size: 30px;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        .profile-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .profile-summary-copy h3 {
+            margin: 0 0 8px;
+        }
+
+        .profile-summary-copy p {
+            margin: 6px 0;
+        }
+
+        .sidebar-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(24, 54, 66, 0.36);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+            z-index: 20;
+        }
+
+        .sidebar-overlay.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        @media (max-width: 1180px) {
+            .top-nav {
+                display: none;
+            }
         }
 
         @media (max-width: 960px) {
             .stats-grid,
             .grid-2,
             .grid-3,
-            .features {
+            .features,
+            .comparison-grid {
                 grid-template-columns: 1fr;
             }
 
-            .header-wrap {
-                align-items: flex-start;
+            .app-shell {
+                grid-template-columns: 1fr;
+            }
+
+            .app-sidebar {
+                position: fixed;
+                top: 78px;
+                left: 0;
+                bottom: 0;
+                width: min(var(--sidebar-width), calc(100vw - 32px));
+                height: auto;
+                transform: translateX(-100%);
+                transition: transform 0.2s ease;
+                z-index: 25;
+            }
+
+            body.sidebar-open .app-sidebar {
+                transform: translateX(0);
+            }
+        }
+
+        @media (min-width: 961px) {
+            .sidebar-toggle {
+                display: none;
             }
         }
     </style>
@@ -371,49 +561,68 @@
 <body>
     <header class="site-header">
         <div class="header-wrap">
-            <div class="brand-block">
-                <strong>Tabuan Water Billing System</strong>
-                <span>Role-aware billing, readings, payments, and notifications</span>
-            </div>
-            <nav>
-                <a href="{% url 'home' %}">Home</a>
+            <div class="header-brand">
                 {% if user.is_authenticated %}
-                    <a href="{% url dashboard_url_name %}">Dashboard</a>
-                    {% if can_manage_consumers %}
-                        <a href="{% url 'consumers' %}">Consumers</a>
-                    {% endif %}
-                    {% if current_role == 'admin' or current_role == 'secretary' or current_role == 'treasurer' %}
-                        <a href="{% url 'billing' %}">Billing</a>
-                        <a href="{% url 'payments' %}">Payments</a>
-                    {% endif %}
-                    {% if can_view_reports %}
-                        <a href="{% url 'reports' %}">Reports</a>
-                    {% endif %}
-                    {% if current_role == 'admin' %}
-                        <a href="{% url 'communications' %}">Communications</a>
-                        <a href="{% url 'payment_settings' %}">Settings</a>
-                    {% endif %}
-                    {% if can_input_meter_readings %}
-                        <a href="{% url 'reader_panel' %}">Meter Readings</a>
-                    {% endif %}
-                    {% if current_role == 'consumer' %}
-                        <a href="{% url 'notifications' %}" class="notification-link">&#128276; Notifications{% if unread_notifications %}<span class="badge">{{ unread_notifications }}</span>{% endif %}</a>
-                    {% endif %}
-                    <a href="{% url 'profile' %}">Profile</a>
+                    <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="Toggle sidebar">☰</button>
+                {% endif %}
+                <div class="brand-block">
+                    <strong>Tabuan Water Billing </strong>
+                    <span>Responsive billing, reading, payments, and profile management</span>
+                </div>
+            </div>
+            <nav class="top-nav">
+                {% if user.is_authenticated %}
+                    {% for item in navigation_items %}
+                        <a href="{% url item.url_name %}" class="{% if item.active %}active{% endif %}">
+                            {{ item.label }}
+                            {% if item.url_name == 'notifications' and unread_notifications %}
+                                <span class="badge">{{ unread_notifications }}</span>
+                            {% endif %}
+                        </a>
+                    {% endfor %}
                     <form method="post" action="{% url 'logout' %}" class="nav-inline-form">
                         {% csrf_token %}
                         <button type="submit" class="nav-link-button">Logout</button>
                     </form>
-                    <span class="role-chip">
-                        {{ current_profile.get_role_display|default:current_role|title }}
-                    </span>
+                    <span class="role-chip">{{ current_profile.get_role_display|default:current_role|title }}</span>
                 {% else %}
+                    <a href="{% url 'home' %}">Home</a>
                     <a href="{% url 'login' %}">Login</a>
                     <a href="{% url 'signup' %}">Sign Up</a>
                 {% endif %}
             </nav>
         </div>
     </header>
+
+    {% if user.is_authenticated %}
+        <div class="sidebar-overlay" id="sidebar-overlay"></div>
+        <div class="app-shell">
+            <aside class="app-sidebar" id="app-sidebar">
+                <div class="sidebar-panel">
+                    <div class="sidebar-user">
+                        <strong>{{ current_profile.full_name|default:user.username }}</strong>
+                        <span>{{ current_profile.get_role_display|default:current_role|title }}</span>
+                    </div>
+                    <nav class="sidebar-nav">
+                        {% for item in navigation_items %}
+                            <a href="{% url item.url_name %}" class="sidebar-link {% if item.active %}active{% endif %}">
+                                <span>{{ item.label }}</span>
+                                {% if item.url_name == 'notifications' and unread_notifications %}
+                                    <span class="badge">{{ unread_notifications }}</span>
+                                {% endif %}
+                            </a>
+                        {% endfor %}
+                    </nav>
+                    <div class="sidebar-footer">
+                        <form method="post" action="{% url 'logout' %}" class="nav-inline-form" style="width: 100%;">
+                            {% csrf_token %}
+                            <button type="submit" class="nav-link-button" style="width: 100%;">Logout</button>
+                        </form>
+                    </div>
+                </div>
+            </aside>
+            <main class="app-main">
+    {% endif %}
 
     {% if messages %}
         <div class="message-list">
@@ -422,8 +631,36 @@
             {% endfor %}
         </div>
     {% endif %}
-
     {% block content %}{% endblock %}
+
+    {% if user.is_authenticated %}
+            </main>
+        </div>
+    {% endif %}
+
+    <script>
+        (function () {
+            const toggle = document.getElementById('sidebar-toggle');
+            const overlay = document.getElementById('sidebar-overlay');
+
+            if (!toggle || !overlay) return;
+
+            function closeSidebar() {
+                document.body.classList.remove('sidebar-open');
+                overlay.classList.remove('visible');
+            }
+
+            toggle.addEventListener('click', function () {
+                const isOpen = document.body.classList.toggle('sidebar-open');
+                overlay.classList.toggle('visible', isOpen);
+            });
+
+            overlay.addEventListener('click', closeSidebar);
+            window.addEventListener('resize', function () {
+                if (window.innerWidth > 960) closeSidebar();
+            });
+        })();
+    </script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>

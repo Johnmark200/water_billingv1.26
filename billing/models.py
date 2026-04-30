@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 from django.conf import settings
@@ -20,6 +21,7 @@ class ConsumerProfile(models.Model):
     contact = models.CharField(max_length=50, blank=True)
     address = models.TextField(blank=True)
     role = models.CharField(max_length=20, choices=Roles.choices, default=Roles.CONSUMER)
+    photo = models.ImageField(upload_to='profiles/', blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def save(self, *args, **kwargs):
@@ -125,6 +127,8 @@ class BillingRecord(models.Model):
         return due if due > 0 else Decimal('0')
 
     def save(self, *args, **kwargs):
+        if self.billing_month:
+            self.billing_month = self.billing_month.replace(day=1)
         self.usage_m3 = (self.current_reading or Decimal('0')) - (self.previous_reading or Decimal('0'))
         if self.usage_m3 < 0:
             self.usage_m3 = Decimal('0')
@@ -152,6 +156,7 @@ class Payment(models.Model):
 
     class Methods(models.TextChoices):
         CASH = 'cash', 'Cash'
+        ONLINE = 'online', 'Online Payment'
         GCASH = 'gcash', 'GCash'
         PAYMAYA = 'paymaya', 'PayMaya'
         BANK = 'bank', 'Bank'
@@ -160,20 +165,49 @@ class Payment(models.Model):
     billing = models.ForeignKey(BillingRecord, on_delete=models.SET_NULL, null=True, blank=True, related_name='payments')
     payment_method = models.CharField(max_length=20, choices=Methods.choices, default=Methods.CASH)
     amount_paid = models.DecimalField(max_digits=10, decimal_places=2)
+    discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     payment_date = models.DateField()
+    covered_month = models.DateField(null=True, blank=True, help_text='Use the first day of the covered month.')
     status = models.CharField(max_length=20, choices=Statuses.choices, default=Statuses.COMPLETED)
     reference_number = models.CharField(max_length=100, blank=True)
+    gateway = models.CharField(max_length=30, blank=True)
+    gateway_reference = models.CharField(max_length=120, blank=True)
+    gateway_payment_id = models.CharField(max_length=120, blank=True)
+    gateway_status = models.CharField(max_length=50, blank=True)
+    gateway_redirect_url = models.URLField(blank=True)
+    gateway_response = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ['-payment_date', '-created_at']
 
+    @property
+    def amount_credited(self):
+        return (self.amount_paid or Decimal('0')) + (self.discount_amount or Decimal('0'))
+
+    @property
+    def display_covered_month(self):
+        if self.covered_month:
+            return self.covered_month
+        if self.billing_id and self.billing and self.billing.billing_month:
+            return self.billing.billing_month.replace(day=1)
+        if self.payment_date:
+            return self.payment_date.replace(day=1)
+        return None
+
     def save(self, *args, **kwargs):
+        if self.billing_id and self.covered_month is None and self.billing and self.billing.billing_month:
+            self.covered_month = self.billing.billing_month.replace(day=1)
+        if self.covered_month:
+            self.covered_month = self.covered_month.replace(day=1)
         super().save(*args, **kwargs)
         if self.billing:
-            paid_total = (
-                self.billing.payments.filter(status=self.Statuses.COMPLETED).aggregate(total=Sum('amount_paid'))['total']
-                or Decimal('0')
+            paid_total = sum(
+                payment.amount_credited
+                for payment in self.billing.payments.filter(status=self.Statuses.COMPLETED).only(
+                    'amount_paid',
+                    'discount_amount',
+                )
             )
             self.billing.amount_paid = paid_total
             self.billing.save(update_fields=['amount_paid', 'usage_m3', 'total_amount', 'status'])

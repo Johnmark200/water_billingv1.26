@@ -1,0 +1,12 @@
+{% for bill in billing_records %}
+    <tr>
+        <td>{{ bill.billing_month|date:'F Y' }}</td>
+        <td>{{ bill.previous_reading }}</td>
+        <td>{{ bill.current_reading }}</td>
+        <td>&#8369;{{ bill.total_amount }}</td>
+        <td>&#8369;{{ bill.amount_paid }}</td>
+        <td>{{ bill.get_status_display }}</td>
+    </tr>
+{% empty %}
+    <tr><td colspan="6" class="empty-state">No billing records available.</td></tr>
+{% endfor %}

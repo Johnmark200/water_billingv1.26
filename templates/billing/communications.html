@@ -3,63 +3,20 @@
 {% block content %}
 <section class="page-wrap">
     <div class="card">
-        <h2 class="page-title">Live Delivery Setup</h2>
-        <p class="muted">Add your live provider credentials in <code>{{ delivery_config.env_file_path }}</code>. Once configured, communication blasts send through the real email and SMS providers below.</p>
+        <h2 class="page-title">Live Communications Control </h2>
+        <p class="muted">Send your announcements through communication blasts send through the real email and SMS providers below.</p>
         <div class="grid-2">
             <div>
-                <h3>Email Provider: {{ delivery_config.email_provider_label }}</h3>
-                <p><strong>Status:</strong> {{ delivery_config.email_configured|yesno:'Configured,Missing credentials' }}</p>
-                <p class="muted">{{ delivery_config.email_setup_note }}</p>
-                {% if delivery_config.email_error %}
-                    <p class="status-feedback error">{{ delivery_config.email_error }}</p>
-                {% endif %}
-                <p class="muted">Required keys:</p>
-                <ul class="config-list">
-                    {% for item in delivery_config.email_env_keys %}
-                        <li><code>{{ item }}</code></li>
-                    {% endfor %}
-                </ul>
+               
             </div>
             <div>
-                <h3>SMS Provider: {{ delivery_config.sms_provider_label }}</h3>
-                <p><strong>Status:</strong> {{ delivery_config.sms_configured|yesno:'Configured,Missing credentials' }}</p>
-                <p class="muted">{{ delivery_config.sms_setup_note }}</p>
-                {% if delivery_config.sms_error %}
-                    <p class="status-feedback error">{{ delivery_config.sms_error }}</p>
-                {% endif %}
-                <p class="muted">Required keys:</p>
-                <ul class="config-list">
-                    {% for item in delivery_config.sms_env_keys %}
-                        <li><code>{{ item }}</code></li>
-                    {% endfor %}
+              
                 </ul>
             </div>
         </div>
     </div>
 </section>
 
-<section class="page-wrap grid-2">
-    <div class="form-card" style="margin: 0; max-width: none;">
-        <h2 class="page-title">Send Test SMS</h2>
-        <p class="muted">Send one SMS first to verify Twilio authentication, sender number, and recipient formatting before using bulk blast.</p>
-        <form method="post">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="test_sms">
-            {{ test_sms_form.as_p }}
-            <button type="submit" class="btn secondary">Send Test SMS</button>
-        </form>
-    </div>
-    <div class="form-card" style="margin: 0; max-width: none;">
-        <h2 class="page-title">Send Test Email</h2>
-        <p class="muted">Send one email first to verify the provider key, sender identity, and mailbox configuration before using bulk blast.</p>
-        <form method="post">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="test_email">
-            {{ test_email_form.as_p }}
-            <button type="submit" class="btn secondary">Send Test Email</button>
-        </form>
-    </div>
-</section>
 
 <section class="page-wrap grid-2">
     <div class="form-card" style="margin: 0; max-width: none;">

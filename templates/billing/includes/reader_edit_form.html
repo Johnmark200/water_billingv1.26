@@ -1,0 +1,30 @@
+<form method="post" action="" class="ajax-reader-edit-form" id="reader-edit-form">
+    {% csrf_token %}
+
+    {% if edit_form.non_field_errors %}
+        <div class="status-feedback error">
+            {% for error in edit_form.non_field_errors %}
+                <div>{{ error }}</div>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    <p class="muted" id="reader-edit-target-label">Select a submitted reading to edit.</p>
+    <p>
+        <label for="{{ edit_form.current_reading.id_for_label }}">Corrected current reading</label>
+        {{ edit_form.current_reading }}
+        {% for error in edit_form.current_reading.errors %}
+            <span class="field-error">{{ error }}</span>
+        {% endfor %}
+    </p>
+    <p>
+        <label for="{{ edit_form.notes.id_for_label }}">Correction notes</label>
+        {{ edit_form.notes }}
+        {% for error in edit_form.notes.errors %}
+            <span class="field-error">{{ error }}</span>
+        {% endfor %}
+    </p>
+    <div class="btn-row">
+        <button type="submit" class="btn">Save Correction</button>
+    </div>
+</form>

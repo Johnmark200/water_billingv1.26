@@ -1,0 +1,43 @@
+<form method="post" action="{% url 'submit_reader_reading' %}" class="ajax-reader-form">
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+        <div class="status-feedback error">
+            {% for error in form.non_field_errors %}
+                <div>{{ error }}</div>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    <p>
+        <label for="{{ form.consumer.id_for_label }}">Consumer</label>
+        {{ form.consumer }}
+        {% for error in form.consumer.errors %}
+            <span class="field-error">{{ error }}</span>
+        {% endfor %}
+    </p>
+    <p>
+        <label for="{{ form.reading_date.id_for_label }}">Reading date</label>
+        {{ form.reading_date }}
+        {% for error in form.reading_date.errors %}
+            <span class="field-error">{{ error }}</span>
+        {% endfor %}
+    </p>
+    <p>
+        <label for="{{ form.current_reading.id_for_label }}">Current reading</label>
+        {{ form.current_reading }}
+        {% for error in form.current_reading.errors %}
+            <span class="field-error">{{ error }}</span>
+        {% endfor %}
+    </p>
+    <p>
+        <label for="{{ form.notes.id_for_label }}">Notes</label>
+        {{ form.notes }}
+        {% for error in form.notes.errors %}
+            <span class="field-error">{{ error }}</span>
+        {% endfor %}
+    </p>
+    <div class="btn-row">
+        <button type="submit" class="btn">Submit Reading</button>
+    </div>
+</form>

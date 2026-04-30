@@ -26,9 +26,9 @@ class BillingRecordAdmin(admin.ModelAdmin):
 
 @admin.register(Payment)
 class PaymentAdmin(admin.ModelAdmin):
-    list_display = ('id', 'consumer', 'payment_method', 'amount_paid', 'payment_date', 'status')
-    search_fields = ('consumer__full_name', 'reference_number')
-    list_filter = ('status', 'payment_method')
+    list_display = ('id', 'consumer', 'payment_method', 'amount_paid', 'payment_date', 'status', 'gateway_status')
+    search_fields = ('consumer__full_name', 'reference_number', 'gateway_reference', 'gateway_payment_id')
+    list_filter = ('status', 'payment_method', 'gateway')
     list_editable = ('status',)
 
     def save_model(self, request, obj, form, change):

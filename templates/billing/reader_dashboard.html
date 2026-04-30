@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}Reading Panel{% endblock %}
 {% block content %}
+<<<<<<< HEAD
 <section class="page-wrap grid-2">
     <div class="form-card" style="margin: 0; max-width: none;">
         <form method="post">
@@ -8,23 +9,243 @@
             {{ form.as_p }}
             <button type="submit" class="btn">Submit Reading</button>
         </form>
+=======
+<section class="page-wrap">
+    <div class="toolbar" style="justify-content: space-between; margin-bottom: 20px;">
+        <div>
+            <h2 class="page-title">Reading Panel</h2>
+            <p class="muted">Compare the previous reading before saving, correct submitted readings when needed, and keep your profile details up to date without refreshing the page.</p>
+        </div>
+>>>>>>> d8999ba5f29df50a18146805d2c288c36dcf5a48
     </div>
+    <div class="status-feedback" id="reader-live-feedback" hidden></div>
+</section>
+
+<section class="page-wrap grid-3">
+    <div id="reader-profile-summary">
+        {% include 'billing/includes/profile_summary.html' %}
+    </div>
+    <div class="card">
+        <h3>Previous and Current Reading Check</h3>
+        <p><strong>Selected Month:</strong> <span id="reading-context-month">-</span></p>
+        <p><strong>Previous Reading:</strong> <span id="reading-context-previous">0.00</span></p>
+        <p><strong>Latest Submitted Reading:</strong> <span id="reading-context-current">-</span></p>
+        <p class="muted">Pick a consumer and date before saving so unrealistic or mismatched readings are easier to catch.</p>
+    </div>
+    <div class="card">
+        <h3>Live Update Status</h3>
+        <p>Reading corrections and profile changes are saved directly to the database.</p>
+        <p class="muted">The submitted readings list refreshes automatically, and linked billing records are updated as soon as the save completes.</p>
+    </div>
+</section>
+
+<section class="page-wrap grid-2">
+    <div class="form-card">
+        <h3>Submit Meter Reading</h3>
+        <div id="reader-reading-form-container">
+            {% include 'billing/includes/reader_reading_form.html' %}
+        </div>
+    </div>
+    <div class="form-card">
+        <h3>Update Profile</h3>
+        <div id="reader-profile-form">
+            {% include 'billing/includes/profile_form.html' %}
+        </div>
+    </div>
+</section>
+
+<section class="page-wrap">
+    <div class="form-card">
+        <h3>Edit Submitted Reading</h3>
+        <p class="muted">Use this to correct a misread or overlooked current reading before final review.</p>
+        <div id="reader-edit-form-container">
+            {% include 'billing/includes/reader_edit_form.html' %}
+        </div>
+    </div>
+</section>
+
+<section class="page-wrap">
     <div class="table-card">
         <table>
-            <thead><tr><th>Consumer</th><th>Month</th><th>Current</th><th>Usage</th></tr></thead>
-            <tbody>
-                {% for reading in recent_readings %}
-                    <tr>
-                        <td>{{ reading.consumer.full_name }}</td>
-                        <td>{{ reading.billing_month|date:'F Y' }}</td>
-                        <td>{{ reading.current_reading }}</td>
-                        <td>{{ reading.usage_m3 }} m3</td>
-                    </tr>
-                {% empty %}
-                    <tr><td colspan="4" class="empty-state">No meter readings submitted yet.</td></tr>
-                {% endfor %}
+            <thead><tr><th>Consumer</th><th>Month</th><th>Previous</th><th>Current</th><th>Usage</th><th>Date</th><th>Action</th></tr></thead>
+            <tbody id="reader-reading-rows">
+                {% include 'billing/includes/reader_reading_rows.html' %}
             </tbody>
         </table>
     </div>
 </section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    (function () {
+        const feedback = document.getElementById('reader-live-feedback');
+        const profileSummaryContainer = document.getElementById('reader-profile-summary');
+        const profileFormContainer = document.getElementById('reader-profile-form');
+        const readingFormContainer = document.getElementById('reader-reading-form-container');
+        const editFormContainer = document.getElementById('reader-edit-form-container');
+        const readingRows = document.getElementById('reader-reading-rows');
+
+        function showFeedback(message, isError) {
+            if (!feedback || !message) return;
+            feedback.hidden = false;
+            feedback.classList.toggle('error', Boolean(isError));
+            feedback.textContent = message;
+        }
+
+        function setReadingContext(payload) {
+            document.getElementById('reading-context-month').textContent = payload.current_month || '-';
+            document.getElementById('reading-context-previous').textContent = payload.previous_reading || '0.00';
+            document.getElementById('reading-context-current').textContent = payload.current_reading || '-';
+        }
+
+        async function loadReadingContext() {
+            const consumerField = document.getElementById('id_consumer');
+            const dateField = document.getElementById('id_reading_date');
+            if (!consumerField || !dateField || !consumerField.value || !dateField.value) return;
+
+            try {
+                const url = new URL("{% url 'reader_reading_context' %}", window.location.origin);
+                url.searchParams.set('consumer', consumerField.value);
+                url.searchParams.set('reading_date', dateField.value);
+                const response = await fetch(url, {
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+                if (!response.ok) return;
+                const payload = await response.json();
+                setReadingContext(payload);
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        function bindProfileForm() {
+            const form = profileFormContainer ? profileFormContainer.querySelector('.ajax-profile-form') : null;
+            if (!form) return;
+
+            form.addEventListener('submit', async function (event) {
+                event.preventDefault();
+                const response = await fetch(form.action, {
+                    method: 'POST',
+                    body: new FormData(form),
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+                const payload = await response.json();
+                if (payload.summary_html && profileSummaryContainer) profileSummaryContainer.innerHTML = payload.summary_html;
+                if (payload.form_html && profileFormContainer) profileFormContainer.innerHTML = payload.form_html;
+                bindProfileForm();
+                showFeedback(payload.message, !payload.ok);
+            });
+        }
+
+        function bindReadingForm() {
+            const form = readingFormContainer ? readingFormContainer.querySelector('.ajax-reader-form') : null;
+            if (!form) return;
+
+            const consumerField = form.querySelector('#id_consumer');
+            const dateField = form.querySelector('#id_reading_date');
+
+            if (consumerField) consumerField.addEventListener('change', loadReadingContext);
+            if (dateField) dateField.addEventListener('change', loadReadingContext);
+
+            form.addEventListener('submit', async function (event) {
+                event.preventDefault();
+                const response = await fetch(form.action, {
+                    method: 'POST',
+                    body: new FormData(form),
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+                const payload = await response.json();
+                if (payload.form_html && readingFormContainer) readingFormContainer.innerHTML = payload.form_html;
+                if (payload.rows_html && readingRows) readingRows.innerHTML = payload.rows_html;
+                if (payload.edit_form_html && editFormContainer) editFormContainer.innerHTML = payload.edit_form_html;
+                bindReadingForm();
+                bindEditTriggers();
+                bindEditForm();
+                loadReadingContext();
+                showFeedback(payload.message, !payload.ok);
+            });
+
+            loadReadingContext();
+        }
+
+        function bindEditTriggers() {
+            document.querySelectorAll('.reader-edit-trigger').forEach(function (button) {
+                button.addEventListener('click', function () {
+                    const form = document.getElementById('reader-edit-form');
+                    if (!form) return;
+
+                    form.action = button.dataset.updateUrl;
+                    const currentField = form.querySelector('#id_current_reading');
+                    const notesField = form.querySelector('#id_notes');
+                    const targetLabel = document.getElementById('reader-edit-target-label');
+
+                    if (currentField) currentField.value = button.dataset.current || '';
+                    if (notesField) notesField.value = button.dataset.notes || '';
+                    if (targetLabel) {
+                        targetLabel.textContent = `${button.dataset.consumer} | ${button.dataset.month} | Previous reading: ${button.dataset.previous}`;
+                    }
+                    showFeedback(`Editing ${button.dataset.consumer} for ${button.dataset.month}.`, false);
+                    form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                });
+            });
+        }
+
+        function bindEditForm() {
+            const form = document.getElementById('reader-edit-form');
+            if (!form) return;
+
+            form.addEventListener('submit', async function (event) {
+                event.preventDefault();
+                if (!form.action) {
+                    showFeedback('Select a submitted reading to edit first.', true);
+                    return;
+                }
+
+                const response = await fetch(form.action, {
+                    method: 'POST',
+                    body: new FormData(form),
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+                const payload = await response.json();
+                if (payload.edit_form_html && editFormContainer) editFormContainer.innerHTML = payload.edit_form_html;
+                if (payload.rows_html && readingRows) readingRows.innerHTML = payload.rows_html;
+                bindEditTriggers();
+                bindEditForm();
+                showFeedback(payload.message, !payload.ok);
+            });
+        }
+
+        async function refreshReadings() {
+            try {
+                const response = await fetch("{% url 'reader_panel_data' %}", {
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+                if (!response.ok) return;
+                const payload = await response.json();
+                if (payload.summary_html && profileSummaryContainer) profileSummaryContainer.innerHTML = payload.summary_html;
+                if (payload.rows_html && readingRows) readingRows.innerHTML = payload.rows_html;
+                bindEditTriggers();
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        bindProfileForm();
+        bindReadingForm();
+        bindEditTriggers();
+        bindEditForm();
+        setInterval(refreshReadings, 15000);
+    })();
+</script>
 {% endblock %}

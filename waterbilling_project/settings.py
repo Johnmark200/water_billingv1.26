@@ -113,30 +113,32 @@ LOGOUT_REDIRECT_URL = 'login'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@waterbilling.local')
-EMAIL_DELIVERY_PROVIDER = os.getenv('EMAIL_DELIVERY_PROVIDER', 'console').lower()
-EMAIL_API_TIMEOUT = int(os.getenv('EMAIL_API_TIMEOUT', '10'))
-SENDGRID_API_KEY = os.getenv('SENDGRID_API_KEY', '')
-SENDGRID_FROM_EMAIL = os.getenv('SENDGRID_FROM_EMAIL', DEFAULT_FROM_EMAIL)
-SENDGRID_FROM_NAME = os.getenv('SENDGRID_FROM_NAME', 'Water Billing System')
 
-EMAIL_BACKEND = os.getenv(
-    'DJANGO_EMAIL_BACKEND',
-    'django.core.mail.backends.smtp.EmailBackend'
-    if EMAIL_DELIVERY_PROVIDER == 'smtp'
-    else 'django.core.mail.backends.console.EmailBackend',
-)
-EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
-EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
-EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
-EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
-EMAIL_USE_TLS = env_bool('EMAIL_USE_TLS', True)
-EMAIL_USE_SSL = env_bool('EMAIL_USE_SSL', False)
+EMAIL_DELIVERY_PROVIDER = 'smtp'
+EMAIL_API_TIMEOUT = 10
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_HOST_USER = 'johnmarkomale200@gmail.com'
+EMAIL_HOST_PASSWORD = 'tgmhhrhucisdnsey'
+EMAIL_USE_TLS = True
+EMAIL_USE_SSL = False
+EMAIL_TIMEOUT = EMAIL_API_TIMEOUT
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
 
-SMS_DELIVERY_PROVIDER = os.getenv('SMS_DELIVERY_PROVIDER', 'twilio').lower()
-SMS_API_TIMEOUT = int(os.getenv('SMS_API_TIMEOUT', '10'))
-TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID', '')
-TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN', '')
-TWILIO_API_KEY_SID = os.getenv('TWILIO_API_KEY_SID', '')
-TWILIO_API_KEY_SECRET = os.getenv('TWILIO_API_KEY_SECRET', '')
-TWILIO_PHONE_NUMBER = os.getenv('TWILIO_PHONE_NUMBER', '')
+# Kept for compatibility with the communications dashboard, even though SMTP
+# is the active email transport configured above.
+SENDGRID_API_KEY = ''
+SENDGRID_FROM_EMAIL = DEFAULT_FROM_EMAIL
+SENDGRID_FROM_NAME = 'Tabauan Water Billing System'
+
+SMS_DELIVERY_PROVIDER = 'sms_api_ph'
+SMS_API_TIMEOUT = 10
+SMS_API_PH_ENDPOINT = 'https://smsapiph.onrender.com/api/v1/send/sms'
+SMS_API_PH_API_KEY = 'sk-2b10ruifxw0r8qz8wcxn5dcuezmvq9dh'
+
+PAYMONGO_SECRET_KEY = 'sk_test_t8mWkPe3mexXU9qwoR7pU4xa'
+PAYMONGO_API_TIMEOUT = 10
+PAYMONGO_BASE_URL = 'https://api.paymongo.com/v1'
+PAYMONGO_EWALLET_TYPE = 'gcash'

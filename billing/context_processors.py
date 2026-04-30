@@ -4,6 +4,7 @@ from .permissions import (
     PAYMENT_MANAGER_ROLES,
     READING_ENTRY_ROLES,
     REPORT_ROLES,
+    build_navigation_items,
     get_dashboard_url_for_user,
     get_linked_consumer,
     get_user_profile,
@@ -17,11 +18,20 @@ def billing_app_context(request):
 
     role = get_user_role(request.user, create=True)
     profile = get_user_profile(request.user)
+    current_url_name = getattr(getattr(request, 'resolver_match', None), 'url_name', '')
     unread_notifications = Notification.objects.filter(
         recipient=request.user,
         channel=Notification.Channels.IN_APP,
         is_read=False,
     ).count()
+    navigation_items = []
+    for item in build_navigation_items(role):
+        navigation_items.append(
+            {
+                **item,
+                'active': item['url_name'] == current_url_name,
+            }
+        )
 
     return {
         'current_role': role,
@@ -29,6 +39,8 @@ def billing_app_context(request):
         'linked_consumer': get_linked_consumer(request.user),
         'unread_notifications': unread_notifications,
         'dashboard_url_name': get_dashboard_url_for_user(request.user),
+        'navigation_items': navigation_items,
+        'current_url_name': current_url_name,
         'can_manage_consumers': role in ADMIN_ROLES,
         'can_view_reports': role in REPORT_ROLES,
         'can_manage_payments': role in PAYMENT_MANAGER_ROLES,
