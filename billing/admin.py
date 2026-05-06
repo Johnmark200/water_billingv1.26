@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import AuditLog, BillingRecord, Consumer, ConsumerProfile, MeterReading, Notification, Payment, SMSBlast, SystemSettings
+from .models import AuditLog, BillingRecord, Consumer, ConsumerProfile, MeetingMinutes, MeetingMinutesRevision, MeterReading, Notification, Payment, SMSBlast, SystemSettings
 from .services import send_payment_notification
 
 
@@ -77,3 +77,28 @@ class AuditLogAdmin(admin.ModelAdmin):
     list_display = ('id', 'user', 'role', 'action', 'target', 'created_at')
     search_fields = ('user__username', 'role', 'action', 'target', 'details')
     list_filter = ('role', 'action', 'created_at')
+
+
+class MeetingMinutesRevisionInline(admin.TabularInline):
+    model = MeetingMinutesRevision
+    extra = 0
+    can_delete = False
+    fields = ('revision_number', 'edited_by', 'change_summary', 'created_at')
+    readonly_fields = ('revision_number', 'edited_by', 'change_summary', 'created_at')
+
+
+@admin.register(MeetingMinutes)
+class MeetingMinutesAdmin(admin.ModelAdmin):
+    list_display = ('title', 'secretary', 'meeting_date', 'status', 'approved_at', 'updated_at')
+    search_fields = ('title', 'secretary__username', 'secretary__consumerprofile__full_name', 'location')
+    list_filter = ('status', 'meeting_date', 'updated_at')
+    readonly_fields = ('created_at', 'updated_at', 'approved_at')
+    inlines = [MeetingMinutesRevisionInline]
+
+
+@admin.register(MeetingMinutesRevision)
+class MeetingMinutesRevisionAdmin(admin.ModelAdmin):
+    list_display = ('meeting_minutes', 'revision_number', 'edited_by', 'created_at')
+    search_fields = ('meeting_minutes__title', 'edited_by__username', 'change_summary')
+    list_filter = ('created_at',)
+    readonly_fields = ('meeting_minutes', 'edited_by', 'revision_number', 'change_summary', 'changed_fields', 'snapshot', 'created_at')

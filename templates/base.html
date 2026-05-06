@@ -498,6 +498,58 @@
 
         .sidebar-footer {
             margin-top: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .sidebar-account-card {
+            display: grid;
+            grid-template-columns: 48px minmax(0, 1fr);
+            gap: 12px;
+            align-items: center;
+            padding: 14px 16px;
+            border-radius: 18px;
+            background: color-mix(in srgb, var(--panel) 84%, transparent);
+            border: 1px solid var(--panel-border);
+            box-shadow: var(--shadow);
+        }
+
+        .sidebar-account-avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 999px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #ffb36b, #ff8a4c);
+            color: #111827;
+            font-size: 18px;
+            font-weight: 800;
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
+        }
+
+        .sidebar-account-copy {
+            min-width: 0;
+        }
+
+        .sidebar-account-copy strong,
+        .sidebar-account-copy span {
+            display: block;
+            min-width: 0;
+            overflow-wrap: anywhere;
+        }
+
+        .sidebar-account-copy strong {
+            margin-bottom: 4px;
+            font-size: 14px;
+            color: var(--ink);
+        }
+
+        .sidebar-account-copy span {
+            color: var(--muted);
+            font-size: 13px;
         }
 
         .app-main {
@@ -1139,6 +1191,15 @@
                         {% endfor %}
                     </nav>
                     <div class="sidebar-footer">
+                        <div class="sidebar-account-card">
+                            <div class="sidebar-account-avatar">
+                                {{ user.username|slice:":2"|upper }}
+                            </div>
+                            <div class="sidebar-account-copy">
+                                <strong>{{ user.username }}</strong>
+                                <span>{{ current_profile.email|default:user.email|default:'No email configured' }}</span>
+                            </div>
+                        </div>
                         <form method="post" action="{% url 'logout' %}" class="nav-inline-form" style="width: 100%;">
                             {% csrf_token %}
                             <button type="submit" class="nav-link-button" style="width: 100%;">

@@ -292,6 +292,10 @@
     </div>
 </section>
 
+<section class="page-wrap" id="admin-minutes-monitoring-section">
+    {% include 'billing/includes/admin_minutes_monitoring.html' %}
+</section>
+
 <section class="page-wrap grid-2 admin-panel-grid">
     <div class="table-card">
         <h3>Recent Payments</h3>
@@ -343,6 +347,7 @@
     <script>
         (function () {
             const monitoringSection = document.getElementById('admin-monitoring-section');
+            const minutesMonitoringSection = document.getElementById('admin-minutes-monitoring-section');
             const paymentRows = document.getElementById('admin-payment-rows');
             const billingRows = document.getElementById('admin-billing-rows');
             const readingRows = document.getElementById('admin-reading-rows');
@@ -510,6 +515,9 @@
                     if (monitoringSection && payload.monitoring_html) {
                         monitoringSection.innerHTML = payload.monitoring_html;
                         renderAdminMonitoring();
+                    }
+                    if (minutesMonitoringSection && payload.minutes_monitoring_html) {
+                        minutesMonitoringSection.innerHTML = payload.minutes_monitoring_html;
                     }
                     if (paymentRows && payload.payment_rows_html) {
                         paymentRows.innerHTML = payload.payment_rows_html;

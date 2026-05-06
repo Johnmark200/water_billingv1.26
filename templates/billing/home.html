@@ -71,8 +71,96 @@
         padding: 28px 24px 42px;
     }
 
+    .landing-hero-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+        gap: 28px;
+        align-items: center;
+    }
+
     .landing-hero-content {
-        max-width: 760px;
+        max-width: 780px;
+    }
+
+    .landing-hero-content .lead {
+        font-size: 15px;
+        line-height: 1.85;
+        color: #264653;
+    }
+
+    .landing-highlight-panel {
+        display: grid;
+        gap: 14px;
+    }
+
+    .landing-highlight-head {
+        padding: 18px 20px;
+        border-radius: 24px;
+        background: rgba(255, 255, 255, 0.74);
+        border: 1px solid rgba(17, 94, 89, 0.1);
+        box-shadow: 0 18px 38px rgba(24, 54, 66, 0.1);
+        backdrop-filter: blur(10px);
+    }
+
+    .landing-highlight-head h3 {
+        margin: 0 0 8px;
+        color: #0f4c5c;
+        font-size: 26px;
+    }
+
+    .landing-highlight-head p {
+        margin: 0;
+        font-size: 15px;
+        line-height: 1.7;
+        color: #365866;
+    }
+
+    .landing-highlight-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+    }
+
+    .landing-highlight-card {
+        position: relative;
+        overflow: hidden;
+        min-height: 360px;
+        border-radius: 24px;
+        box-shadow: 0 22px 44px rgba(24, 54, 66, 0.14);
+    }
+
+    .landing-highlight-card img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+
+    .landing-highlight-card::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(180deg, rgba(3, 20, 28, 0.04), rgba(3, 20, 28, 0.7));
+    }
+
+    .landing-highlight-copy {
+        position: absolute;
+        left: 18px;
+        right: 18px;
+        bottom: 18px;
+        z-index: 1;
+        color: #ffffff;
+    }
+
+    .landing-highlight-copy h4 {
+        margin: 0 0 6px;
+        font-size: 18px;
+    }
+
+    .landing-highlight-copy p {
+        margin: 0;
+        font-size: 15px;
+        line-height: 1.6;
     }
 
     .feature-card,
@@ -106,6 +194,18 @@
             min-height: 62vh;
             padding: 24px 18px 32px;
         }
+
+        .landing-hero-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .landing-highlight-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .landing-highlight-card {
+            min-height: 260px;
+        }
     }
 </style>
 {% endblock %}
@@ -120,22 +220,58 @@
             </div>
         </div>
         <section class="hero landing-hero">
-            <div class="landing-hero-content">
-                <h1>Reliable Water Billing, Reading, and Collection Tracking</h1>
-                <p class="lead">
-                    System v1.26 supports billing, readings, payments, payment alerts, and reports for Tabuan, Bayawan City, Negros Oriental.
-                    The goal is to make water billing more accurate, reduce manual reconciliation work, give consumers a clear payment history, and help staff monitor collections with proper records.
-                </p>
-                {% if user.is_authenticated %}
-                    <div class="toolbar" style="margin-top: 20px;">
-                        <a href="{% url dashboard_url_name %}" class="btn">Open My Dashboard</a>
+            <div class="landing-hero-grid">
+                <div class="landing-hero-content">
+                    <h1>Reliable Water Billing, Reading, and Collection Tracking</h1>
+                    <p class="lead">
+                       The Tabuan Water Billing System is a role-based web platform that centralizes water billing operations for administrators, secretaries, treasurers, readers, and consumers. It manages core records such as consumer profiles, meter readings, billing statements, payments, notifications, audit logs, and meeting minutes in one system. Each user role is given access only to the tools relevant to their responsibilities, which helps keep the workflow organized and secure.
+                    </p>
+                    <p class="lead">
+                        Operationally, the system supports the full billing cycle from meter reading submission to billing generation, payment tracking, receipt handling, and reporting. Secretaries can prepare structured meeting minutes with revision tracking, approval locking, PDF export, and a clean toggle-based editing interface, while admins can monitor those minutes through both the admin dashboard and Django admin.
+                    </p>
+                    <p class="lead">
+                        From a management and oversight perspective, the system is designed to improve accuracy, traceability, and coordination across office functions. Real-time dashboard summaries help staff monitor pending bills, overdue accounts, payments, and system activity, while built-in reporting and approval flows reduce manual tracking work across the association.
+                    </p>
+                    {% if user.is_authenticated %}
+                        <div class="toolbar" style="margin-top: 20px;">
+                            <a href="{% url dashboard_url_name %}" class="btn">Open My Dashboard</a>
+                        </div>
+                    {% else %}
+                        <div class="toolbar" style="margin-top: 20px;">
+                            <a href="{% url 'login' %}" class="btn">Login</a>
+                            <a href="{% url 'signup' %}" class="btn secondary">Create Consumer Account</a>
+                        </div>
+                    {% endif %}
+                </div>
+                <aside class="landing-highlight-panel">
+                    <div class="landing-highlight-head">
+                        <h3>Association Highlights</h3>
+                        <p>Three visual highlights on the right help present the association’s community, operations, and service identity directly on the home page.</p>
                     </div>
-                {% else %}
-                    <div class="toolbar" style="margin-top: 20px;">
-                        <a href="{% url 'login' %}" class="btn">Login</a>
-                        <a href="{% url 'signup' %}" class="btn secondary">Create Consumer Account</a>
+                    <div class="landing-highlight-grid">
+                        <article class="landing-highlight-card">
+                            <img src="{% static 'legacy_img/oneteam.jpg' %}" alt="Association members gathered together">
+                            <div class="landing-highlight-copy">
+                                <h4>Community Leadership</h4>
+                                <p>Showcases the people behind the association and the shared responsibility for service delivery.</p>
+                            </div>
+                        </article>
+                        <article class="landing-highlight-card">
+                            <img src="{% static 'legacy_img/team.jpg' %}" alt="Association team collaboration highlight">
+                            <div class="landing-highlight-copy">
+                                <h4>Coordinated Operations</h4>
+                                <p>Represents office coordination across billing, monitoring, reports, and consumer support.</p>
+                            </div>
+                        </article>
+                        <article class="landing-highlight-card">
+                            <img src="{% static 'legacy_img/water.png' %}" alt="Water service visual for the association">
+                            <div class="landing-highlight-copy">
+                                <h4>Water Service Focus</h4>
+                                <p>Reinforces the association’s mission of reliable water access, billing transparency, and accountability.</p>
+                            </div>
+                        </article>
                     </div>
-                {% endif %}
+                </aside>
             </div>
         </section>
     </div>
@@ -185,15 +321,38 @@
     <div class="features">
         <div class="feature-card">
             <h3>John Mark Omale</h3>
-            <p>Backend/Technical Lead</p>
+            <p>Backend/Technical Lead
+               ensures seamless integration between the front-end and back-end, optimizing system performance and database efficiency to handle complex operations with ease. By focusing on robust architecture and clean code, we work tirelessly to deliver a reliable, high-performance platform that supports both user and business needs.
+            </p>
         </div>
         <div class="feature-card">
+            <h3>John Mark Joseph Nuique</h3>
+            <p>Front End Developer
+               specialize in utilizing modern technologies such as HTML, CSS, JavaScript, and frameworks like React, Angular, and Vue.js to build intuitive, fast, and accessible web applications. By collaborating closely with design teams, we ensure that each feature is not only functional but also aesthetically pleasing. With a passion for innovation, we are dedicated to creating dynamic, interactive interfaces that enhance user engagement and satisfaction.
+        </div>
+         <div class="feature-card">
+            <h3>Reynan Manilingan</h3>
+            <p>Front End Developer
+               specialize in utilizing modern technologies such as HTML, CSS, JavaScript, and frameworks like React, Angular, and Vue.js to build intuitive, fast, and accessible web applications. By collaborating closely with design teams, we ensure that each feature is not only functional but also aesthetically pleasing. With a passion for innovation, we are dedicated to creating dynamic, interactive interfaces that enhance user engagement and satisfaction.
+            </p>
+        </div>
+        <div class="feature-card">
+            <h3>Jingky Sagang </h3>
+            <p>Project Managaer
+                work closely with cross-functional teams, from developers to designers, to define project objectives, prioritize tasks, and manage timelines. By leveraging Agile and Scrum methodologies, we foster a collaborative environment that drives continuous progress and adaptability. Our goal is to deliver high-quality products that meet the needs of our users, while maintaining clear communication, effective risk management, and strong stakeholder engagement throughout the project lifecycle.
+            </p>
+        </div>
+          <div class="feature-card">
             <h3>Angelito Feliciano</h3>
-            <p>Front End Developer</p>
+            <p>QA/Documentation Lead
+               work closely with developers to perform thorough regression, performance, and security testing, all while maintaining a focus on delivering a seamless and bug-free user experience. We are committed to upholding the reliability and excellence of the system, ensuring that our users have a consistently positive experience.
+            </p>
         </div>
-        <div class="feature-card">
-            <h3>Consumer Support Team</h3>
-            <p>Monitors inquiries, payment reminders, notifications, and account updates for consumers.</p>
+         <div class="feature-card">
+            <h3>Nathaniel Jakosalem</h3>
+            <p>QA/Documentation Lead
+               work closely with developers to perform thorough regression, performance, and security testing, all while maintaining a focus on delivering a seamless and bug-free user experience. We are committed to upholding the reliability and excellence of the system, ensuring that our users have a consistently positive experience.
+            </p>
         </div>
     </div>
 </section>

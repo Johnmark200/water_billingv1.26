@@ -4,7 +4,7 @@ import re
 
 from django import forms
 from django.contrib.auth import password_validation
-from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
+from django.contrib.auth.forms import AuthenticationForm, PasswordResetForm, UserCreationForm
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.utils import timezone
@@ -13,6 +13,7 @@ from .models import (
     BillingRecord,
     Consumer,
     ConsumerProfile,
+    MeetingMinutes,
     MeterReading,
     Payment,
     SMSBlast,
@@ -62,6 +63,13 @@ class LoginForm(AuthenticationForm):
     password = forms.CharField(widget=forms.PasswordInput(attrs={'class': 'form-control'}))
 
 
+class AccountPasswordResetForm(PasswordResetForm):
+    email = forms.EmailField(
+        label='Email Address',
+        widget=forms.EmailInput(attrs={'autocomplete': 'email'}),
+    )
+
+
 class PasswordChangeOTPRequestForm(forms.Form):
     OTP_CHANNEL_CHOICES = (
         ('email', 'Email OTP'),
@@ -70,7 +78,7 @@ class PasswordChangeOTPRequestForm(forms.Form):
 
     current_password = forms.CharField(widget=forms.PasswordInput)
     new_password1 = forms.CharField(widget=forms.PasswordInput)
-    new_password2 = forms.CharField(widget=forms.PasswordInput)
+    new_password2 = forms.CharField(label='Confirm Password', widget=forms.PasswordInput)
     otp_channel = forms.ChoiceField(choices=OTP_CHANNEL_CHOICES, widget=forms.RadioSelect)
 
     def __init__(self, user, *args, **kwargs):
@@ -701,6 +709,55 @@ class ProfileUpdateForm(forms.ModelForm):
                 consumer.save(update_fields=update_fields)
 
         return profile
+
+
+class MeetingMinutesForm(forms.ModelForm):
+    change_summary = forms.CharField(
+        max_length=255,
+        required=False,
+        help_text='Optional. Briefly describe what changed in this revision.',
+    )
+
+    class Meta:
+        model = MeetingMinutes
+        fields = [
+            'title',
+            'meeting_date',
+            'meeting_time',
+            'location',
+            'attendees',
+            'agenda',
+            'discussion_points',
+            'resolutions',
+            'action_items',
+            'additional_notes',
+        ]
+        widgets = {
+            'meeting_date': forms.DateInput(attrs={'type': 'date'}),
+            'meeting_time': forms.TimeInput(attrs={'type': 'time'}),
+            'attendees': forms.Textarea(attrs={'rows': 4}),
+            'agenda': forms.Textarea(attrs={'rows': 5}),
+            'discussion_points': forms.Textarea(attrs={'rows': 8}),
+            'resolutions': forms.Textarea(attrs={'rows': 5}),
+            'action_items': forms.Textarea(attrs={'rows': 5}),
+            'additional_notes': forms.Textarea(attrs={'rows': 4}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field_name, field in self.fields.items():
+            css_class = 'meeting-minutes-input'
+            if isinstance(field.widget, forms.Textarea):
+                field.widget.attrs.setdefault('class', css_class)
+            elif isinstance(field.widget, (forms.DateInput, forms.TimeInput)):
+                field.widget.attrs.setdefault('class', css_class)
+            else:
+                field.widget.attrs.setdefault('class', css_class)
+
+        self.fields['attendees'].help_text = 'List attendees, one per line, or group them by role.'
+        self.fields['agenda'].help_text = 'Use numbered agenda items to keep the document format consistent.'
+        self.fields['discussion_points'].label = 'Minutes and Discussion'
+        self.fields['action_items'].help_text = 'Record assignments, deadlines, and follow-up work.'
 
 
 class SMSBlastForm(forms.ModelForm):

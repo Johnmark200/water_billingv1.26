@@ -27,6 +27,7 @@ from .forms import (
     ConsumerPaymentForm,
     EmailBlastForm,
     LoginForm,
+    MeetingMinutesForm,
     MeterReadingForm,
     MeterReadingUpdateForm,
     PasswordChangeOTPRequestForm,
@@ -39,7 +40,7 @@ from .forms import (
     TestEmailForm,
     TestSMSForm,
 )
-from .models import AuditLog, BillingRecord, Consumer, ConsumerProfile, MeterReading, Notification, Payment, SMSBlast, SystemSettings
+from .models import AuditLog, BillingRecord, Consumer, ConsumerProfile, MeetingMinutes, MeterReading, Notification, Payment, SMSBlast, SystemSettings
 from .permissions import PAYMENT_MANAGER_ROLES, role_required, ensure_user_profile, get_dashboard_url_for_user, get_linked_consumer, get_user_profile, get_user_role
 from .services import (
     apply_panel_billing_status,
@@ -127,6 +128,64 @@ def get_selected_date(date_value, default):
         except ValueError:
             pass
     return default
+
+
+def _default_minutes_title(target_date):
+    return f'Meeting Minutes - {target_date:%B %d, %Y}'
+
+
+def _build_meeting_minutes_initial(user):
+    today = timezone.localdate()
+    profile = get_user_profile(user, create=True)
+    prepared_by = profile.full_name if profile else user.get_username()
+    return {
+        'title': _default_minutes_title(today),
+        'meeting_date': today,
+        'location': 'Tabuan Water Billing Office',
+        'attendees': f'{prepared_by} - Secretary',
+        'agenda': '1. Call to order\n2. Review previous action items\n3. Billing and collection updates\n4. Consumer concerns and requests\n5. Closing remarks',
+        'discussion_points': '1. Summarize discussion points under each agenda item.\n2. Record clarifications, decisions, and notable concerns.\n3. Keep entries factual and easy to review later.',
+        'resolutions': '1. Record approved motions or decisions here.',
+        'action_items': '1. Responsible person - Task - Deadline',
+        'additional_notes': f'Prepared by: {prepared_by}',
+    }
+
+
+def _build_minutes_change_summary(is_new, changed_fields, approved=False):
+    if approved:
+        if changed_fields:
+            return f'Finalized minutes and updated: {", ".join(changed_fields[:5])}.'
+        return 'Finalized meeting minutes for approval.'
+    if is_new:
+        return 'Created initial meeting minutes draft.'
+    if changed_fields:
+        return f'Updated: {", ".join(changed_fields[:5])}.'
+    return 'Saved meeting minutes draft.'
+
+
+def _build_secretary_minutes_context(request, selected_minutes=None, form=None, composing_new=False):
+    minutes_records = list(
+        MeetingMinutes.objects.filter(secretary=request.user)
+        .prefetch_related('revisions__edited_by')
+        .order_by('-meeting_date', '-updated_at')[:12]
+    )
+    if selected_minutes is None and not composing_new:
+        selected_minutes = minutes_records[0] if minutes_records else None
+
+    if form is None:
+        if selected_minutes is not None:
+            form = MeetingMinutesForm(instance=selected_minutes)
+        else:
+            form = MeetingMinutesForm(initial=_build_meeting_minutes_initial(request.user))
+
+    return {
+        'meeting_minutes_records': minutes_records,
+        'selected_meeting_minutes': selected_minutes,
+        'meeting_minutes_form': form,
+        'meeting_minutes_revisions': list(selected_minutes.revisions.select_related('edited_by')[:8]) if selected_minutes else [],
+        'composing_new_minutes': composing_new or selected_minutes is None,
+        'minutes_default_initial': _build_meeting_minutes_initial(request.user),
+    }
 
 
 def month_filter_kwargs(prefix, selected_month):
@@ -223,6 +282,30 @@ def _has_unpaid_overdue_balance(billing):
     return resolve_billing_status(billing) == BillingRecord.Statuses.OVERDUE and billing.amount_due > 0
 
 
+def _build_meeting_minutes_admin_snapshot(limit=8):
+    minutes_records = list(
+        MeetingMinutes.objects.select_related('secretary', 'secretary__consumerprofile')
+        .prefetch_related('revisions__edited_by')
+        .order_by('-updated_at')[:limit]
+    )
+    today = timezone.localdate()
+    for item in minutes_records:
+        profile = getattr(item.secretary, 'consumerprofile', None)
+        item.secretary_name = profile.full_name if profile and profile.full_name else item.secretary.username
+        latest_revision = next(iter(item.revisions.all()), None)
+        item.latest_revision_summary = latest_revision.change_summary if latest_revision and latest_revision.change_summary else 'No revision summary yet.'
+
+    return {
+        'recent_meeting_minutes': minutes_records,
+        'meeting_minutes_summary': {
+            'total': MeetingMinutes.objects.count(),
+            'draft_count': MeetingMinutes.objects.filter(status=MeetingMinutes.Statuses.DRAFT).count(),
+            'approved_count': MeetingMinutes.objects.filter(status=MeetingMinutes.Statuses.APPROVED).count(),
+            'updated_today': MeetingMinutes.objects.filter(updated_at__date=today).count(),
+        },
+    }
+
+
 def _build_admin_panel_context(selected_month=None):
     selected_month = month_start(selected_month) or timezone.localdate().replace(day=1)
     current_month_billings = get_preferred_billing_records(
@@ -253,6 +336,7 @@ def _build_admin_panel_context(selected_month=None):
         'delivery_config': get_delivery_configuration_summary(),
         'paymongo_configured': is_paymongo_configured(),
         'admin_monitoring_data': build_system_monitoring_data(selected_month=selected_month),
+        **_build_meeting_minutes_admin_snapshot(),
         'selected_month': selected_month,
         'admin_month_choices': build_reporting_month_choices(),
         'payment_status_choices': Payment.Statuses.choices,
@@ -555,6 +639,111 @@ def _build_soa_pdf(selected_month=None, consumer=None, start_date=None, end_date
     return output
 
 
+def _build_meeting_minutes_pdf(minutes_record):
+    width, height = 1240, 1754
+    left = 90
+    right = width - 90
+    top = 80
+    bottom = height - 90
+    ink = '#111827'
+    muted = '#4b5563'
+    line = '#d1d5db'
+    red = '#0f766e'
+    soft = '#f8fafc'
+
+    font_title = _pdf_font(34, bold=True)
+    font_heading = _pdf_font(22, bold=True)
+    font_body = _pdf_font(18)
+    font_small = _pdf_font(16)
+    font_small_bold = _pdf_font(16, bold=True)
+
+    pages = []
+
+    def new_page(page_number):
+        page = Image.new('RGB', (width, height), 'white')
+        active_draw = ImageDraw.Draw(page)
+        active_draw.rectangle((0, 0, width, 18), fill=red)
+        active_draw.rounded_rectangle((left, top, right, bottom), radius=28, outline=line, width=2, fill='white')
+        logo_path = settings.BASE_DIR / 'static' / 'legacy_img' / 'meeting-minutes-logo.png'
+        if logo_path.exists():
+            try:
+                logo = Image.open(logo_path).convert('RGBA')
+                logo.thumbnail((88, 88))
+                page.paste(logo, (left + 28, top + 18), logo)
+            except OSError:
+                active_draw.rounded_rectangle((left + 28, top + 18, left + 116, top + 106), radius=18, outline=line, width=2)
+        else:
+            active_draw.rounded_rectangle((left + 28, top + 18, left + 116, top + 106), radius=18, outline=line, width=2)
+        active_draw.text((left + 138, top + 24), 'MEETING MINUTES', font=font_heading, fill=ink)
+        active_draw.text((left + 138, top + 56), 'Tabuan Water Billing System', font=font_small_bold, fill=muted)
+        active_draw.text((right - 180, top + 30), f'Page {page_number}', font=font_small, fill=muted)
+        return page, active_draw, top + 88
+
+    def ensure_space(page_number, current_y, required_height):
+        if current_y + required_height <= bottom - 40:
+            return page_number, current_y, ImageDraw.Draw(pages[-1])
+        next_page, next_draw, next_y = new_page(page_number + 1)
+        pages.append(next_page)
+        return page_number + 1, next_y, next_draw
+
+    page, draw, y = new_page(1)
+    pages.append(page)
+    page_number = 1
+
+    profile = get_user_profile(minutes_record.secretary)
+    prepared_by = profile.full_name if profile else minutes_record.secretary.username
+    meeting_time_label = minutes_record.meeting_time.strftime('%I:%M %p') if minutes_record.meeting_time else '-'
+    approved_label = minutes_record.approved_at.strftime('%B %d, %Y %I:%M %p') if minutes_record.approved_at else 'Not yet approved'
+
+    draw.text((left + 34, y), minutes_record.title, font=font_title, fill=ink)
+    y += 62
+    draw.text((left + 34, y), 'Tabuan Water Billing System', font=font_heading, fill=ink)
+    y += 44
+
+    meta_rows = [
+        ('Meeting Date', minutes_record.meeting_date.strftime('%B %d, %Y')),
+        ('Meeting Time', meeting_time_label),
+        ('Location', minutes_record.location or 'Not specified'),
+        ('Prepared By', prepared_by),
+        ('Status', minutes_record.get_status_display()),
+        ('Approved At', approved_label),
+    ]
+    for label, value in meta_rows:
+        draw.text((left + 34, y), f'{label}:', font=font_small_bold, fill=ink)
+        draw.text((left + 220, y), str(value), font=font_small, fill=muted)
+        y += 30
+
+    y += 14
+
+    for section_title, content in [
+        ('Attendees', minutes_record.attendees),
+        ('Agenda', minutes_record.agenda),
+        ('Minutes and Discussion', minutes_record.discussion_points),
+        ('Resolutions', minutes_record.resolutions),
+        ('Action Items', minutes_record.action_items),
+        ('Additional Notes', minutes_record.additional_notes),
+    ]:
+        raw_lines = str(content or '').strip().splitlines()
+        lines = raw_lines or ['Not provided.']
+        estimated_height = 62 + max(len(lines), 1) * 30
+        page_number, y, draw = ensure_space(page_number, y, estimated_height)
+        draw.rounded_rectangle((left + 28, y, right - 28, y + 42), radius=16, fill=soft, outline=line, width=1)
+        draw.text((left + 46, y + 10), section_title.upper(), font=font_small_bold, fill=ink)
+        y += 56
+        for line_text in lines:
+            page_number, y, draw = ensure_space(page_number, y, 36)
+            y = _draw_wrapped_text(draw, (left + 40, y), line_text, font_body, ink, right - left - 110, line_gap=6)
+        y += 18
+
+    draw.line((left + 34, bottom - 34, right - 34, bottom - 34), fill=line, width=1)
+    draw.text((left + 34, bottom - 24), 'Generated from the Secretary Meeting Minutes workspace.', font=font_small, fill=muted)
+
+    output = BytesIO()
+    pages[0].save(output, format='PDF', resolution=150.0, save_all=True, append_images=pages[1:])
+    output.seek(0)
+    return output
+
+
 def _store_paymongo_gateway_start(payment, ewallet_payment):
     payment_intent = ewallet_payment.get('attached_intent') or ewallet_payment.get('intent') or {}
     details = extract_paymongo_transaction_details(payment_intent)
@@ -832,6 +1021,7 @@ def _render_admin_live_payload(request, context):
         'monthly_billed': _format_money(context['monthly_billed']),
         'monthly_collected': _format_money(context['monthly_collected']),
         'monitoring_html': render_to_string('billing/includes/admin_monitoring_section.html', context, request=request),
+        'minutes_monitoring_html': render_to_string('billing/includes/admin_minutes_monitoring.html', context, request=request),
         'billing_rows_html': render_to_string('billing/includes/admin_billing_rows.html', context, request=request),
         'payment_rows_html': render_to_string('billing/includes/admin_payment_rows.html', context, request=request),
         'reading_rows_html': render_to_string('billing/includes/admin_reading_rows.html', context, request=request),
@@ -1040,8 +1230,73 @@ def admin_panel_data(request):
 @role_required(ConsumerProfile.Roles.SECRETARY)
 def secretary_panel(request):
     selected_month = get_selected_month(request.GET.get('month'))
+    selected_minutes = None
+    composing_new = request.GET.get('new') == '1'
+    selected_minutes_id = request.GET.get('minutes')
+
+    if request.method == 'POST':
+        minutes_id = request.POST.get('minutes_id', '').strip()
+        action = request.POST.get('minutes_action', 'save').strip().lower()
+        selected_minutes = get_object_or_404(MeetingMinutes, pk=minutes_id, secretary=request.user) if minutes_id else None
+
+        if selected_minutes and not selected_minutes.is_editable:
+            messages.error(request, 'Approved meeting minutes are locked and can no longer be edited.')
+            return redirect(f"{reverse('secretary_panel')}?minutes={selected_minutes.id}")
+
+        form = MeetingMinutesForm(request.POST, instance=selected_minutes)
+        if form.is_valid():
+            is_new = selected_minutes is None
+            minutes_record = form.save(commit=False)
+            minutes_record.secretary = request.user
+            if action == 'approve':
+                minutes_record.status = MeetingMinutes.Statuses.APPROVED
+                minutes_record.approved_at = timezone.now()
+            elif is_new:
+                minutes_record.status = MeetingMinutes.Statuses.DRAFT
+                minutes_record.approved_at = None
+
+            minutes_record.save()
+            changed_fields = list(form.changed_data)
+            change_summary = (
+                form.cleaned_data.get('change_summary', '').strip()
+                or _build_minutes_change_summary(is_new, changed_fields, approved=action == 'approve')
+            )
+            minutes_record.record_revision(
+                edited_by=request.user,
+                change_summary=change_summary,
+                changed_fields=changed_fields or (['created'] if is_new else ['approval']),
+            )
+            log_audit_action(
+                request.user,
+                'Approved meeting minutes' if action == 'approve' else ('Created meeting minutes draft' if is_new else 'Updated meeting minutes draft'),
+                target=minutes_record.title,
+                details=change_summary,
+            )
+            messages.success(
+                request,
+                'Meeting minutes finalized and locked for editing.' if action == 'approve' else 'Meeting minutes saved successfully.',
+            )
+            return redirect(f"{reverse('secretary_panel')}?minutes={minutes_record.id}")
+
+        selected_minutes = selected_minutes or None
+        composing_new = selected_minutes is None
+        context = {
+            **_build_monthly_statement_context(selected_month),
+            **_build_secretary_minutes_context(request, selected_minutes=selected_minutes, form=form, composing_new=composing_new),
+            'selected_month': selected_month,
+            'recent_audit_logs': AuditLog.objects.select_related('user').filter(
+                role__in=[ConsumerProfile.Roles.SECRETARY, ConsumerProfile.Roles.TREASURER],
+            )[:8],
+            'hide_header': True,
+        }
+        return render(request, 'billing/secretary_dashboard.html', context)
+
+    if selected_minutes_id:
+        selected_minutes = get_object_or_404(MeetingMinutes, pk=selected_minutes_id, secretary=request.user)
+
     context = {
         **_build_monthly_statement_context(selected_month),
+        **_build_secretary_minutes_context(request, selected_minutes=selected_minutes, composing_new=composing_new),
         'selected_month': selected_month,
         'recent_audit_logs': AuditLog.objects.select_related('user').filter(
             role__in=[ConsumerProfile.Roles.SECRETARY, ConsumerProfile.Roles.TREASURER],
@@ -1059,6 +1314,57 @@ def secretary_panel_data(request):
         'selected_month': selected_month,
     }
     return JsonResponse(_render_secretary_live_payload(request, context))
+
+
+@role_required(ConsumerProfile.Roles.SECRETARY)
+def secretary_meeting_minutes_detail(request, minutes_id):
+    minutes_record = get_object_or_404(MeetingMinutes, pk=minutes_id, secretary=request.user)
+    return JsonResponse(
+        {
+            'ok': True,
+            'id': minutes_record.id,
+            'title': minutes_record.title,
+            'meeting_date': minutes_record.meeting_date.isoformat() if minutes_record.meeting_date else '',
+            'meeting_time': minutes_record.meeting_time.isoformat(timespec='minutes') if minutes_record.meeting_time else '',
+            'location': minutes_record.location,
+            'attendees': minutes_record.attendees,
+            'agenda': minutes_record.agenda,
+            'discussion_points': minutes_record.discussion_points,
+            'resolutions': minutes_record.resolutions,
+            'action_items': minutes_record.action_items,
+            'additional_notes': minutes_record.additional_notes,
+            'status': minutes_record.status,
+            'status_display': minutes_record.get_status_display(),
+            'approved_at': minutes_record.approved_at.isoformat() if minutes_record.approved_at else '',
+            'editable': minutes_record.is_editable,
+            'export_url': reverse('secretary_meeting_minutes_export_pdf', args=[minutes_record.id]),
+            'revisions': [
+                {
+                    'revision_number': revision.revision_number,
+                    'change_summary': revision.change_summary or 'No change summary provided.',
+                    'edited_by': revision.edited_by.username if revision.edited_by else 'System',
+                    'created_at': timezone.localtime(revision.created_at).strftime('%Y-%m-%d %H:%M'),
+                }
+                for revision in minutes_record.revisions.select_related('edited_by')[:8]
+            ],
+        }
+    )
+
+
+@role_required(ConsumerProfile.Roles.SECRETARY)
+def secretary_meeting_minutes_export_pdf(request, minutes_id):
+    minutes_record = get_object_or_404(MeetingMinutes, pk=minutes_id, secretary=request.user)
+    pdf_file = _build_meeting_minutes_pdf(minutes_record)
+    safe_title = ''.join(character if character.isalnum() or character in {'-', '_'} else '-' for character in minutes_record.title.lower()).strip('-') or 'meeting-minutes'
+    response = HttpResponse(pdf_file.getvalue(), content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{safe_title}-{minutes_record.meeting_date:%Y-%m-%d}.pdf"'
+    log_audit_action(
+        request.user,
+        'Generated meeting minutes PDF',
+        target=minutes_record.title,
+        details=f'Status: {minutes_record.get_status_display()}.',
+    )
+    return response
 
 
 @role_required(ConsumerProfile.Roles.TREASURER)

@@ -439,3 +439,97 @@ class AuditLog(models.Model):
     def __str__(self):
         actor = self.user.username if self.user_id else 'System'
         return f'{actor} - {self.action}'
+
+
+class MeetingMinutes(models.Model):
+    class Statuses(models.TextChoices):
+        DRAFT = 'draft', 'Draft'
+        APPROVED = 'approved', 'Approved'
+
+    secretary = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='secretary_meeting_minutes',
+    )
+    title = models.CharField(max_length=255)
+    meeting_date = models.DateField(default=timezone.localdate)
+    meeting_time = models.TimeField(null=True, blank=True)
+    location = models.CharField(max_length=255, blank=True)
+    attendees = models.TextField(blank=True)
+    agenda = models.TextField(blank=True)
+    discussion_points = models.TextField(blank=True)
+    resolutions = models.TextField(blank=True)
+    action_items = models.TextField(blank=True)
+    additional_notes = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=Statuses.choices, default=Statuses.DRAFT)
+    approved_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-meeting_date', '-updated_at']
+
+    def __str__(self):
+        return f'{self.title} ({self.meeting_date:%Y-%m-%d})'
+
+    @property
+    def is_editable(self):
+        return self.status != self.Statuses.APPROVED
+
+    def build_snapshot(self):
+        return {
+            'title': self.title,
+            'meeting_date': self.meeting_date.isoformat() if self.meeting_date else '',
+            'meeting_time': self.meeting_time.isoformat() if self.meeting_time else '',
+            'location': self.location,
+            'attendees': self.attendees,
+            'agenda': self.agenda,
+            'discussion_points': self.discussion_points,
+            'resolutions': self.resolutions,
+            'action_items': self.action_items,
+            'additional_notes': self.additional_notes,
+            'status': self.status,
+            'approved_at': self.approved_at.isoformat() if self.approved_at else '',
+        }
+
+    def record_revision(self, edited_by=None, change_summary='', changed_fields=None):
+        return MeetingMinutesRevision.objects.create(
+            meeting_minutes=self,
+            edited_by=edited_by,
+            revision_number=self.revisions.count() + 1,
+            change_summary=str(change_summary or ''),
+            changed_fields=list(changed_fields or []),
+            snapshot=self.build_snapshot(),
+        )
+
+
+class MeetingMinutesRevision(models.Model):
+    meeting_minutes = models.ForeignKey(
+        MeetingMinutes,
+        on_delete=models.CASCADE,
+        related_name='revisions',
+    )
+    edited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='meeting_minutes_revisions',
+    )
+    revision_number = models.PositiveIntegerField()
+    change_summary = models.CharField(max_length=255, blank=True)
+    changed_fields = models.JSONField(default=list, blank=True)
+    snapshot = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-revision_number', '-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['meeting_minutes', 'revision_number'],
+                name='unique_meeting_minutes_revision_number',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.meeting_minutes.title} - Revision {self.revision_number}'

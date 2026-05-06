@@ -1,5 +1,62 @@
 {% extends 'base.html' %}
 {% block title %}Communications{% endblock %}
+{% block extra_css %}
+<style>
+    .communications-log-section {
+        grid-template-columns: minmax(300px, 0.8fr) minmax(0, 1.2fr);
+        align-items: start;
+    }
+
+    .communications-log-table {
+        table-layout: fixed;
+        width: 100%;
+    }
+
+    .communications-log-table th,
+    .communications-log-table td {
+        vertical-align: top;
+    }
+
+    .communications-log-table th:nth-child(1),
+    .communications-log-table td:nth-child(1) {
+        width: 120px;
+    }
+
+    .communications-log-table th:nth-child(2),
+    .communications-log-table td:nth-child(2) {
+        width: 90px;
+    }
+
+    .communications-log-table th:nth-child(3),
+    .communications-log-table td:nth-child(3) {
+        width: 150px;
+    }
+
+    .communications-log-table th:nth-child(4),
+    .communications-log-table td:nth-child(4) {
+        width: 140px;
+    }
+
+    .communications-log-table th:nth-child(5),
+    .communications-log-table td:nth-child(5) {
+        width: 90px;
+    }
+
+    .communications-log-response {
+        white-space: normal;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+        line-height: 1.6;
+        min-width: 280px;
+    }
+
+    @media (max-width: 1100px) {
+        .communications-log-section {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
 {% block content %}
 <section class="page-wrap">
     <div class="card">
@@ -58,46 +115,50 @@
     </div>
 </section>
 {% endcomment %}
-<section class="page-wrap grid-2">
+<section class="page-wrap communications-log-section">
     <div class="table-card">
         <h3>Recent SMS Blasts</h3>
-        <table>
-            <thead><tr><th>Audience</th><th>Status</th><th>Provider</th><th>Sent</th><th>Failed</th><th>Sent At</th></tr></thead>
-            <tbody>
-                {% for blast in recent_blasts %}
-                    <tr>
-                        <td>{{ blast.get_audience_display }}</td>
-                        <td>{{ blast.get_status_display }}</td>
-                        <td>{{ blast.provider|default:'-' }}</td>
-                        <td>{{ blast.sent_count }}</td>
-                        <td>{{ blast.failed_count }}</td>
-                        <td>{{ blast.sent_at|date:'Y-m-d H:i'|default:'-' }}</td>
-                    </tr>
-                {% empty %}
-                    <tr><td colspan="6" class="empty-state">No SMS blasts have been sent yet.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        <div class="table-shell table-shell-wide" data-stack-on-mobile="true">
+            <table>
+                <thead><tr><th>Audience</th><th>Status</th><th>Provider</th><th>Sent</th><th>Failed</th><th>Sent At</th></tr></thead>
+                <tbody>
+                    {% for blast in recent_blasts %}
+                        <tr>
+                            <td>{{ blast.get_audience_display }}</td>
+                            <td>{{ blast.get_status_display }}</td>
+                            <td>{{ blast.provider|default:'-' }}</td>
+                            <td>{{ blast.sent_count }}</td>
+                            <td>{{ blast.failed_count }}</td>
+                            <td>{{ blast.sent_at|date:'Y-m-d H:i'|default:'-' }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="6" class="empty-state">No SMS blasts have been sent yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
     <div class="table-card">
         <h3>Outbound Notification Log</h3>
-        <table>
-            <thead><tr><th>When</th><th>Channel</th><th>Title</th><th>Consumer</th><th>Status</th><th>Provider Response</th></tr></thead>
-            <tbody>
-                {% for item in recent_notifications %}
-                    <tr>
-                        <td>{{ item.created_at|date:'Y-m-d H:i' }}</td>
-                        <td>{{ item.get_channel_display }}</td>
-                        <td>{{ item.title }}</td>
-                        <td>{{ item.consumer.full_name|default:'-' }}</td>
-                        <td>{{ item.get_status_display }}</td>
-                        <td>{{ item.response_message|default:'-' }}</td>
-                    </tr>
-                {% empty %}
-                    <tr><td colspan="6" class="empty-state">No outbound notifications have been logged yet.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        <div class="table-shell table-shell-xl" data-stack-on-mobile="true">
+            <table class="communications-log-table">
+                <thead><tr><th>When</th><th>Channel</th><th>Title</th><th>Consumer</th><th>Status</th><th>Provider Response</th></tr></thead>
+                <tbody>
+                    {% for item in recent_notifications %}
+                        <tr>
+                            <td>{{ item.created_at|date:'Y-m-d H:i' }}</td>
+                            <td>{{ item.get_channel_display }}</td>
+                            <td>{{ item.title }}</td>
+                            <td>{{ item.consumer.full_name|default:'-' }}</td>
+                            <td>{{ item.get_status_display }}</td>
+                            <td class="communications-log-response">{{ item.response_message|default:'-' }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="6" class="empty-state">No outbound notifications have been logged yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </section>
 {% endblock %}

@@ -5,12 +5,13 @@ from decimal import Decimal
 from urllib.error import URLError
 
 from django.contrib.auth.models import User
+from django.contrib.admin.sites import site
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
 from .forms import AdminPaymentForm, BillingRecordForm, ConsumerForm, ConsumerPaymentForm, MeterReadingForm, PortalAccountForm, SignUpForm
-from .models import BillingRecord, Consumer, ConsumerProfile, MeterReading, Notification, Payment, SystemSettings
+from .models import BillingRecord, Consumer, ConsumerProfile, MeetingMinutes, MeetingMinutesRevision, MeterReading, Notification, Payment, SystemSettings
 from .services import build_consumer_chart_data, build_consumer_payment_month_choices, send_test_sms
 from .views import _build_soa_summary, _build_soa_transactions
 
@@ -595,6 +596,152 @@ class StaffPanelPendingMonitoringTests(TestCase):
         self.assertIn('Overdue Consumer', payload['overdue_rows_html'])
 
 
+class SecretaryMeetingMinutesTests(TestCase):
+    def setUp(self):
+        self.secretary = User.objects.create_user(username='minutes-secretary', password='StrongPass1!')
+        ConsumerProfile.objects.create(
+            user=self.secretary,
+            full_name='Minutes Secretary',
+            role=ConsumerProfile.Roles.SECRETARY,
+        )
+        self.other_secretary = User.objects.create_user(username='other-secretary', password='StrongPass1!')
+        ConsumerProfile.objects.create(
+            user=self.other_secretary,
+            full_name='Other Secretary',
+            role=ConsumerProfile.Roles.SECRETARY,
+        )
+
+    def test_secretary_can_create_minutes_with_initial_revision(self):
+        self.client.force_login(self.secretary)
+
+        response = self.client.post(
+            reverse('secretary_panel'),
+            data={
+                'title': 'May Water District Meeting',
+                'meeting_date': '2026-05-07',
+                'meeting_time': '09:00',
+                'location': 'Barangay Hall',
+                'attendees': 'Secretary\nTreasurer',
+                'agenda': '1. Collections update',
+                'discussion_points': 'Collections improved versus April.',
+                'resolutions': 'Approve next billing reminder cycle.',
+                'action_items': 'Secretary - circulate minutes - May 08',
+                'additional_notes': 'Prepared in dashboard editor.',
+                'change_summary': 'Created the first draft.',
+                'minutes_action': 'save',
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        minutes = MeetingMinutes.objects.get(secretary=self.secretary, title='May Water District Meeting')
+        self.assertEqual(minutes.status, MeetingMinutes.Statuses.DRAFT)
+        self.assertEqual(minutes.revisions.count(), 1)
+        self.assertEqual(minutes.revisions.first().change_summary, 'Created the first draft.')
+
+    def test_secretary_only_can_open_own_minutes_document_endpoint(self):
+        minutes = MeetingMinutes.objects.create(
+            secretary=self.secretary,
+            title='Owned Minutes',
+            meeting_date=date(2026, 5, 7),
+            location='Office',
+            attendees='Secretary',
+            agenda='1. Agenda',
+            discussion_points='Discussion',
+            resolutions='Resolution',
+            action_items='Action',
+        )
+
+        self.client.force_login(self.other_secretary)
+        response = self.client.get(reverse('secretary_meeting_minutes_detail', args=[minutes.id]))
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_final_approval_locks_future_edits(self):
+        minutes = MeetingMinutes.objects.create(
+            secretary=self.secretary,
+            title='Approval Flow',
+            meeting_date=date(2026, 5, 7),
+            location='Office',
+            attendees='Secretary',
+            agenda='1. Agenda',
+            discussion_points='Discussion',
+            resolutions='Resolution',
+            action_items='Action',
+        )
+        minutes.record_revision(edited_by=self.secretary, change_summary='Created draft.', changed_fields=['created'])
+
+        self.client.force_login(self.secretary)
+        approve_response = self.client.post(
+            reverse('secretary_panel'),
+            data={
+                'minutes_id': minutes.id,
+                'title': minutes.title,
+                'meeting_date': '2026-05-07',
+                'meeting_time': '',
+                'location': minutes.location,
+                'attendees': minutes.attendees,
+                'agenda': minutes.agenda,
+                'discussion_points': minutes.discussion_points,
+                'resolutions': minutes.resolutions,
+                'action_items': minutes.action_items,
+                'additional_notes': '',
+                'change_summary': 'Ready for final approval.',
+                'minutes_action': 'approve',
+            },
+        )
+
+        self.assertEqual(approve_response.status_code, 302)
+        minutes.refresh_from_db()
+        self.assertEqual(minutes.status, MeetingMinutes.Statuses.APPROVED)
+        self.assertEqual(minutes.revisions.count(), 2)
+
+        edit_response = self.client.post(
+            reverse('secretary_panel'),
+            data={
+                'minutes_id': minutes.id,
+                'title': 'Edited After Approval',
+                'meeting_date': '2026-05-07',
+                'meeting_time': '',
+                'location': minutes.location,
+                'attendees': minutes.attendees,
+                'agenda': minutes.agenda,
+                'discussion_points': minutes.discussion_points,
+                'resolutions': minutes.resolutions,
+                'action_items': minutes.action_items,
+                'additional_notes': '',
+                'change_summary': 'Should be blocked.',
+                'minutes_action': 'save',
+            },
+        )
+
+        self.assertEqual(edit_response.status_code, 302)
+        minutes.refresh_from_db()
+        self.assertEqual(minutes.title, 'Approval Flow')
+        self.assertEqual(minutes.revisions.count(), 2)
+
+    def test_secretary_can_export_own_minutes_as_pdf(self):
+        minutes = MeetingMinutes.objects.create(
+            secretary=self.secretary,
+            title='PDF Export Minutes',
+            meeting_date=date(2026, 5, 7),
+            location='Office',
+            attendees='Secretary',
+            agenda='1. Agenda',
+            discussion_points='Discussion content for PDF export.',
+            resolutions='Resolution',
+            action_items='Action',
+            additional_notes='Note',
+        )
+
+        self.client.force_login(self.secretary)
+        response = self.client.get(reverse('secretary_meeting_minutes_export_pdf', args=[minutes.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'application/pdf')
+        self.assertIn('.pdf', response['Content-Disposition'])
+        self.assertGreater(len(response.content), 100)
+
+
 class ReportIntegrityTests(TestCase):
     def setUp(self):
         self.consumer_user = User.objects.create_user(username='consumer2', password='StrongPass1!')
@@ -1004,6 +1151,13 @@ class AuthAndBrandingRegressionTests(TestCase):
         self.assertContains(response, 'Create Consumer Account')
         self.assertContains(response, 'Tabuan Water Billing logo')
 
+    def test_login_page_exposes_forgot_password_link(self):
+        response = self.client.get(reverse('login'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse('password_reset'))
+        self.assertContains(response, 'Forgot Password?')
+
     def test_logout_page_renders_after_post(self):
         self.client.force_login(self.user)
 
@@ -1031,6 +1185,21 @@ class AuthAndBrandingRegressionTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Tabuan Water Billing System')
         self.assertContains(response, 'tabuan-logo.png')
+
+    def test_password_change_request_form_uses_confirm_password_label(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('password_change'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Confirm Password')
+
+    def test_password_reset_form_renders(self):
+        response = self.client.get(reverse('password_reset'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Forgot Password')
+        self.assertContains(response, 'Send Reset Link')
 
     @patch('billing.views.send_user_security_otp')
     def test_password_change_otp_updates_only_logged_in_account(self, mocked_send_otp):
@@ -1530,6 +1699,12 @@ class AdminPanelMonthFilterTests(TestCase):
             full_name='Admin Month',
             role=ConsumerProfile.Roles.ADMIN,
         )
+        self.secretary_user = User.objects.create_user(username='minutes-owner', password='StrongPass1!')
+        ConsumerProfile.objects.create(
+            user=self.secretary_user,
+            full_name='Minutes Owner',
+            role=ConsumerProfile.Roles.SECRETARY,
+        )
         self.consumer = Consumer.objects.create(
             full_name='Month Filter Consumer',
             status=Consumer.Statuses.ACTIVE,
@@ -1553,6 +1728,22 @@ class AdminPanelMonthFilterTests(TestCase):
             amount_paid=Decimal('0'),
             billing_date=date(2026, 5, 1),
             due_date=date(2026, 5, 15),
+        )
+        self.meeting_minutes = MeetingMinutes.objects.create(
+            secretary=self.secretary_user,
+            title='Admin Oversight Minutes',
+            meeting_date=date(2026, 5, 7),
+            location='Office',
+            attendees='Secretary',
+            agenda='1. Agenda',
+            discussion_points='Oversight discussion',
+            resolutions='Resolution',
+            action_items='Action',
+        )
+        self.meeting_minutes.record_revision(
+            edited_by=self.secretary_user,
+            change_summary='Created oversight draft.',
+            changed_fields=['created'],
         )
 
     def test_admin_panel_filters_statistics_by_selected_month(self):
@@ -1601,6 +1792,31 @@ class AdminPanelMonthFilterTests(TestCase):
         self.assertEqual(data_response.status_code, 200)
         self.assertEqual(data_response.json()['monthly_collected'], '75.00')
         self.assertIn('Month Filter Consumer', data_response.json()['payment_rows_html'])
+
+    def test_admin_panel_displays_meeting_minutes_monitoring(self):
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(reverse('admin_panel'), {'month': '2026-05'})
+        data_response = self.client.get(
+            reverse('admin_panel_data'),
+            {'month': '2026-05'},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Meeting Minutes Oversight')
+        self.assertContains(response, 'Admin Oversight Minutes')
+        self.assertContains(response, 'Minutes Owner')
+        self.assertContains(response, 'Created oversight draft.')
+        self.assertEqual(data_response.status_code, 200)
+        self.assertIn('Meeting Minutes Oversight', data_response.json()['minutes_monitoring_html'])
+        self.assertIn('Admin Oversight Minutes', data_response.json()['minutes_monitoring_html'])
+
+
+class AdminRegistrationTests(TestCase):
+    def test_meeting_minutes_models_are_registered_in_django_admin(self):
+        self.assertIn(MeetingMinutes, site._registry)
+        self.assertIn(MeetingMinutesRevision, site._registry)
 
 
 class SettingsPropagationTests(TestCase):
