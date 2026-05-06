@@ -41,18 +41,10 @@ python manage.py createsuperuser
 python manage.py runserver
 ```
 
-## Default database
-This starter uses **SQLite** so you can run it immediately.
+## Database
+this system runs via msql 8.4 and uses a waterbilling_v1.26 database
 
-## If you want MySQL instead
-Update `waterbilling_project/settings.py` and replace the `DATABASES` section with your MySQL credentials.
 
-## Notes about the old project
-The uploaded PHP version has some inconsistencies that were cleaned during transfer:
-- some pages read from `users`, others from `consumers`
-- `billing` fields vary across files (`bill_id`, `billing_id`, `amount`, `total_amount`)
-- some values are hard-coded in the dashboard
-- some logic duplicates records into multiple databases
 
 ## Next recommended step
 After testing this Django version, the next step is to import your real MySQL data into the Django tables.
