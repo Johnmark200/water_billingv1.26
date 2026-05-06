@@ -13,16 +13,7 @@ This is a Django recreation of the uploaded PHP **Water Billing & Payment System
 - Reports / analytics page
 - Profile page
 
-## Legacy PHP to Django mapping
-- `php admin/main_index.php` -> `/`
-- `php admin/log_in.php` -> `/login/`
-- `php admin/sign_up.php` -> `/signup/`
-- `php admin/index.php` -> `/dashboard/`
-- `php admin/consumer.php` -> `/consumers/`
-- `php admin/billing.php` -> `/billing/` and `/billing/add/`
-- `php admin/payments.php` -> `/payments/`
-- `php admin/reports.php` -> `/reports/`
-- `php admin/profile.php` -> `/profile/`
+
 
 ## Recommended architecture change
 The PHP project mixes data across **three MySQL databases**:
