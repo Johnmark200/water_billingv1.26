@@ -65,7 +65,7 @@
                     <tr>
                         {% if show_all_consumer_transactions %}<td>{{ payment.consumer.full_name }}</td>{% endif %}
                         <td>{{ payment.payment_date }}</td>
-                        <td>{{ payment.get_payment_method_display }}</td>
+                        <td>{{ payment.display_payment_method }}</td>
                         <td>&#8369;{{ payment.amount_paid }}</td>
                     </tr>
                 {% empty %}

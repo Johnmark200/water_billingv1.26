@@ -1,6 +1,8 @@
 import base64
 import json
 import re
+import socket
+import time
 from datetime import date, timedelta
 from decimal import Decimal
 from email.utils import formataddr
@@ -46,6 +48,11 @@ def email_provider_name():
 
 def sms_provider_name():
     return (getattr(settings, 'SMS_DELIVERY_PROVIDER', 'twilio') or 'twilio').lower()
+
+
+def sms_provider_label(provider=None):
+    provider = provider or sms_provider_name()
+    return 'SMS API PH' if provider == 'sms_api_ph' else provider.title()
 
 
 def normalize_phone_number(value):
@@ -168,6 +175,48 @@ def _sms_api_ph_configuration_error():
     if message_type not in {'plain', 'unicode'}:
         return 'SMS_API_PH_MESSAGE_TYPE must be plain or unicode.'
     return ''
+
+
+def _sms_api_retry_attempts():
+    raw_value = getattr(settings, 'SMS_API_RETRY_ATTEMPTS', 2)
+    try:
+        return max(1, int(raw_value))
+    except (TypeError, ValueError):
+        return 2
+
+
+def _should_retry_sms_transport_error(exc):
+    reason = getattr(exc, 'reason', exc)
+    reason_text = str(reason or exc).lower()
+    return (
+        isinstance(exc, (TimeoutError, socket.timeout))
+        or isinstance(reason, socket.gaierror)
+        or 'getaddrinfo failed' in reason_text
+        or 'temporary failure in name resolution' in reason_text
+        or 'timed out' in reason_text
+        or 'connection reset' in reason_text
+    )
+
+
+def _describe_sms_transport_error(exc, endpoint, timeout_seconds):
+    provider_label = sms_provider_label('sms_api_ph')
+    parsed_endpoint = parse.urlparse(endpoint)
+    target = parsed_endpoint.netloc or endpoint
+    reason = getattr(exc, 'reason', exc)
+    reason_text = _truncate_response_text(str(reason or exc))
+    lowered_reason = reason_text.lower()
+
+    if isinstance(reason, socket.gaierror) or 'getaddrinfo failed' in lowered_reason:
+        return (
+            f'Unable to reach {provider_label} at {target} because DNS lookup failed. '
+            'Check the server internet connection, DNS settings, or SMS_API_PH_ENDPOINT.'
+        )
+    if isinstance(exc, (TimeoutError, socket.timeout)) or 'timed out' in lowered_reason:
+        return (
+            f'{provider_label} did not respond within {timeout_seconds} seconds at {target}. '
+            'The request timed out before the provider returned a result.'
+        )
+    return f'Unable to reach {provider_label} at {target}: {reason_text}'
 
 
 def _parse_sms_api_ph_response(response_body):
@@ -520,19 +569,36 @@ def _send_via_sms_api_ph(phone_number, message):
         method='POST',
     )
 
-    with request.urlopen(sms_request, timeout=getattr(settings, 'SMS_API_TIMEOUT', 10)) as response:  # pragma: no cover - network-dependent
-        body = response.read().decode()
+    timeout_seconds = getattr(settings, 'SMS_API_TIMEOUT', 10)
+    retry_attempts = _sms_api_retry_attempts()
+    for attempt in range(1, retry_attempts + 1):
+        try:
+            with request.urlopen(sms_request, timeout=timeout_seconds) as response:  # pragma: no cover - network-dependent
+                body = response.read().decode()
+            break
+        except error.HTTPError as exc:  # pragma: no cover - network-dependent
+            failure_body = _truncate_response_text(exc.read().decode())
+            if failure_body:
+                raise ValueError(f'{sms_provider_label("sms_api_ph")} rejected the request: {failure_body}') from exc
+            raise ValueError(f'{sms_provider_label("sms_api_ph")} rejected the request with HTTP {exc.code}.') from exc
+        except (error.URLError, TimeoutError, socket.timeout) as exc:  # pragma: no cover - network-dependent
+            if attempt < retry_attempts and _should_retry_sms_transport_error(exc):
+                time.sleep(min(attempt, 2))
+                continue
+            raise ValueError(_describe_sms_transport_error(exc, endpoint, timeout_seconds)) from exc
 
     # Parse and validate the response
-    status, message_id, error = _parse_sms_api_ph_response(body)
-    
+    status, message_id, provider_error = _parse_sms_api_ph_response(body)
+
     if status == 'failed':
-        raise ValueError(error or 'SMS API PH rejected the message')
-    
+        raise ValueError(f'{sms_provider_label("sms_api_ph")} rejected the message: {provider_error or "Unknown provider error."}')
+    if status is None:
+        raise ValueError(f'{sms_provider_label("sms_api_ph")} returned an unreadable response. {provider_error or ""}'.strip())
+
     # Return success response with optional message ID
     if message_id:
-        return f'SMS API PH accepted (ID: {message_id}) for {phone_number}'
-    return f'SMS API PH accepted the SMS for {phone_number}'
+        return f'{sms_provider_label("sms_api_ph")} accepted (ID: {message_id}) for {phone_number}'
+    return f'{sms_provider_label("sms_api_ph")} accepted the SMS for {phone_number}'
 
 
 def _paymongo_base_url():
@@ -756,12 +822,21 @@ def extract_paymongo_transaction_details(payment_intent):
     latest_payment = _latest_paymongo_payment(payment_intent)
     latest_payment_attributes = latest_payment.get('attributes') or {}
     latest_payment_id = latest_payment.get('id') or attributes.get('latest_payment') or ''
+    allowed_methods = attributes.get('payment_method_allowed') or []
+    payment_source = latest_payment_attributes.get('source') or {}
+    payment_method_details = latest_payment_attributes.get('payment_method_details') or {}
+    payment_method_type = (
+        payment_source.get('type')
+        or payment_method_details.get('type')
+        or (allowed_methods[0] if allowed_methods else '')
+    )
 
     return {
         'intent_id': payment_intent.get('id', ''),
         'intent_status': attributes.get('status', ''),
         'payment_id': latest_payment_id if isinstance(latest_payment_id, str) else '',
         'payment_status': latest_payment_attributes.get('status', ''),
+        'payment_method_type': Payment.normalize_online_channel(payment_method_type),
         'amount': attributes.get('amount'),
         'amount_received': attributes.get('amount_received'),
         'paid_at': latest_payment_attributes.get('paid_at') or latest_payment_attributes.get('created_at'),
@@ -1279,6 +1354,41 @@ def add_months(base_month, months):
     return date(normalized.year + month_index // 12, (month_index % 12) + 1, 1)
 
 
+def build_reporting_month_choices(include_current=True):
+    months = {
+        month_start(item)
+        for item in BillingRecord.objects.values_list('billing_month', flat=True)
+        if item
+    }
+    months.update(
+        month_start(item)
+        for item in MeterReading.objects.values_list('billing_month', flat=True)
+        if item
+    )
+    months.update(
+        month_start(item)
+        for item in Payment.objects.exclude(covered_month__isnull=True).values_list('covered_month', flat=True)
+        if item
+    )
+    months.update(
+        month_start(item)
+        for item in Payment.objects.filter(covered_month__isnull=True, billing__isnull=True).values_list('payment_date', flat=True)
+        if item
+    )
+    if include_current:
+        months.add(month_start(timezone.localdate()))
+
+    ordered_months = sorted((item for item in months if item), reverse=True)
+    return [
+        {
+            'date': item,
+            'value': item.strftime('%Y-%m'),
+            'label': item.strftime('%B %Y'),
+        }
+        for item in ordered_months
+    ]
+
+
 def _billing_rank(record):
     return (
         record.total_amount or Decimal('0'),
@@ -1390,6 +1500,21 @@ def build_consumer_payment_month_choices(consumer, advance_months=6):
     return choices
 
 
+def get_payments_received_for_month(selected_month, consumer=None, statuses=None):
+    selected_month = month_start(selected_month)
+    queryset = Payment.objects.filter(
+        payment_date__year=selected_month.year,
+        payment_date__month=selected_month.month,
+    ).select_related('consumer', 'billing').order_by('-payment_date', '-created_at')
+
+    if consumer is not None:
+        queryset = queryset.filter(consumer=consumer)
+    if statuses is not None:
+        queryset = queryset.filter(status__in=statuses)
+
+    return list(queryset)
+
+
 def get_statement_payment_records(selected_month, consumer=None):
     selected_month = month_start(selected_month)
     queryset = Payment.objects.filter(
@@ -1452,8 +1577,9 @@ def build_consumer_chart_data(consumer, months=6):
     }
 
 
-def build_system_monitoring_data(months=6):
+def build_system_monitoring_data(selected_month=None, months=6):
     billings = get_preferred_billing_records(BillingRecord.objects.all())
+    target_month = month_start(selected_month)
     if not billings:
         return {
             'points': [],
@@ -1465,7 +1591,7 @@ def build_system_monitoring_data(months=6):
             },
             'summary': {
                 'tracked_months': 0,
-                'latest_label': 'No billing month',
+                'latest_label': target_month.strftime('%B %Y') if target_month else 'No billing month',
                 'latest_accounts': 0,
                 'latest_usage': '0',
                 'latest_billed': '0',
@@ -1495,7 +1621,6 @@ def build_system_monitoring_data(months=6):
 
         snapshot['usage'] += billing.usage_m3 or Decimal('0')
         snapshot['bill'] += billing.total_amount or Decimal('0')
-        snapshot['paid'] += billing.amount_paid or Decimal('0')
         snapshot['balance'] += billing.amount_due or Decimal('0')
         snapshot['accounts'] += 1
 
@@ -1506,9 +1631,54 @@ def build_system_monitoring_data(months=6):
         else:
             snapshot['pending_accounts'] += 1
 
-    selected_months = sorted(monthly_totals.keys(), reverse=True)[:months]
-    ordered_snapshots = [monthly_totals[item] for item in reversed(selected_months)]
-    latest_snapshot = monthly_totals[selected_months[0]]
+    payment_totals = {}
+    for payment in Payment.objects.filter(status=Payment.Statuses.COMPLETED).only('payment_date', 'amount_paid'):
+        payment_month = month_start(payment.payment_date)
+        payment_totals.setdefault(payment_month, Decimal('0'))
+        payment_totals[payment_month] += payment.amount_paid or Decimal('0')
+
+    for payment_month, total_paid in payment_totals.items():
+        snapshot = monthly_totals.setdefault(
+            payment_month,
+            {
+                'month': payment_month,
+                'usage': Decimal('0'),
+                'bill': Decimal('0'),
+                'paid': Decimal('0'),
+                'balance': Decimal('0'),
+                'accounts': 0,
+                'paid_accounts': 0,
+                'pending_accounts': 0,
+                'overdue_accounts': 0,
+            },
+        )
+        snapshot['paid'] = total_paid
+
+    available_months = sorted(monthly_totals.keys())
+    if target_month is None:
+        target_month = available_months[-1]
+
+    if target_month not in monthly_totals:
+        monthly_totals[target_month] = {
+            'month': target_month,
+            'usage': Decimal('0'),
+            'bill': Decimal('0'),
+            'paid': Decimal('0'),
+            'balance': Decimal('0'),
+            'accounts': 0,
+            'paid_accounts': 0,
+            'pending_accounts': 0,
+            'overdue_accounts': 0,
+        }
+        available_months = sorted(monthly_totals.keys())
+
+    eligible_months = [item for item in available_months if item <= target_month]
+    if not eligible_months:
+        eligible_months = [target_month]
+
+    selected_months = eligible_months[-months:]
+    ordered_snapshots = [monthly_totals[item] for item in selected_months]
+    latest_snapshot = monthly_totals[target_month]
 
     return {
         'points': [
@@ -1694,6 +1864,33 @@ def create_or_update_billing_from_reading(reading, system_settings=None):
     return _sync_advance_payments_to_billing(billing)
 
 
+def sync_existing_billings_with_settings(system_settings=None):
+    system_settings = system_settings or SystemSettings.load()
+    updated_records = 0
+
+    for billing in BillingRecord.objects.all():
+        baseline_date = billing.billing_date or billing.billing_month
+        expected_due_date = (
+            baseline_date + timedelta(days=system_settings.billing_due_days)
+            if baseline_date
+            else billing.due_date
+        )
+        should_update = billing.rate_per_m3 != system_settings.rate_per_m3
+        should_update = should_update or bool(expected_due_date and billing.due_date != expected_due_date)
+
+        if not should_update:
+            continue
+
+        billing.rate_per_m3 = system_settings.rate_per_m3
+        if expected_due_date:
+            billing.due_date = expected_due_date
+        billing.save()
+        _sync_advance_payments_to_billing(billing)
+        updated_records += 1
+
+    return updated_records
+
+
 def handle_meter_reading_submission(form, submitted_by):
     system_settings = SystemSettings.load()
     consumer = form.cleaned_data['consumer']
@@ -1808,10 +2005,10 @@ def send_payment_notification(payment, system_settings=None):
         [
             ('Covered Month', covered_label),
             ('Payment Date', f'{payment.payment_date:%B %d, %Y}'),
-            ('Payment Method', payment.get_payment_method_display()),
+            ('Payment Method', payment.display_payment_method),
             ('Payment Option', payment.get_payment_option_display()),
             ('Payment Status', payment.get_status_display()),
-            ('Reference Number', '-' if payment.payment_method == Payment.Methods.CASH else (payment.reference_number or payment.gateway_reference or '-')),
+            ('Reference Number', payment.display_reference_number),
             ('Discount Applied', f'PHP {payment.discount_amount}'),
         ],
         total_label='AMOUNT PAID',
@@ -1821,7 +2018,7 @@ def send_payment_notification(payment, system_settings=None):
     sms_message = (
         f'Tabuan Water Billing: Payment for {covered_label} is {payment.get_status_display().lower()}. '
         f'{payment.get_payment_option_display()}. Amount PHP {payment.amount_paid}. '
-        f'Ref: {"-" if payment.payment_method == Payment.Methods.CASH else (payment.reference_number or payment.gateway_reference or "-")}'
+        f'Ref: {payment.display_reference_number}'
     )
     return notify_consumer(
         payment.consumer,

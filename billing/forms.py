@@ -132,7 +132,100 @@ class SignUpForm(UserCreationForm):
         return user
 
 
+class PortalAccountForm(UserCreationForm):
+    role = forms.ChoiceField(
+        choices=[
+            (ConsumerProfile.Roles.ADMIN, ConsumerProfile.Roles.ADMIN.label),
+            (ConsumerProfile.Roles.SECRETARY, ConsumerProfile.Roles.SECRETARY.label),
+            (ConsumerProfile.Roles.TREASURER, ConsumerProfile.Roles.TREASURER.label),
+            (ConsumerProfile.Roles.READER, ConsumerProfile.Roles.READER.label),
+        ]
+    )
+    full_name = forms.CharField(max_length=255)
+    email = forms.EmailField(required=False)
+    contact = forms.CharField(max_length=50, required=False)
+    address = forms.CharField(widget=forms.Textarea(attrs={'rows': 3}), required=False)
+    photo = forms.ImageField(required=False)
+
+    class Meta:
+        model = User
+        fields = (
+            'role',
+            'username',
+            'full_name',
+            'email',
+            'contact',
+            'address',
+            'photo',
+            'password1',
+            'password2',
+        )
+
+    def _post_clean(self):
+        forms.ModelForm._post_clean(self)
+
+    def clean_email(self):
+        email = self.cleaned_data.get('email', '').strip()
+        if email and not is_valid_email_address(email):
+            raise forms.ValidationError('Enter a valid email address.')
+        return email
+
+    def clean_contact(self):
+        contact = normalize_phone_number(self.cleaned_data.get('contact', ''))
+        if contact and not is_e164_phone_number(contact):
+            raise forms.ValidationError('Enter the contact number in E.164 format, for example +639171234567.')
+        return contact
+
+    def clean(self):
+        cleaned_data = forms.ModelForm.clean(self)
+        password1 = cleaned_data.get('password1', '')
+        password2 = cleaned_data.get('password2', '')
+        username = cleaned_data.get('username', '')
+        email = cleaned_data.get('email', '')
+
+        if password1 and username and username.lower() in password1.lower():
+            self.add_error('password1', 'Your username cannot be used as your password.')
+
+        if password1:
+            issues = collect_password_strength_issues(password1, username=username, email=email)
+            if issues:
+                self.add_error('password1', 'Your password is too weak. Please use a stronger password.')
+                for issue in issues:
+                    self.add_error('password1', issue)
+
+        if password1 and password2 and password1 != password2:
+            self.add_error('password2', 'Passwords do not match. Please try again.')
+
+        return cleaned_data
+
+    def save(self, commit=True):
+        user = super().save(commit=False)
+        role = self.cleaned_data['role']
+        user.email = self.cleaned_data.get('email', '')
+        user.is_staff = role == ConsumerProfile.Roles.ADMIN
+
+        if commit:
+            user.save()
+            ConsumerProfile.objects.create(
+                user=user,
+                full_name=self.cleaned_data['full_name'],
+                email=self.cleaned_data.get('email', ''),
+                contact=self.cleaned_data.get('contact', ''),
+                address=self.cleaned_data.get('address', ''),
+                role=role,
+                photo=self.cleaned_data.get('photo'),
+            )
+        return user
+
+
 class ConsumerForm(forms.ModelForm):
+    linked_account_role = forms.ChoiceField(
+        choices=ConsumerProfile.Roles.choices,
+        required=False,
+        initial=ConsumerProfile.Roles.CONSUMER,
+        help_text='Only applied when a linked account profile is selected.',
+    )
+
     class Meta:
         model = Consumer
         fields = ['profile', 'full_name', 'address', 'contact_number', 'status', 'photo']
@@ -142,19 +235,55 @@ class ConsumerForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        available_profiles = ConsumerProfile.objects.filter(role=ConsumerProfile.Roles.CONSUMER).exclude(
-            consumer_record__isnull=False
-        )
+        available_profiles = ConsumerProfile.objects.exclude(consumer_record__isnull=False)
         if self.instance.pk and self.instance.profile_id:
             available_profiles = ConsumerProfile.objects.filter(pk=self.instance.profile_id) | available_profiles
         self.fields['profile'].queryset = available_profiles.order_by('full_name')
         self.fields['profile'].required = False
+        self.fields['profile'].label = 'Linked account profile'
+        self.fields['profile'].help_text = 'Optional. Link this consumer to an existing system account profile.'
+        self.fields['linked_account_role'].label = 'Linked account role'
+        if self.instance.pk and self.instance.profile_id:
+            self.fields['linked_account_role'].initial = self.instance.profile.role
+        self.order_fields(['profile', 'linked_account_role', 'full_name', 'address', 'contact_number', 'status', 'photo'])
 
     def clean_contact_number(self):
         contact_number = normalize_phone_number(self.cleaned_data.get('contact_number', ''))
         if contact_number and not is_e164_phone_number(contact_number):
             raise forms.ValidationError('Enter the contact number in E.164 format, for example +639171234567.')
         return contact_number
+
+    def save(self, commit=True):
+        consumer = super().save(commit=False)
+        profile = self.cleaned_data.get('profile')
+
+        if commit:
+            consumer.save()
+
+            if profile:
+                profile_updates = []
+                linked_role = self.cleaned_data.get('linked_account_role') or profile.role or ConsumerProfile.Roles.CONSUMER
+
+                if profile.role != linked_role:
+                    profile.role = linked_role
+                    profile_updates.append('role')
+                if profile.full_name != consumer.full_name:
+                    profile.full_name = consumer.full_name
+                    profile_updates.append('full_name')
+                if profile.address != consumer.address:
+                    profile.address = consumer.address
+                    profile_updates.append('address')
+                if profile.contact != consumer.contact_number:
+                    profile.contact = consumer.contact_number
+                    profile_updates.append('contact')
+                if consumer.photo and profile.photo != consumer.photo:
+                    profile.photo = consumer.photo
+                    profile_updates.append('photo')
+
+                if profile_updates:
+                    profile.save(update_fields=profile_updates)
+
+        return consumer
 
 
 class BillingRecordForm(forms.ModelForm):
@@ -195,6 +324,14 @@ class BillingRecordForm(forms.ModelForm):
 
 
 class AdminPaymentForm(forms.ModelForm):
+    online_channel = forms.ChoiceField(
+        choices=[
+            (Payment.Methods.GCASH, Payment.Methods.GCASH.label),
+            (Payment.Methods.PAYMAYA, 'Maya'),
+        ],
+        required=False,
+    )
+
     class Meta:
         model = Payment
         fields = [
@@ -240,6 +377,13 @@ class AdminPaymentForm(forms.ModelForm):
         self.fields['reference_number'].required = False
         self.fields['amount_paid'].required = False
         self.fields['amount_paid'].widget.attrs.update({'readonly': 'readonly'})
+        self.fields['online_channel'].widget = forms.HiddenInput()
+        self.fields['online_channel'].initial = Payment.normalize_online_channel(
+            self.data.get(self.add_prefix('online_channel')) if self.is_bound else self.instance.gateway
+        )
+
+    def clean_amount_paid(self):
+        return self.cleaned_data.get('amount_paid') or Decimal('0')
 
     def clean(self):
         cleaned_data = super().clean()
@@ -248,10 +392,29 @@ class AdminPaymentForm(forms.ModelForm):
         payment_method = cleaned_data.get('payment_method')
         if billing:
             balance = billing.amount_due
-            cleaned_data['amount_paid'] = balance if payment_option == Payment.PaymentOptions.FULL else (balance * Decimal('0.75')).quantize(Decimal('0.01'))
+            cleaned_data['amount_paid'] = (
+                balance
+                if payment_option == Payment.PaymentOptions.FULL
+                else (balance * Decimal('0.75')).quantize(Decimal('0.01'))
+            )
         if payment_method == Payment.Methods.CASH:
             cleaned_data['reference_number'] = ''
+            cleaned_data['online_channel'] = ''
+        elif payment_method == Payment.Methods.ONLINE:
+            online_channel = Payment.normalize_online_channel(cleaned_data.get('online_channel'))
+            if not online_channel:
+                self.add_error('online_channel', 'Choose the online payment channel for this transaction.')
+            cleaned_data['online_channel'] = online_channel
+        if (cleaned_data.get('amount_paid') or Decimal('0')) <= 0:
+            self.add_error('amount_paid', 'Amount paid must be greater than zero.')
         return cleaned_data
+
+    def save(self, commit=True):
+        payment = super().save(commit=False)
+        payment.gateway = self.cleaned_data.get('online_channel', '') if payment.payment_method == Payment.Methods.ONLINE else ''
+        if commit:
+            payment.save()
+        return payment
 
 
 def build_payment_method_choices(system_settings):
@@ -265,6 +428,12 @@ def build_payment_method_choices(system_settings):
 
 class ConsumerPaymentForm(forms.ModelForm):
     covered_month = forms.ChoiceField(label='Payment month')
+    payment_method = forms.ChoiceField(
+        choices=[(Payment.Methods.ONLINE, Payment.Methods.ONLINE.label)],
+        initial=Payment.Methods.ONLINE,
+        required=False,
+        widget=forms.HiddenInput(),
+    )
     payment_option = forms.ChoiceField(
         choices=Payment.PaymentOptions.choices,
         initial=Payment.PaymentOptions.FULL,
@@ -288,7 +457,8 @@ class ConsumerPaymentForm(forms.ModelForm):
         self.consumer = consumer
         self.system_settings = system_settings or SystemSettings.load()
         self.available_months = []
-        self.fields['payment_method'].choices = build_payment_method_choices(self.system_settings)
+        self.fields['payment_method'].choices = [(Payment.Methods.ONLINE, Payment.Methods.ONLINE.label)]
+        self.fields['payment_method'].initial = Payment.Methods.ONLINE
         self.fields['reference_number'].required = False
         self.fields['reference_number'].widget = forms.HiddenInput()
         self.fields['amount_paid'].required = False
@@ -317,11 +487,12 @@ class ConsumerPaymentForm(forms.ModelForm):
         if covered_month and self.consumer:
             cleaned_data['billing'] = get_existing_billing_for_month(self.consumer, covered_month)
 
-        if not self.fields['payment_method'].choices:
-            raise forms.ValidationError('Payment channels are not enabled yet. Please contact the administrator.')
+        if not self.system_settings.enable_online_payments:
+            raise forms.ValidationError('Online payments are not enabled yet. Please contact the administrator.')
         if self.consumer and not self.available_months:
             raise forms.ValidationError('No payment months are available right now. Please contact the administrator.')
-        if cleaned_data.get('payment_method') == Payment.Methods.ONLINE and cleaned_data.get('online_wallet') not in {
+        cleaned_data['payment_method'] = Payment.Methods.ONLINE
+        if cleaned_data.get('online_wallet') not in {
             'gcash',
             'paymaya',
         }:
@@ -333,14 +504,13 @@ class ConsumerPaymentForm(forms.ModelForm):
             balance = billing.amount_due
             cleaned_data['amount_paid'] = balance if payment_option == Payment.PaymentOptions.FULL else (balance * Decimal('0.75')).quantize(Decimal('0.01'))
         cleaned_data['reference_number'] = ''
+        if (cleaned_data.get('amount_paid') or Decimal('0')) <= 0:
+            self.add_error('amount_paid', 'Amount paid must be greater than zero.')
 
         return cleaned_data
 
     def clean_amount_paid(self):
-        amount_paid = self.cleaned_data.get('amount_paid') or Decimal('0')
-        if amount_paid < 0:
-            raise forms.ValidationError('Amount paid must be greater than zero.')
-        return amount_paid
+        return self.cleaned_data.get('amount_paid') or Decimal('0')
 
     def save(self, commit=True):
         payment = super().save(commit=False)
@@ -349,9 +519,10 @@ class ConsumerPaymentForm(forms.ModelForm):
         payment.covered_month = self.cleaned_data.get('covered_month')
         payment.discount_amount = Decimal('0')
         payment.payment_date = timezone.localdate()
+        payment.payment_method = Payment.Methods.ONLINE
         payment.status = Payment.Statuses.PENDING
-        if payment.payment_method == Payment.Methods.ONLINE:
-            payment.reference_number = ''
+        payment.gateway = self.cleaned_data.get('online_wallet', '')
+        payment.reference_number = ''
         if commit:
             payment.save()
         return payment

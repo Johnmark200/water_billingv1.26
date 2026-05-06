@@ -303,7 +303,7 @@
 <section class="page-wrap">
     <div class="form-card">
         <h3>Submit Payment</h3>
-        <p class="muted">Choose the next due month or make an advance payment for a future month.</p>
+        <p class="muted">Choose the next due month, then continue through the PayMongo e-wallet checkout.</p>
         {% if payment_form %}
             <form method="post" id="consumer-payment-form" data-transaction-form>
                 {% csrf_token %}
@@ -322,13 +322,7 @@
                         <span class="field-error">{{ error }}</span>
                     {% endfor %}
                 </p>
-                <p>
-                    <label for="{{ payment_form.payment_method.id_for_label }}">Payment method</label>
-                    {{ payment_form.payment_method }}
-                    {% for error in payment_form.payment_method.errors %}
-                        <span class="field-error">{{ error }}</span>
-                    {% endfor %}
-                </p>
+                {{ payment_form.payment_method }}
                 <div class="comparison-card" style="margin-bottom: 14px;">
                     <h4 style="margin: 0 0 8px;">Payment Option</h4>
                     {{ payment_form.payment_option }}
@@ -349,18 +343,28 @@
                 </p>
                 {{ payment_form.reference_number }}
                 {{ payment_form.online_wallet }}
-                {% for error in payment_form.online_wallet.errors %}
-                    <span class="field-error">{{ error }}</span>
-                {% endfor %}
-                <p class="muted" id="online-payment-note" hidden>
-                    Online Payment lets you choose GCash or Maya before redirecting to the secure PayMongo checkout page.
+                {% if payment_form.online_wallet.errors %}
+                    <p>
+                    {% for error in payment_form.online_wallet.errors %}
+                        <span class="field-error">{{ error }}</span>
+                    {% endfor %}
+                    </p>
+                {% endif %}
+                <p class="muted" id="online-payment-note">
+                    Your payment is processed through PayMongo. After you continue, choose GCash or Maya in the wallet prompt and you will be redirected to the secure checkout page.
                 </p>
                 <div class="btn-row">
-                    <button type="submit" class="btn" id="payment-submit-button">Submit Payment</button>
+                    <button type="submit" class="btn" id="payment-submit-button">Continue to PayMongo</button>
                 </div>
             </form>
         {% else %}
-            <p class="empty-state">No payment channels are currently available.</p>
+            <p class="empty-state">
+                {% if consumer_paymongo_ready %}
+                    No payment channels are currently available.
+                {% else %}
+                    Online payments are currently unavailable. Please contact the billing office.
+                {% endif %}
+            </p>
         {% endif %}
     </div>
 </section>
@@ -369,7 +373,7 @@
     <div class="wallet-dialog" role="dialog" aria-modal="true" aria-labelledby="wallet-dialog-title">
         <div class="wallet-dialog-header">
             <h3 id="wallet-dialog-title">Choose E-Wallet</h3>
-            <p class="muted">Select the wallet you want to use for this PayMongo online payment.</p>
+            <p class="muted">Select the wallet you want to use. After redirecting to PayMongo, open the E-wallets tab, choose the same provider, and complete the OTP or app PIN verification.</p>
         </div>
         <div class="wallet-dialog-body">
             <p class="status-chip" style="margin-top: 0;">Current balance: <span id="wallet-current-balance" style="margin-left: 6px;">PHP 0.00</span></p>
@@ -389,6 +393,15 @@
                     </span>
                 </button>
             </div>
+            <div class="comparison-card" style="margin-top: 16px;">
+                <h4 style="margin: 0 0 8px;">PayMongo Checkout Steps</h4>
+                <p class="muted" style="margin-bottom: 0;">Select Payment Method: In the PayMongo checkout screen, select the E-wallets tab.</p>
+                <ol style="margin: 12px 0 0; padding-left: 18px; display: grid; gap: 8px;">
+                    <li><strong>Choose Wallet:</strong> Click your preferred wallet provider, such as GCash or Maya.</li>
+                    <li><strong>Authentication:</strong> Enter your mobile number and confirm the payment through OTP or app PIN.</li>
+                    <li><strong>Return:</strong> After the wallet confirms the payment, PayMongo sends you back to the billing system automatically.</li>
+                </ol>
+            </div>
         </div>
         <div class="wallet-dialog-actions">
             <button type="button" class="btn secondary" id="wallet-cancel-button">Cancel</button>
@@ -404,42 +417,50 @@
 <section class="page-wrap grid-2">
     <div class="table-card">
         <h3>Receipts</h3>
-        <table>
-            <thead><tr><th>Date</th><th>Month Covered</th><th>Amount Paid</th><th>Discount</th><th>Total Credit</th><th>Reference</th></tr></thead>
-            <tbody id="consumer-receipt-rows">
-                {% include 'billing/includes/consumer_receipt_rows.html' %}
-            </tbody>
-        </table>
+        <div class="table-shell table-shell-wide" data-stack-on-mobile="true">
+            <table>
+                <thead><tr><th>Date</th><th>Month Covered</th><th>Method</th><th>Amount Paid</th><th>Discount</th><th>Total Credit</th><th>Reference</th><th>Receipt</th></tr></thead>
+                <tbody id="consumer-receipt-rows">
+                    {% include 'billing/includes/consumer_receipt_rows.html' %}
+                </tbody>
+            </table>
+        </div>
     </div>
     <div class="table-card">
         <h3>Billing Records</h3>
-        <table>
-            <thead><tr><th>Month</th><th>Previous</th><th>Current</th><th>Total</th><th>Paid</th><th>Status</th></tr></thead>
-            <tbody id="consumer-billing-rows">
-                {% include 'billing/includes/consumer_billing_rows.html' %}
-            </tbody>
-        </table>
+        <div class="table-shell table-shell-wide" data-stack-on-mobile="true">
+            <table>
+                <thead><tr><th>Month</th><th>Previous</th><th>Current</th><th>Total</th><th>Paid</th><th>Status</th></tr></thead>
+                <tbody id="consumer-billing-rows">
+                    {% include 'billing/includes/consumer_billing_rows.html' %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </section>
 
 <section class="page-wrap grid-2">
     <div class="table-card">
         <h3>Meter Readings</h3>
-        <table>
-            <thead><tr><th>Month</th><th>Previous</th><th>Current</th><th>Usage</th><th>Reading Date</th></tr></thead>
-            <tbody id="consumer-reading-rows">
-                {% include 'billing/includes/consumer_reading_rows.html' %}
-            </tbody>
-        </table>
+        <div class="table-shell table-shell-wide" data-stack-on-mobile="true">
+            <table>
+                <thead><tr><th>Month</th><th>Previous</th><th>Current</th><th>Usage</th><th>Reading Date</th></tr></thead>
+                <tbody id="consumer-reading-rows">
+                    {% include 'billing/includes/consumer_reading_rows.html' %}
+                </tbody>
+            </table>
+        </div>
     </div>
     <div class="table-card">
-        <h3>Payment Submissions</h3>
-        <table>
-            <thead><tr><th>Date</th><th>Month Covered</th><th>Method</th><th>Option</th><th>Paid</th><th>Discount</th><th>Status</th><th>Reference</th><th>Receipt</th></tr></thead>
-            <tbody id="consumer-payment-rows">
-                {% include 'billing/includes/consumer_payment_rows.html' %}
-            </tbody>
-        </table>
+        <h3>Payment Monitoring</h3>
+        <div class="table-shell table-shell-wide" data-stack-on-mobile="true">
+            <table>
+                <thead><tr><th>Date</th><th>Month Covered</th><th>Method</th><th>Option</th><th>Paid</th><th>Discount</th><th>Status</th><th>Reference</th><th>Action</th></tr></thead>
+                <tbody id="consumer-payment-rows">
+                    {% include 'billing/includes/consumer_payment_rows.html' %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </section>
 {% else %}
@@ -600,10 +621,7 @@
             const form = document.getElementById('consumer-payment-form');
             if (!form) return;
 
-            const method = document.getElementById('id_payment_method');
-            const referenceRow = document.getElementById('payment-reference-row');
             const button = document.getElementById('payment-submit-button');
-            const note = document.getElementById('online-payment-note');
             const walletField = document.getElementById('id_online_wallet');
             const monthField = document.getElementById('id_covered_month');
             const amountField = document.getElementById('id_amount_paid');
@@ -614,16 +632,12 @@
             const modal = document.getElementById('payment-wallet-modal');
             const cancelButton = document.getElementById('wallet-cancel-button');
             const continueButton = document.getElementById('wallet-continue-button');
-            let walletConfirmed = false;
+            let allowDirectSubmit = false;
 
-            function syncPaymentMode() {
-                const isOnline = method && method.value === 'online';
-                if (button) button.textContent = isOnline ? 'Choose Wallet' : 'Submit Payment';
-                if (note) note.hidden = !isOnline;
-                if (!isOnline && walletField) {
-                    walletField.value = '';
-                    walletConfirmed = false;
-                }
+            function syncWalletSelectionUi() {
+                document.querySelectorAll('.wallet-option').forEach(function (option) {
+                    option.classList.toggle('selected', Boolean(walletField && walletField.value === option.dataset.wallet));
+                });
             }
 
             function selectedPaymentOption() {
@@ -645,6 +659,7 @@
 
             function openWalletModal() {
                 if (!modal) return;
+                syncWalletSelectionUi();
                 modal.classList.add('visible');
                 modal.setAttribute('aria-hidden', 'false');
             }
@@ -655,33 +670,23 @@
                 modal.setAttribute('aria-hidden', 'true');
             }
 
-            if (method) {
-                method.addEventListener('change', function () {
-                    syncPaymentMode();
-                    syncAmount();
-                    if (method.value === 'online') openWalletModal();
-                });
-                syncPaymentMode();
-            }
-            if (monthField) monthField.addEventListener('change', syncAmount);
-            form.querySelectorAll('input[name="payment_option"]').forEach(function (option) {
+            document.querySelectorAll('input[name="payment_option"]').forEach(function (option) {
                 option.addEventListener('change', syncAmount);
             });
-            syncAmount();
+            if (monthField) {
+                monthField.addEventListener('change', syncAmount);
+            }
 
             document.querySelectorAll('.wallet-option').forEach(function (option) {
                 option.addEventListener('click', function () {
-                    document.querySelectorAll('.wallet-option').forEach(function (item) {
-                        item.classList.remove('selected');
-                    });
-                    option.classList.add('selected');
                     if (walletField) walletField.value = option.dataset.wallet;
+                    syncWalletSelectionUi();
                 });
             });
 
             if (cancelButton) {
                 cancelButton.addEventListener('click', function () {
-                    walletConfirmed = false;
+                    allowDirectSubmit = false;
                     closeWalletModal();
                 });
             }
@@ -692,21 +697,25 @@
                         showFeedback('Choose GCash or Maya before continuing.', true);
                         return;
                     }
-                    walletConfirmed = true;
+                    allowDirectSubmit = true;
                     closeWalletModal();
                     form.requestSubmit();
                 });
             }
 
             form.addEventListener('submit', function (event) {
-                const isOnline = method && method.value === 'online';
                 syncAmount();
-                if (isOnline && !walletConfirmed) {
+                if (!allowDirectSubmit) {
                     event.preventDefault();
                     event.stopImmediatePropagation();
                     openWalletModal();
+                    return;
                 }
+                allowDirectSubmit = false;
             }, true);
+
+            syncAmount();
+            syncWalletSelectionUi();
         }
 
         initPaymentMode();

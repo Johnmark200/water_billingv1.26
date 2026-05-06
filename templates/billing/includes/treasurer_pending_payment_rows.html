@@ -3,8 +3,8 @@
         <td data-label="Consumer">{{ payment.consumer.full_name }}</td>
         <td data-label="Billing Month">{% if payment.display_covered_month %}{{ payment.display_covered_month|date:'F Y' }}{% else %}-{% endif %}</td>
         <td data-label="Amount">&#8369;{{ payment.amount_paid }}</td>
-        <td data-label="Method">{{ payment.get_payment_method_display }}</td>
-        <td data-label="Reference">{% if payment.payment_method == 'cash' %}-{% else %}{{ payment.reference_number|default:payment.gateway_reference|default:'-' }}{% endif %}</td>
+        <td data-label="Method">{{ payment.display_payment_method }}</td>
+        <td data-label="Reference">{{ payment.display_reference_number }}</td>
         <td data-label="Date">{{ payment.payment_date|date:'Y-m-d' }}</td>
         <td data-label="Payment Status" class="payment-status-display">{{ payment.get_status_display }}</td>
         <td data-label="Bill Due" class="billing-due-display">{% if payment.billing %}PHP {{ payment.billing.amount_due }}{% else %}-{% endif %}</td>

@@ -15,8 +15,7 @@ html {
 body {
   background:
     linear-gradient(rgba(0, 60, 120, 0.6), rgba(0, 60, 120, 0.6)),
-    url("../img/water\ drop.png") no-repeat center center fixed;
-  background-size: cover;
+     background-size: cover;
   background-blend-mode: overlay;
   animation: waterFlow 10s ease infinite;
   min-height: 100vh;

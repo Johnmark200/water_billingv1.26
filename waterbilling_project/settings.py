@@ -73,23 +73,8 @@ WSGI_APPLICATION = 'waterbilling_project.wsgi.application'
 
 database_engine = os.getenv('DB_ENGINE', 'mysql').strip().lower()
 
-if database_engine == 'mysql':
-    DATABASES = {
-        'default': {
-            'ENGINE': 'waterbilling_project.db_backends.mysql_compat',
-            'NAME': os.getenv('MYSQL_DATABASE', 'water_billingdb_v2_1 '),
-            'USER': os.getenv('MYSQL_USER', 'root'),
-            'PASSWORD': os.getenv('MYSQL_PASSWORD', ''),
-            'HOST': os.getenv('MYSQL_HOST', '127.0.0.1'),
-            'PORT': os.getenv('MYSQL_PORT', '3306'),
-            'OPTIONS': {
-                'charset': 'utf8mb4',
-                'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
-            },
-        },
-    }
-else:
-    DATABASES = {
+
+DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
             'NAME': BASE_DIR / 'db.sqlite3',
@@ -142,6 +127,7 @@ SENDGRID_FROM_NAME = os.getenv('SENDGRID_FROM_NAME', DEFAULT_FROM_NAME)
 
 SMS_DELIVERY_PROVIDER = os.getenv('SMS_DELIVERY_PROVIDER', 'sms_api_ph').strip()
 SMS_API_TIMEOUT = int(os.getenv('SMS_API_TIMEOUT', '10'))
+SMS_API_RETRY_ATTEMPTS = int(os.getenv('SMS_API_RETRY_ATTEMPTS', '2'))
 SMS_API_PH_ENDPOINT = os.getenv('SMS_API_PH_ENDPOINT', 'https://dashboard.philsms.com/api/v3/').strip()
 SMS_API_PH_API_KEY = os.getenv('SMS_API_PH_API_KEY', '2740|qVaTjIWJ3RUenF0FZO2TMnUS9v8eGsntFPPi5y6Qf959ac95').strip()
 SMS_API_PH_RECIPIENT_FIELD = os.getenv('SMS_API_PH_RECIPIENT_FIELD', 'recipient').strip()

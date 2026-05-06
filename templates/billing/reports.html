@@ -73,7 +73,7 @@
                 {% for payment in recent_payments %}
                     <tr>
                         <td>{{ payment.consumer.full_name }}</td>
-                        <td>{{ payment.get_payment_method_display }}</td>
+                        <td>{{ payment.display_payment_method }}</td>
                         <td>&#8369;{{ payment.amount_paid }}</td>
                         <td>{{ payment.get_status_display }}</td>
                     </tr>

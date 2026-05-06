@@ -5,6 +5,7 @@
     <div class="form-card">
         <h2 class="page-title">Payment and Notification Settings</h2>
         <p class="muted">Only the admin can configure which payment channels appear in the consumer portal and whether email or SMS notifications are sent automatically.</p>
+        <p class="muted">Saving a new rate or due-day setting now recalculates existing billing amounts and due dates across the admin, reader, treasurer, secretary, and consumer panels.</p>
         <form method="post">
             {% csrf_token %}
             {{ form.as_p }}

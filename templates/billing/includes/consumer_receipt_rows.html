@@ -1,12 +1,19 @@
 {% for payment in receipts %}
     <tr>
-        <td>{{ payment.payment_date }}</td>
-        <td>{{ payment.display_covered_month|date:'F Y' }}</td>
-        <td>&#8369;{{ payment.amount_paid }}</td>
-        <td>&#8369;{{ payment.discount_amount }}</td>
-        <td>&#8369;{{ payment.amount_credited }}</td>
-        <td>{{ payment.reference_number|default:'-' }}</td>
+        <td data-label="Date">{{ payment.payment_date }}</td>
+        <td data-label="Month Covered">{{ payment.display_covered_month|date:'F Y' }}</td>
+        <td data-label="Method">{{ payment.display_payment_method }}</td>
+        <td data-label="Amount Paid">&#8369;{{ payment.amount_paid }}</td>
+        <td data-label="Discount">&#8369;{{ payment.discount_amount }}</td>
+        <td data-label="Total Credit">&#8369;{{ payment.amount_credited }}</td>
+        <td data-label="Reference">{{ payment.display_reference_number }}</td>
+        <td data-label="Receipt">
+            <div class="status-actions">
+                <a href="{% url 'payment_receipt' payment.id %}" class="btn secondary" target="_blank" rel="noopener">View</a>
+                <a href="{% url 'payment_receipt' payment.id %}?print=1" class="btn secondary" target="_blank" rel="noopener">Print</a>
+            </div>
+        </td>
     </tr>
 {% empty %}
-    <tr><td colspan="6" class="empty-state">No completed receipts yet.</td></tr>
+    <tr><td colspan="8" class="empty-state">No completed receipts yet.</td></tr>
 {% endfor %}

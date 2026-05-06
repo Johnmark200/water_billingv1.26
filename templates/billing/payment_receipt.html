@@ -118,6 +118,11 @@
         font-size: 13px;
     }
 
+    .receipt-actions {
+        justify-content: center;
+        margin-top: 12px;
+    }
+
     @media (max-width: 720px) {
         .receipt-body {
             padding: 28px 22px;
@@ -134,6 +139,46 @@
 
         .receipt-footer {
             padding: 18px 22px;
+        }
+    }
+
+    @media print {
+        body {
+            background: #fff !important;
+        }
+
+        body::before,
+        .site-header,
+        .app-sidebar,
+        .sidebar-overlay,
+        .system-footer,
+        .message-list,
+        .receipt-actions {
+            display: none !important;
+        }
+
+        .app-shell,
+        .app-main {
+            display: block !important;
+            min-height: auto !important;
+        }
+
+        .receipt-shell {
+            max-width: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .receipt-paper {
+            border: 0;
+            box-shadow: none;
+        }
+
+        .receipt-footer {
+            background: #fff;
+            color: #111827;
+            border-top: 1px solid #e5e7eb;
+            padding: 18px 0 0;
         }
     }
 </style>
@@ -180,7 +225,7 @@
                     <tr>
                         <td>1</td>
                         <td>Water billing payment{% if covered_month %} for {{ covered_month|date:'F Y' }}{% endif %}</td>
-                        <td>{{ payment.get_payment_method_display }}</td>
+                        <td>{{ payment.display_payment_method }}</td>
                         <td>{% if payment.payment_method == 'cash' %}-{% else %}{{ reference_number }}{% endif %}</td>
                         <td>&#8369;{{ payment.amount_paid }}</td>
                     </tr>
@@ -203,14 +248,17 @@
 
             <div style="margin-top: 30px;">
                 <h3>Terms & Conditions</h3>
-                <p class="muted">This receipt confirms that the payment status was verified after returning from PayMongo. Please keep this receipt for your records.</p>
+                <p class="muted">This receipt confirms the payment record currently stored in the billing system. Please keep this copy for your records.</p>
             </div>
 
             <div class="receipt-thanks">Thanks for your payment!</div>
 
-            <div class="btn-row" style="justify-content: center;">
+            <div class="btn-row receipt-actions">
+                <button type="button" class="btn secondary" id="print-receipt-button">Print Receipt</button>
                 <a href="{% url dashboard_url_name %}" class="btn">Back to Home</a>
-                <a href="{% url 'account_center' %}" class="btn secondary">Account Center</a>
+                {% if show_account_center %}
+                    <a href="{% url 'account_center' %}" class="btn secondary">Account Center</a>
+                {% endif %}
             </div>
         </div>
         <div class="receipt-footer">
@@ -220,4 +268,26 @@
         </div>
     </div>
 </section>
+{% endblock %}
+{% block extra_js %}
+<script>
+    (function () {
+        const printButton = document.getElementById('print-receipt-button');
+        const shouldPrintOnLoad = {{ print_on_load|yesno:'true,false' }};
+
+        if (printButton) {
+            printButton.addEventListener('click', function () {
+                window.print();
+            });
+        }
+
+        if (shouldPrintOnLoad) {
+            window.addEventListener('load', function () {
+                window.setTimeout(function () {
+                    window.print();
+                }, 250);
+            }, { once: true });
+        }
+    })();
+</script>
 {% endblock %}

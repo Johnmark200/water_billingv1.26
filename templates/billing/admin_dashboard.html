@@ -178,18 +178,60 @@
         align-items: start;
     }
 
+    .admin-toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        gap: 18px;
+        margin-bottom: 20px;
+    }
+
+    .admin-month-filter {
+        min-width: 220px;
+    }
+
+    .admin-month-filter label {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--muted);
+    }
+
+    .admin-month-filter select {
+        width: 100%;
+    }
+
     @media (max-width: 980px) {
         .admin-monitor-grid {
             grid-template-columns: 1fr;
+        }
+
+        .admin-toolbar {
+            align-items: stretch;
+            flex-direction: column;
         }
     }
 </style>
 {% endblock %}
 {% block content %}
 <section class="page-wrap">
-    <h2 class="page-title">Admin Panel</h2>
-    <p class="muted">Full system access for consumer management, communications, payment monitoring, and monthly analytics.</p>
+    <div class="admin-toolbar">
+        <div>
+            <h2 class="page-title">Admin Panel</h2>
+            <p class="muted">Full system access for consumer management, communications, payment monitoring, and monthly analytics.</p>
+        </div>
+        <form method="get" class="admin-month-filter" id="admin-month-filter-form">
+            <label for="admin-month-select">Statistics Month</label>
+            <select name="month" id="admin-month-select">
+                {% for option in admin_month_choices %}
+                    <option value="{{ option.value }}" {% if option.date == selected_month %}selected{% endif %}>{{ option.label }}</option>
+                {% endfor %}
+            </select>
+        </form>
+    </div>
     <div class="stats-grid">
+        <div class="mini-card"><h3>Statistics Month</h3><p data-admin-selected-month>{{ selected_month|date:'M Y' }}</p></div>
         <div class="mini-card"><h3>Total Consumers</h3><p data-total-consumers>{{ total_consumers }}</p></div>
         <div class="mini-card"><h3>Active Connections</h3><p data-active-connections>{{ active_connections }}</p></div>
         <div class="mini-card"><h3>Pending Payments</h3><p data-pending-payments-count>{{ pending_payments }}</p></div>
@@ -221,7 +263,7 @@
 
 <section class="page-wrap grid-2 admin-panel-grid">
     <div class="table-card">
-        <h3>{{ current_month|date:'F Y' }} Sales Snapshot</h3>
+        <h3 data-admin-sales-heading>{{ selected_month|date:'F Y' }} Sales Snapshot</h3>
         <p><strong>Total billed:</strong> <span data-monthly-billed-total>PHP {{ monthly_billed }}</span></p>
         <p><strong>Total collected:</strong> <span data-monthly-collected-total>PHP {{ monthly_collected }}</span></p>
         <p><strong>Cash enabled:</strong> {{ system_settings.enable_cash_payments|yesno:'Yes,No' }}</p>
@@ -304,6 +346,11 @@
             const paymentRows = document.getElementById('admin-payment-rows');
             const billingRows = document.getElementById('admin-billing-rows');
             const readingRows = document.getElementById('admin-reading-rows');
+            const monthSelect = document.getElementById('admin-month-select');
+
+            function selectedMonthValue() {
+                return monthSelect ? monthSelect.value : '';
+            }
 
             function renderAdminStatusDonut(svg, counts, summary) {
                 if (!svg) return;
@@ -446,7 +493,14 @@
 
             async function refreshAdminPanel() {
                 try {
-                    const response = await fetch("{% url 'admin_panel_data' %}", {
+                    const url = new URL("{% url 'admin_panel_data' %}", window.location.origin);
+                    if (selectedMonthValue()) {
+                        url.searchParams.set('month', selectedMonthValue());
+                    }
+                    url.searchParams.set('_ts', Date.now().toString());
+
+                    const response = await fetch(url, {
+                        cache: 'no-store',
                         headers: {
                             'X-Requested-With': 'XMLHttpRequest'
                         }
@@ -470,6 +524,8 @@
                     const overdueBills = document.querySelector('[data-overdue-bills]');
                     const monthlyBilled = document.querySelector('[data-monthly-billed-total]');
                     const monthlyCollected = document.querySelector('[data-monthly-collected-total]');
+                    const selectedMonth = document.querySelector('[data-admin-selected-month]');
+                    const salesHeading = document.querySelector('[data-admin-sales-heading]');
 
                     if (totalConsumers) totalConsumers.textContent = payload.total_consumers;
                     if (activeConnections) activeConnections.textContent = payload.active_connections;
@@ -477,14 +533,27 @@
                     if (overdueBills) overdueBills.textContent = payload.overdue_bills;
                     if (monthlyBilled) monthlyBilled.textContent = `PHP ${payload.monthly_billed}`;
                     if (monthlyCollected) monthlyCollected.textContent = `PHP ${payload.monthly_collected}`;
+                    if (selectedMonth) selectedMonth.textContent = payload.selected_month_label || selectedMonth.textContent;
+                    if (salesHeading) salesHeading.textContent = `${payload.selected_month_label || selectedMonthValue()} Sales Snapshot`;
                 } catch (error) {
                     console.error(error);
                 }
             }
 
+            if (monthSelect && monthSelect.form) {
+                monthSelect.addEventListener('change', function () {
+                    monthSelect.form.submit();
+                });
+            }
+
             renderAdminMonitoring();
             window.addEventListener('themechange', renderAdminMonitoring);
-            setInterval(refreshAdminPanel, 10000);
+            document.addEventListener('visibilitychange', function () {
+                if (!document.hidden) {
+                    refreshAdminPanel();
+                }
+            });
+            setInterval(refreshAdminPanel, 5000);
         })();
     </script>
 {% endblock %}

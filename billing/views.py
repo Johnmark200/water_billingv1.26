@@ -26,6 +26,7 @@ from .forms import (
     LoginForm,
     MeterReadingForm,
     MeterReadingUpdateForm,
+    PortalAccountForm,
     ProfileUpdateForm,
     SignUpForm,
     SMSBlastForm,
@@ -37,6 +38,7 @@ from .models import AuditLog, BillingRecord, Consumer, ConsumerProfile, MeterRea
 from .permissions import PAYMENT_MANAGER_ROLES, role_required, ensure_user_profile, get_dashboard_url_for_user, get_linked_consumer, get_user_profile, get_user_role
 from .services import (
     apply_panel_billing_status,
+    build_reporting_month_choices,
     build_settlement_snapshot,
     build_system_monitoring_data,
     build_consumer_chart_data,
@@ -47,6 +49,7 @@ from .services import (
     get_existing_billing_for_month,
     get_consumer_monthly_billings,
     get_delivery_configuration_summary,
+    get_payments_received_for_month,
     get_preferred_billing_records,
     get_next_payment_month,
     get_previous_reading_details,
@@ -65,6 +68,7 @@ from .services import (
     send_sms_blast,
     send_test_email,
     send_test_sms,
+    sync_existing_billings_with_settings,
     update_payment_status,
 )
 
@@ -181,16 +185,17 @@ def _has_unpaid_overdue_balance(billing):
     return resolve_billing_status(billing) == BillingRecord.Statuses.OVERDUE and billing.amount_due > 0
 
 
-def _build_admin_panel_context():
-    current_month = timezone.localdate().replace(day=1)
+def _build_admin_panel_context(selected_month=None):
+    selected_month = month_start(selected_month) or timezone.localdate().replace(day=1)
     current_month_billings = get_preferred_billing_records(
-        BillingRecord.objects.filter(**month_filter_kwargs('billing_month', current_month))
+        BillingRecord.objects.filter(**month_filter_kwargs('billing_month', selected_month))
     )
     all_billings = get_preferred_billing_records(BillingRecord.objects.all())
-    monthly_collected = Payment.objects.filter(
-        status=Payment.Statuses.COMPLETED,
-        **month_filter_kwargs('payment_date', current_month),
-    ).aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
+    monthly_payments = get_payments_received_for_month(selected_month)
+    monthly_collected = sum(
+        (payment.amount_paid for payment in monthly_payments if payment.status == Payment.Statuses.COMPLETED),
+        Decimal('0'),
+    )
 
     return {
         'system_settings': SystemSettings.load(),
@@ -200,15 +205,18 @@ def _build_admin_panel_context():
         'overdue_bills': sum(1 for bill in all_billings if _has_unpaid_overdue_balance(bill)),
         'monthly_billed': sum((bill.total_amount for bill in current_month_billings), Decimal('0')),
         'monthly_collected': monthly_collected,
-        'recent_bills': get_preferred_billing_records(BillingRecord.objects.all(), limit=8),
-        'recent_payments': Payment.objects.select_related('consumer', 'billing')[:8],
-        'recent_readings': MeterReading.objects.select_related('consumer', 'submitted_by')[:8],
+        'recent_bills': current_month_billings[:8],
+        'recent_payments': monthly_payments[:8],
+        'recent_readings': MeterReading.objects.filter(
+            **month_filter_kwargs('billing_month', selected_month)
+        ).select_related('consumer', 'submitted_by')[:8],
         'recent_blasts': SMSBlast.objects.all()[:5],
         'recent_audit_logs': AuditLog.objects.select_related('user')[:8],
         'delivery_config': get_delivery_configuration_summary(),
         'paymongo_configured': is_paymongo_configured(),
-        'admin_monitoring_data': build_system_monitoring_data(),
-        'current_month': current_month,
+        'admin_monitoring_data': build_system_monitoring_data(selected_month=selected_month),
+        'selected_month': selected_month,
+        'admin_month_choices': build_reporting_month_choices(),
         'payment_status_choices': Payment.Statuses.choices,
     }
 
@@ -303,7 +311,7 @@ def _build_soa_transactions(selected_month=None, consumer=None, start_date=None,
                 'date': payment.payment_date,
                 'reference': payment.reference_number or payment.gateway_reference or f'PAY-{payment.id:05d}',
                 'description': (
-                    f'{payment.consumer.full_name} - {payment.get_payment_method_display()} payment '
+                    f'{payment.consumer.full_name} - {payment.display_payment_method} payment '
                     f'for {covered_label} ({payment.get_status_display()})'
                 ),
                 'debit': Decimal('0'),
@@ -511,8 +519,14 @@ def _store_paymongo_gateway_start(payment, ewallet_payment):
     payment_intent = ewallet_payment.get('attached_intent') or ewallet_payment.get('intent') or {}
     details = extract_paymongo_transaction_details(payment_intent)
     intent_id = details.get('intent_id') or payment.gateway_reference
+    online_channel = Payment.normalize_online_channel(
+        (((ewallet_payment.get('payment_method') or {}).get('attributes') or {}).get('type'))
+        or details.get('payment_method_type')
+        or payment.gateway
+    )
 
-    payment.gateway = 'paymongo'
+    if online_channel:
+        payment.gateway = online_channel
     payment.gateway_reference = intent_id
     payment.reference_number = intent_id
     payment.gateway_status = details.get('payment_status') or details.get('intent_status') or ''
@@ -533,8 +547,10 @@ def _store_paymongo_gateway_start(payment, ewallet_payment):
 def _store_paymongo_gateway_result(payment, payment_intent):
     details = extract_paymongo_transaction_details(payment_intent)
     intent_id = details.get('intent_id') or payment.gateway_reference or payment.reference_number
+    online_channel = Payment.normalize_online_channel(details.get('payment_method_type') or payment.gateway)
 
-    payment.gateway = 'paymongo'
+    if online_channel:
+        payment.gateway = online_channel
     payment.gateway_reference = intent_id
     payment.reference_number = intent_id
     payment.gateway_payment_id = details.get('payment_id') or payment.gateway_payment_id
@@ -563,7 +579,7 @@ def _build_receipt_context(payment):
         'billing': payment.billing,
         'covered_month': covered_month,
         'receipt_number': f'REC-{payment.id:06d}',
-        'reference_number': payment.reference_number or payment.gateway_reference or payment.gateway_payment_id or '-',
+        'reference_number': payment.display_reference_number,
         'system_name': 'Tabuan Water Billing System',
         'system_version': 'v1.26',
         'system_year': '2026',
@@ -613,6 +629,7 @@ def _build_profile_context(user):
 
 
 def _build_reader_panel_context(request, form=None, edit_form=None):
+    system_settings = SystemSettings.load()
     recent_readings = _scoped_reader_readings(request.user)[:20]
     recent_billings = []
     seen_billing_ids = set()
@@ -632,6 +649,7 @@ def _build_reader_panel_context(request, form=None, edit_form=None):
         'reader_total_billings': len(recent_billings),
         'reader_total_usage': sum((reading.usage_m3 for reading in recent_readings), Decimal('0')),
         'reader_latest_sync': recent_readings[0].updated_at if recent_readings else None,
+        'reader_rate_per_m3': system_settings.rate_per_m3,
     }
 
 
@@ -639,13 +657,18 @@ def _build_consumer_panel_context(request, payment_form=None):
     consumer = get_linked_consumer(request.user)
     system_settings = SystemSettings.load()
     current_billing, previous_billing = get_consumer_billing_comparison(consumer)
+    paymongo_ready = system_settings.enable_online_payments and is_paymongo_configured()
 
     context = {
         **_build_profile_context(request.user),
         'consumer': consumer,
         'payment_form': payment_form,
         'billing_records': get_consumer_monthly_billings(consumer, limit=10) if consumer else [],
-        'payments': consumer.payments.select_related('billing').all()[:10] if consumer else Payment.objects.none(),
+        'payments': (
+            consumer.payments.exclude(status=Payment.Statuses.COMPLETED).select_related('billing')[:10]
+            if consumer
+            else Payment.objects.none()
+        ),
         'receipts': (
             consumer.payments.filter(status=Payment.Statuses.COMPLETED).select_related('billing')[:10]
             if consumer
@@ -661,9 +684,10 @@ def _build_consumer_panel_context(request, payment_form=None):
         'next_payment_month': get_next_payment_month(consumer) if consumer else None,
         'system_settings': system_settings,
         'consumer_chart_data': build_consumer_chart_data(consumer),
+        'consumer_paymongo_ready': paymongo_ready,
     }
 
-    if consumer and context['payment_form'] is None:
+    if consumer and context['payment_form'] is None and paymongo_ready:
         context['payment_form'] = ConsumerPaymentForm(consumer=consumer, system_settings=system_settings)
     context['billing_balance_data'] = [
         {
@@ -675,6 +699,29 @@ def _build_consumer_panel_context(request, payment_form=None):
     ]
 
     return context
+
+
+def _get_paymongo_payment_for_request(request, payment_id):
+    payments = Payment.objects.select_related('consumer', 'billing')
+    role = get_user_role(request.user, create=True)
+
+    if role == ConsumerProfile.Roles.CONSUMER:
+        consumer = get_linked_consumer(request.user)
+        if consumer is None:
+            return None
+        return payments.filter(pk=payment_id, consumer=consumer).first()
+
+    if role in PAYMENT_MANAGER_ROLES:
+        return payments.filter(pk=payment_id).first()
+
+    return None
+
+
+def _paymongo_home_url_for_request(request):
+    role = get_user_role(request.user, create=True)
+    if role in PAYMENT_MANAGER_ROLES:
+        return reverse('payments')
+    return reverse('consumer_panel')
 
 
 def _render_profile_response_payload(request, context):
@@ -740,6 +787,7 @@ def _render_admin_live_payload(request, context):
         'active_connections': context['active_connections'],
         'pending_payments': context['pending_payments'],
         'overdue_bills': context['overdue_bills'],
+        'selected_month_label': context['selected_month'].strftime('%B %Y'),
         'monthly_billed': _format_money(context['monthly_billed']),
         'monthly_collected': _format_money(context['monthly_collected']),
         'monitoring_html': render_to_string('billing/includes/admin_monitoring_section.html', context, request=request),
@@ -857,13 +905,13 @@ def dashboard(request):
 
 @role_required(ConsumerProfile.Roles.ADMIN)
 def admin_panel(request):
-    context = _build_admin_panel_context()
+    context = _build_admin_panel_context(get_selected_month(request.GET.get('month')))
     return render(request, 'billing/admin_dashboard.html', context)
 
 
 @role_required(ConsumerProfile.Roles.ADMIN)
 def admin_panel_data(request):
-    context = _build_admin_panel_context()
+    context = _build_admin_panel_context(get_selected_month(request.GET.get('month')))
     return JsonResponse(_render_admin_live_payload(request, context))
 
 
@@ -909,7 +957,10 @@ def reader_panel(request):
             reading, billing = handle_meter_reading_submission(form, request.user)
             messages.success(
                 request,
-                f'Meter reading saved for {reading.consumer.full_name}. Billing record for {billing.billing_month:%B %Y} was updated.',
+                (
+                    f'Meter reading saved for {reading.consumer.full_name}. '
+                    f'Billing for {billing.billing_month:%B %Y} is PHP {billing.total_amount} due on {billing.due_date:%B %d, %Y}.'
+                ),
             )
             return redirect('reader_panel')
 
@@ -927,49 +978,38 @@ def consumer_panel(request):
     consumer = get_linked_consumer(request.user)
     system_settings = SystemSettings.load()
     payment_form = None
+    paymongo_ready = system_settings.enable_online_payments and is_paymongo_configured()
 
     if consumer:
         if request.method == 'POST':
+            if not paymongo_ready:
+                messages.error(request, 'Online payments are currently unavailable. Please contact the billing office.')
+                return redirect('consumer_panel')
             payment_form = ConsumerPaymentForm(request.POST, consumer=consumer, system_settings=system_settings)
             if payment_form.is_valid():
                 payment = payment_form.save()
-                if payment.payment_method == Payment.Methods.ONLINE:
-                    try:
-                        ewallet_payment = create_paymongo_ewallet_payment(
-                            payment,
-                            request.build_absolute_uri(reverse('paymongo_success', args=[payment.id])),
-                            request.build_absolute_uri(reverse('paymongo_cancel', args=[payment.id])),
-                            payment_form.cleaned_data.get('online_wallet'),
-                        )
-                        _store_paymongo_gateway_start(payment, ewallet_payment)
-                    except Exception as exc:
-                        update_payment_status(
-                            payment,
-                            Payment.Statuses.FAILED,
-                            system_settings=system_settings,
-                        )
-                        messages.error(request, f'Online payment could not be started: {exc}')
-                        return redirect('consumer_panel')
-
-                    notify_roles(
-                        {ConsumerProfile.Roles.ADMIN, ConsumerProfile.Roles.SECRETARY, ConsumerProfile.Roles.TREASURER},
-                        'New online payment started by consumer',
-                        (
-                            f'{consumer.full_name} started an online PayMongo payment of '
-                            f'PHP {payment.amount_paid}.'
-                        ),
-                        Notification.Types.PAYMENT,
-                        consumer=consumer,
-                        payment=payment,
-                        billing=payment.billing,
+                try:
+                    ewallet_payment = create_paymongo_ewallet_payment(
+                        payment,
+                        request.build_absolute_uri(reverse('paymongo_success', args=[payment.id])),
+                        request.build_absolute_uri(reverse('paymongo_cancel', args=[payment.id])),
+                        payment_form.cleaned_data.get('online_wallet'),
                     )
-                    return redirect(ewallet_payment['redirect_url'])
+                    _store_paymongo_gateway_start(payment, ewallet_payment)
+                except Exception as exc:
+                    update_payment_status(
+                        payment,
+                        Payment.Statuses.FAILED,
+                        system_settings=system_settings,
+                    )
+                    messages.error(request, f'Online payment could not be started: {exc}')
+                    return redirect('consumer_panel')
 
                 notify_roles(
                     {ConsumerProfile.Roles.ADMIN, ConsumerProfile.Roles.SECRETARY, ConsumerProfile.Roles.TREASURER},
-                    'New payment submitted by consumer',
+                    'New online payment started by consumer',
                     (
-                        f'{consumer.full_name} submitted a {payment.get_payment_method_display()} payment of '
+                        f'{consumer.full_name} started a {payment.display_payment_method} PayMongo payment of '
                         f'PHP {payment.amount_paid}.'
                     ),
                     Notification.Types.PAYMENT,
@@ -977,11 +1017,10 @@ def consumer_panel(request):
                     payment=payment,
                     billing=payment.billing,
                 )
-                send_payment_notification(payment, system_settings=system_settings)
-                messages.success(request, 'Payment submitted. The billing office can now monitor its status.')
-                return redirect('consumer_panel')
+                return redirect(payment.gateway_redirect_url or ewallet_payment['redirect_url'])
         else:
-            payment_form = ConsumerPaymentForm(consumer=consumer, system_settings=system_settings)
+            if paymongo_ready:
+                payment_form = ConsumerPaymentForm(consumer=consumer, system_settings=system_settings)
 
     context = _build_consumer_panel_context(request, payment_form=payment_form)
     context['hide_header'] = True
@@ -1060,7 +1099,7 @@ def submit_reader_reading(request):
             context,
             message=(
                 f'Meter reading saved for {reading.consumer.full_name}. '
-                f'Billing record for {billing.billing_month:%B %Y} was updated.'
+                f'Billing for {billing.billing_month:%B %Y} is PHP {billing.total_amount} due on {billing.due_date:%B %d, %Y}.'
             ),
         )
         payload['reading_id'] = reading.id
@@ -1094,6 +1133,7 @@ def reader_reading_context(request):
 
     consumer = get_object_or_404(Consumer, pk=consumer_id, status=Consumer.Statuses.ACTIVE)
     details = get_previous_reading_details(consumer, reading_date)
+    system_settings = SystemSettings.load()
     current_reading = (
         MeterReading.objects.filter(consumer=consumer, billing_month=month_start(reading_date))
         .order_by('-created_at')
@@ -1108,6 +1148,8 @@ def reader_reading_context(request):
             'current_month': month_start(reading_date).strftime('%B %Y'),
             'current_reading': str(current_reading.current_reading) if current_reading else '',
             'notes': current_reading.notes if current_reading else '',
+            'rate_per_m3': str(system_settings.rate_per_m3),
+            'due_date': (reading_date + timedelta(days=system_settings.billing_due_days)).strftime('%B %d, %Y'),
         }
     )
 
@@ -1148,10 +1190,12 @@ def update_reader_reading(request, reading_id):
     )
 
 
-@role_required(ConsumerProfile.Roles.CONSUMER)
+@login_required
 def paymongo_success(request, payment_id):
-    consumer = get_linked_consumer(request.user)
-    payment = get_object_or_404(Payment.objects.select_related('consumer', 'billing'), pk=payment_id, consumer=consumer)
+    payment = _get_paymongo_payment_for_request(request, payment_id)
+    if payment is None:
+        messages.error(request, 'You do not have permission to access that PayMongo payment.')
+        return redirect(get_dashboard_url_for_user(request.user))
 
     return render(
         request,
@@ -1160,15 +1204,26 @@ def paymongo_success(request, payment_id):
             'payment': payment,
             'verify_url': reverse('paymongo_verify', args=[payment.id]),
             'receipt_url': reverse('payment_receipt', args=[payment.id]),
-            'home_url': reverse('consumer_panel'),
+            'home_url': _paymongo_home_url_for_request(request),
         },
     )
 
 
-@role_required(ConsumerProfile.Roles.CONSUMER)
+@login_required
 def paymongo_verify(request, payment_id):
-    consumer = get_linked_consumer(request.user)
-    payment = get_object_or_404(Payment.objects.select_related('consumer', 'billing'), pk=payment_id, consumer=consumer)
+    payment = _get_paymongo_payment_for_request(request, payment_id)
+    if payment is None:
+        return JsonResponse({'ok': False, 'message': 'You do not have permission to verify that PayMongo payment.'}, status=403)
+
+    if payment.status == Payment.Statuses.COMPLETED:
+        return JsonResponse(
+            {
+                'ok': True,
+                'status': payment.status,
+                'message': 'Payment completed. Your receipt is ready.',
+                'receipt_url': reverse('payment_receipt', args=[payment.id]),
+            }
+        )
 
     if payment.payment_method != Payment.Methods.ONLINE:
         return JsonResponse({'ok': False, 'message': 'That payment is not an online PayMongo transaction.'}, status=400)
@@ -1209,10 +1264,12 @@ def paymongo_verify(request, payment_id):
     )
 
 
-@role_required(ConsumerProfile.Roles.CONSUMER)
+@login_required
 def paymongo_cancel(request, payment_id):
-    consumer = get_linked_consumer(request.user)
-    payment = get_object_or_404(Payment.objects.select_related('consumer', 'billing'), pk=payment_id, consumer=consumer)
+    payment = _get_paymongo_payment_for_request(request, payment_id)
+    if payment is None:
+        messages.error(request, 'You do not have permission to access that PayMongo payment.')
+        return redirect(get_dashboard_url_for_user(request.user))
 
     gateway_reference = payment.gateway_reference or payment.reference_number
     if gateway_reference:
@@ -1225,7 +1282,7 @@ def paymongo_cancel(request, payment_id):
     if payment.payment_method == Payment.Methods.ONLINE and payment.status == Payment.Statuses.PENDING:
         update_payment_status(payment, Payment.Statuses.FAILED, system_settings=SystemSettings.load())
     messages.error(request, 'Online payment was cancelled or failed.')
-    return redirect('consumer_panel')
+    return redirect(_paymongo_home_url_for_request(request))
 
 
 @login_required
@@ -1241,7 +1298,10 @@ def payment_receipt_view(request, payment_id):
     if not can_view:
         messages.error(request, 'You do not have permission to access that receipt.')
         return redirect(get_dashboard_url_for_user(request.user))
-    return render(request, 'billing/payment_receipt.html', _build_receipt_context(payment))
+    context = _build_receipt_context(payment)
+    context['show_account_center'] = role == ConsumerProfile.Roles.CONSUMER
+    context['print_on_load'] = request.GET.get('print') in {'1', 'true', 'yes'}
+    return render(request, 'billing/payment_receipt.html', context)
 
 
 @role_required(ConsumerProfile.Roles.ADMIN)
@@ -1257,15 +1317,37 @@ def consumer_list(request):
 
 @role_required(ConsumerProfile.Roles.ADMIN)
 def add_consumer(request):
+    consumer_form = ConsumerForm()
+    portal_account_form = PortalAccountForm()
+
     if request.method == 'POST':
-        form = ConsumerForm(request.POST, request.FILES)
-        if form.is_valid():
-            form.save()
-            messages.success(request, 'Consumer added successfully.')
-            return redirect('consumers')
-    else:
-        form = ConsumerForm()
-    return render(request, 'billing/add_consumer.html', {'form': form, 'page_title': 'Add Consumer'})
+        action = request.POST.get('action', 'create_consumer')
+        if action == 'create_portal_account':
+            portal_account_form = PortalAccountForm(request.POST, request.FILES)
+            if portal_account_form.is_valid():
+                account = portal_account_form.save()
+                profile = ConsumerProfile.objects.get(user=account)
+                messages.success(
+                    request,
+                    f'{profile.get_role_display()} account "{account.username}" created successfully.',
+                )
+                return redirect('consumers')
+        else:
+            consumer_form = ConsumerForm(request.POST, request.FILES)
+            if consumer_form.is_valid():
+                consumer_form.save()
+                messages.success(request, 'Consumer record added successfully.')
+                return redirect('consumers')
+
+    return render(
+        request,
+        'billing/add_consumer.html',
+        {
+            'form': consumer_form,
+            'portal_account_form': portal_account_form,
+            'page_title': 'Add Account',
+        },
+    )
 
 
 @role_required(ConsumerProfile.Roles.ADMIN)
@@ -1335,7 +1417,48 @@ def payments_list(request):
 
         form = AdminPaymentForm(request.POST)
         if form.is_valid():
-            payment = form.save()
+            payment = form.save(commit=False)
+            if payment.payment_method == Payment.Methods.ONLINE:
+                if not is_paymongo_configured():
+                    messages.error(request, 'PayMongo is not configured. Configure the payment gateway before starting online checkout.')
+                    return redirect('payments')
+
+                payment.status = Payment.Statuses.PENDING
+                payment.reference_number = ''
+                payment.save()
+
+                try:
+                    ewallet_payment = create_paymongo_ewallet_payment(
+                        payment,
+                        request.build_absolute_uri(reverse('paymongo_success', args=[payment.id])),
+                        request.build_absolute_uri(reverse('paymongo_cancel', args=[payment.id])),
+                        form.cleaned_data.get('online_channel'),
+                    )
+                    _store_paymongo_gateway_start(payment, ewallet_payment)
+                except Exception as exc:
+                    update_payment_status(payment, Payment.Statuses.FAILED, system_settings=SystemSettings.load())
+                    messages.error(request, f'Online payment could not be started: {exc}')
+                    return redirect('payments')
+
+                log_audit_action(
+                    request.user,
+                    'Started online payment checkout',
+                    target=payment.consumer.full_name,
+                    details=(
+                        f'Payment #{payment.id} for PHP {payment.amount_paid} started via '
+                        f'{payment.display_payment_method}. Reference {payment.display_reference_number}.'
+                    ),
+                )
+                messages.success(
+                    request,
+                    (
+                        f'Online checkout started for {payment.consumer.full_name}. '
+                        f'Reference: {payment.display_reference_number}.'
+                    ),
+                )
+                return redirect(payment.gateway_redirect_url or ewallet_payment['redirect_url'])
+
+            payment.save()
             send_payment_notification(payment)
             log_audit_action(
                 request.user,
@@ -1610,9 +1733,21 @@ def payment_settings_view(request):
     if request.method == 'POST':
         form = SystemSettingsForm(request.POST, instance=settings_obj)
         if form.is_valid():
-            form.save()
-            log_audit_action(request.user, 'Updated payment and notification settings', target='SystemSettings')
-            messages.success(request, 'Payment and notification settings updated successfully.')
+            settings_obj = form.save()
+            updated_billings = sync_existing_billings_with_settings(settings_obj)
+            log_audit_action(
+                request.user,
+                'Updated payment and notification settings',
+                target='SystemSettings',
+                details=f'Recalculated {updated_billings} billing record(s) after the settings change.',
+            )
+            messages.success(
+                request,
+                (
+                    'Payment and notification settings updated successfully. '
+                    f'{updated_billings} billing record(s) were recalculated across all panels.'
+                ),
+            )
             return redirect('payment_settings')
     else:
         form = SystemSettingsForm(instance=settings_obj)

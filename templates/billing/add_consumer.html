@@ -2,17 +2,42 @@
 {% block title %}{{ page_title }}{% endblock %}
 {% block content %}
 <section class="page-wrap">
+    <div class="toolbar" style="justify-content: space-between; margin-bottom: 18px;">
+        <div>
+            <h2 class="page-title">{{ page_title }}</h2>
+            <p class="muted">Create consumer records or create portal accounts for admin, secretary, treasurer, and reader users.</p>
+        </div>
+        <a href="{% url 'consumers' %}" class="btn secondary">Back to Consumers</a>
+    </div>
+</section>
+
+<section class="page-wrap {% if portal_account_form %}grid-2{% endif %}">
     <div class="form-card">
-        <h2 class="page-title">{{ page_title }}</h2>
-        <p class="muted">Create or update consumer records and optionally link them to an existing consumer portal account.</p>
+        <h3>{% if page_title == 'Edit Consumer' %}Edit Consumer Record{% else %}Create Consumer Record{% endif %}</h3>
+        <p class="muted">Create or update consumer records and optionally link them to an existing system account profile.</p>
         <form method="post" enctype="multipart/form-data">
             {% csrf_token %}
+            <input type="hidden" name="action" value="create_consumer">
             {{ form.as_p }}
             <div class="btn-row">
-                <button type="submit" class="btn">Save Consumer</button>
-                <a href="{% url 'consumers' %}" class="btn secondary">Back to Consumers</a>
+                <button type="submit" class="btn">{% if page_title == 'Edit Consumer' %}Update Consumer{% else %}Save Consumer Record{% endif %}</button>
             </div>
         </form>
     </div>
+
+    {% if portal_account_form %}
+        <div class="form-card">
+            <h3>Create Staff/Admin Account</h3>
+            <p class="muted">Create login accounts for admin, secretary, treasurer, and reader roles with username, password, and profile details.</p>
+            <form method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="create_portal_account">
+                {{ portal_account_form.as_p }}
+                <div class="btn-row">
+                    <button type="submit" class="btn">Create Account</button>
+                </div>
+            </form>
+        </div>
+    {% endif %}
 </section>
 {% endblock %}

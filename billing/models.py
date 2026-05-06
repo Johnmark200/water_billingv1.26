@@ -175,6 +175,12 @@ class Payment(models.Model):
         FULL = 'full', 'Full Payment'
         PARTIAL = 'partial', 'Partial Payment'
 
+    ONLINE_CHANNEL_VALUES = (
+        Methods.GCASH,
+        Methods.PAYMAYA,
+        Methods.BANK,
+    )
+
     consumer = models.ForeignKey(Consumer, on_delete=models.CASCADE, related_name='payments')
     billing = models.ForeignKey(BillingRecord, on_delete=models.SET_NULL, null=True, blank=True, related_name='payments')
     payment_method = models.CharField(max_length=20, choices=Methods.choices, default=Methods.CASH)
@@ -199,6 +205,59 @@ class Payment(models.Model):
     @property
     def amount_credited(self):
         return (self.amount_paid or Decimal('0')) + (self.discount_amount or Decimal('0'))
+
+    @classmethod
+    def normalize_online_channel(cls, value):
+        raw_value = str(value or '').strip().lower()
+        if not raw_value:
+            return ''
+        if raw_value.startswith('paymongo_'):
+            raw_value = raw_value.split('_', 1)[1]
+        if raw_value == 'maya':
+            raw_value = cls.Methods.PAYMAYA
+        return raw_value if raw_value in cls.ONLINE_CHANNEL_VALUES else ''
+
+    @property
+    def online_channel(self):
+        direct_channel = self.normalize_online_channel(self.gateway)
+        if direct_channel:
+            return direct_channel
+
+        response = self.gateway_response or {}
+        candidates = [
+            (((response.get('payment_method') or {}).get('attributes') or {}).get('type')),
+            ((response.get('details') or {}).get('payment_method_type')),
+        ]
+
+        for payload_key in ('attached_intent', 'intent', 'payment_intent'):
+            attributes = (response.get(payload_key) or {}).get('attributes') or {}
+            allowed_methods = attributes.get('payment_method_allowed') or []
+            if allowed_methods:
+                candidates.append(allowed_methods[0])
+
+        for candidate in candidates:
+            normalized = self.normalize_online_channel(candidate)
+            if normalized:
+                return normalized
+
+        return self.normalize_online_channel(self.payment_method)
+
+    @property
+    def display_payment_method(self):
+        channel = self.online_channel
+        if channel == self.Methods.GCASH:
+            return self.Methods.GCASH.label
+        if channel == self.Methods.PAYMAYA:
+            return 'Maya'
+        if channel == self.Methods.BANK:
+            return self.Methods.BANK.label
+        return self.get_payment_method_display()
+
+    @property
+    def display_reference_number(self):
+        if self.payment_method == self.Methods.CASH:
+            return '-'
+        return self.reference_number or self.gateway_reference or self.gateway_payment_id or '-'
 
     @property
     def display_covered_month(self):

@@ -1,11 +1,559 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block title %}Payments{% endblock %}
+{% block extra_css %}
+<style>
+    .page-wrap.grid-2.payments-layout {
+        display: grid;
+        grid-template-columns: minmax(360px, 420px) minmax(0, 1fr);
+        gap: 24px;
+        align-items: flex-start;
+    }
+
+    .form-card {
+        display: block;
+        width: 100%;
+        max-width: none !important;
+        padding: 24px !important;
+        overflow: visible !important;
+    }
+
+    .form-card h2,
+    .form-card h3 {
+        margin-top: 0 !important;
+        margin-bottom: 16px !important;
+        width: 100%;
+    }
+
+    .form-card > p.muted {
+        margin-bottom: 20px !important;
+        width: 100%;
+    }
+
+    .form-card form {
+        display: block;
+        width: 100%;
+    }
+
+    .form-card p {
+        display: block;
+        margin-bottom: 16px !important;
+        width: 100% !important;
+    }
+
+    .form-card label {
+        display: block;
+        margin-bottom: 8px !important;
+        font-weight: 500;
+        width: 100%;
+    }
+
+    .form-card input,
+    .form-card select,
+    .form-card textarea {
+        display: block;
+        width: 100% !important;
+        padding: 10px 12px !important;
+        font-size: 14px !important;
+        margin: 0 !important;
+        box-sizing: border-box !important;
+    }
+
+    .comparison-card {
+        display: block;
+        width: 100% !important;
+        padding: 12px 16px !important;
+        margin-bottom: 16px !important;
+        box-sizing: border-box !important;
+    }
+
+    .comparison-card h4 {
+        margin: 0 0 8px 0 !important;
+        width: 100%;
+    }
+
+    .comparison-card p {
+        margin-bottom: 0 !important;
+        width: 100%;
+    }
+
+    .checkout-guide-card {
+        margin-top: 12px !important;
+    }
+
+    .checkout-guide-card[hidden] {
+        display: none !important;
+    }
+
+    .checkout-guide-card ol {
+        margin: 12px 0 0;
+        padding-left: 18px;
+        display: grid;
+        gap: 8px;
+    }
+
+    .checkout-guide-card li {
+        margin: 0;
+        color: var(--ink);
+    }
+
+    .checkout-guide-card li strong {
+        color: var(--brand-dark);
+    }
+
+    .comparison-card ul,
+    .comparison-card > div {
+        display: grid;
+        gap: 10px;
+        margin: 0;
+        padding: 0;
+    }
+
+    .comparison-card li {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+    }
+
+    .comparison-card label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 0 !important;
+        padding: 12px 14px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: color-mix(in srgb, var(--panel) 92%, var(--bg));
+    }
+
+    .comparison-card input[type="radio"] {
+        width: auto !important;
+        margin: 0 !important;
+        flex: 0 0 auto;
+    }
+
+    .form-card .btn {
+        display: block;
+        width: 100% !important;
+        padding: 12px !important;
+        margin-top: 8px !important;
+    }
+
+    .table-card {
+        display: flex;
+        flex-direction: column;
+        min-height: auto;
+        overflow: visible;
+    }
+
+    .table-card h2 {
+        margin-top: 0 !important;
+        margin-bottom: 12px !important;
+    }
+
+    .table-shell {
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .payment-channel-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 80;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        background: var(--overlay);
+    }
+
+    .payment-channel-modal.visible {
+        display: flex;
+    }
+
+    .payment-channel-dialog {
+        width: min(1120px, 100%);
+        max-height: min(90vh, 980px);
+        overflow: auto;
+        background: var(--panel-elevated);
+        border: 1px solid var(--panel-border);
+        border-radius: 22px;
+        box-shadow: var(--shadow-strong);
+    }
+
+    .payment-channel-header {
+        padding: 22px 24px 18px;
+        border-top: 8px solid var(--brand);
+        border-bottom: 1px solid var(--line);
+    }
+
+    .payment-channel-header h3 {
+        margin: 14px 0 8px;
+    }
+
+    .payment-channel-summary {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .payment-channel-body {
+        padding: 22px 24px;
+    }
+
+    .payment-channel-guide {
+        margin-bottom: 18px;
+    }
+
+    .payment-channel-guide ol {
+        margin: 10px 0 0;
+        padding-left: 18px;
+        display: grid;
+        gap: 8px;
+    }
+
+    .payment-channel-guide li {
+        color: var(--ink);
+    }
+
+    .payment-preview-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+    }
+
+    .payment-preview-card {
+        margin: 0;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        overflow: hidden;
+        background: color-mix(in srgb, var(--panel) 94%, var(--bg));
+        box-shadow: 0 14px 28px rgba(24, 54, 66, 0.08);
+    }
+
+    .payment-preview-card img {
+        display: block;
+        width: 100%;
+        height: auto;
+        background: #f1f5f9;
+    }
+
+    .payment-preview-copy {
+        display: grid;
+        gap: 8px;
+        padding: 16px;
+    }
+
+    .payment-preview-copy h4,
+    .payment-preview-copy p {
+        margin: 0;
+    }
+
+    .payment-preview-copy p {
+        color: var(--muted);
+    }
+
+    .payment-preview-eyebrow {
+        font-size: 12px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--brand-dark);
+        font-weight: 700;
+    }
+
+    .payment-channel-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        padding: 18px 24px;
+        border-top: 1px solid var(--line);
+        background: color-mix(in srgb, var(--panel) 82%, var(--bg));
+    }
+
+    .payment-channel-actions .btn {
+        width: auto !important;
+        min-width: 150px;
+        margin-top: 0 !important;
+    }
+
+    .payments-history-shell table {
+        min-width: 1500px !important;
+    }
+
+    #admin-online-channel-row[hidden] {
+        display: none !important;
+    }
+
+    .payment-wallet-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 80;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        background: var(--overlay);
+    }
+
+    .payment-wallet-modal.visible {
+        display: flex;
+    }
+
+    .wallet-dialog {
+        width: min(520px, 100%);
+        background: var(--panel-elevated);
+        border: 1px solid var(--panel-border);
+        border-radius: 8px;
+        box-shadow: var(--shadow-strong);
+        overflow: hidden;
+    }
+
+    .wallet-dialog-header {
+        padding: 18px 22px;
+        border-top: 8px solid var(--brand);
+        border-bottom: 1px solid var(--line);
+    }
+
+    .wallet-dialog-header h3 {
+        margin: 0 0 6px;
+    }
+
+    .wallet-dialog-body {
+        padding: 22px;
+    }
+
+    .wallet-options {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+    }
+
+    .wallet-option {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-height: 86px;
+        padding: 14px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .wallet-option:hover {
+        background: var(--panel-hover);
+        border-color: var(--brand);
+    }
+
+    .wallet-option.selected {
+        background: var(--brand-light);
+        border-color: var(--brand);
+    }
+
+    .wallet-mark {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        color: white;
+        font-weight: bold;
+        font-size: 18px;
+    }
+
+    .wallet-mark.gcash {
+        background: #0066cc;
+    }
+
+    .wallet-mark.maya {
+        background: #d63384;
+    }
+
+    .wallet-mark.bank {
+        background: #6c757d;
+    }
+
+    .wallet-copy {
+        flex: 1;
+    }
+
+    .wallet-copy strong {
+        display: block;
+        margin-bottom: 2px;
+    }
+
+    .wallet-copy .muted {
+        font-size: 0.85em;
+    }
+
+    .wallet-dialog-actions {
+        padding: 18px 22px;
+        border-top: 1px solid var(--line);
+        background: color-mix(in srgb, var(--panel) 82%, var(--bg));
+        display: flex;
+        justify-content: flex-end;
+        gap: 12px;
+    }
+
+    .payment-guide-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 90;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        background: var(--overlay);
+    }
+
+    .payment-guide-modal.visible {
+        display: flex;
+    }
+
+    .payment-guide-dialog {
+        width: min(900px, 100%);
+        max-height: min(90vh, 900px);
+        overflow: auto;
+        background: var(--panel-elevated);
+        border: 1px solid var(--panel-border);
+        border-radius: 22px;
+        box-shadow: var(--shadow-strong);
+    }
+
+    .payment-guide-header {
+        padding: 20px 24px;
+        border-top: 8px solid var(--brand);
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .payment-guide-header h3 {
+        margin: 0;
+        color: var(--brand-dark);
+    }
+
+    .payment-guide-close {
+        background: none;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        color: var(--muted);
+        padding: 4px 8px;
+        border-radius: 4px;
+        transition: all 0.2s ease;
+    }
+
+    .payment-guide-close:hover {
+        background: var(--line);
+        color: var(--ink);
+    }
+
+    .payment-guide-body {
+        padding: 24px;
+    }
+
+    .payment-guide-content h4 {
+        margin: 0 0 16px;
+        color: var(--brand-dark);
+        text-align: center;
+    }
+
+    .payment-guide-image-container {
+        text-align: center;
+        margin: 0 0 24px;
+    }
+
+    .payment-guide-image-container img {
+        max-width: 100%;
+        height: auto;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+
+    .payment-guide-steps,
+    .payment-guide-tips {
+        margin-bottom: 24px;
+    }
+
+    .payment-guide-steps h5,
+    .payment-guide-tips h5 {
+        margin: 0 0 12px;
+        color: var(--ink);
+        font-weight: 600;
+    }
+
+    .payment-guide-steps ol,
+    .payment-guide-tips ul {
+        margin: 0;
+        padding-left: 20px;
+        color: var(--ink);
+    }
+
+    .payment-guide-steps li,
+    .payment-guide-tips li {
+        margin-bottom: 8px;
+        line-height: 1.5;
+    }
+
+    .payment-guide-actions {
+        padding: 18px 24px;
+        border-top: 1px solid var(--line);
+        background: color-mix(in srgb, var(--panel) 82%, var(--bg));
+        text-align: center;
+    }
+
+    @media (max-width: 1440px) {
+        .page-wrap.grid-2.payments-layout {
+            grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+        }
+    }
+
+    @media (max-width: 1180px) {
+        .page-wrap.grid-2.payments-layout {
+            grid-template-columns: 1fr;
+        }
+
+        .payment-preview-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @media (max-width: 720px) {
+        .payment-channel-header,
+        .payment-channel-body,
+        .payment-channel-actions {
+            padding-left: 16px;
+            padding-right: 16px;
+        }
+
+        .payment-channel-actions {
+            flex-direction: column-reverse;
+        }
+
+        .payment-channel-actions .btn {
+            width: 100% !important;
+        }
+    }
+</style>
+{% endblock %}
 {% block content %}
-<section class="page-wrap grid-2">
+<section class="page-wrap grid-2 payments-layout">
     <div class="form-card" style="margin: 0; max-width: none;">
         <h2 class="page-title">Payment Monitoring</h2>
         {% if can_edit %}
             <p class="muted">Admin and treasurer accounts can record payments, update payment status, and sync linked billing balances.</p>
+            <p style="margin-bottom: 16px;">
+                <a href="#" id="payment-guide-link" style="color: var(--brand); text-decoration: underline; font-weight: 500;">
+                    📖 View Payment Guide
+                </a>
+                <span class="muted" style="margin-left: 8px;">Learn how to process online payments with PayMongo</span>
+            </p>
             <form method="post" id="admin-payment-form" data-transaction-form>
                 {% csrf_token %}
                 <p>
@@ -20,6 +568,18 @@
                     <label for="{{ form.payment_method.id_for_label }}">Payment method</label>
                     {{ form.payment_method }}
                 </p>
+                {{ form.online_channel }}
+                <div class="comparison-card checkout-guide-card" id="paymongo-checkout-guide" hidden>
+                    <h4 id="paymongo-guide-title" style="margin: 0 0 8px;">PayMongo E-Wallet Checkout</h4>
+                    <p class="muted" id="paymongo-guide-intro">
+                        In the PayMongo checkout screen, select the E-wallets tab and continue with the wallet you choose in the modal.
+                    </p>
+                    <ol id="paymongo-guide-steps">
+                        <li><strong>Choose Wallet:</strong> Click your preferred wallet provider such as GCash or Maya.</li>
+                        <li><strong>Authentication:</strong> Enter the mobile number and authenticate the payment through OTP or app PIN.</li>
+                        <li><strong>Completion:</strong> Return to the billing system after the provider confirms the payment.</li>
+                    </ol>
+                </div>
                 <div class="comparison-card" style="margin-bottom: 14px;">
                     <h4 style="margin: 0 0 8px;">Payment Option</h4>
                     {{ form.payment_option }}
@@ -44,12 +604,23 @@
                     <label for="{{ form.status.id_for_label }}">Status</label>
                     {{ form.status }}
                 </p>
+                <p class="admin-payment-actions">
+                    <button type="button" class="btn" id="admin-process-payment-button">Choose E-Wallet</button>
+                    <button type="submit" class="btn" id="admin-save-payment-button" style="display: none;">Save Cash Payment</button>
+                </p>
+                <p id="admin-selected-wallet-note" class="muted" hidden>Selected e-wallet: <strong id="admin-selected-wallet-name">-</strong></p>
+                {% if form.online_channel.errors %}
+                    <p>
+                        {% for error in form.online_channel.errors %}
+                            <span class="field-error">{{ error }}</span>
+                        {% endfor %}
+                    </p>
+                {% endif %}
                 <p id="admin-reference-row">
                     <label for="{{ form.reference_number.id_for_label }}">Reference number</label>
                     {{ form.reference_number }}
-                    <span class="muted">Reference numbers are not required for cash transactions.</span>
+                    <span class="muted">Cash transactions do not require a reference number. PayMongo online checkout generates one automatically.</span>
                 </p>
-                <button type="submit" class="btn">Save Payment</button>
             </form>
         {% else %}
             <p class="muted">Secretary accounts can review transactions here but cannot create or edit payment records.</p>
@@ -59,63 +630,152 @@
         <h2 class="page-title">Payment History</h2>
         <p class="muted">Status changes save immediately, recalculate the linked bill, and send payment updates through the configured email and SMS services.</p>
         <div class="status-feedback" data-payment-status-feedback hidden></div>
-        <table>
-            <thead>
-                <tr>
-                    <th>Consumer</th>
-                    <th>Billing Month</th>
-                    <th>Method</th>
-                    <th>Option</th>
-                    <th>Amount</th>
-                    <th>Reference</th>
-                    <th>Date</th>
-                    <th>Payment Status</th>
-                    <th>Bill Paid</th>
-                    <th>Bill Due</th>
-                    <th>Bill Status</th>
-                    <th>Email</th>
-                    <th>SMS</th>
-                    <th>Receipt</th>
-                    {% if can_edit %}<th>Update</th>{% endif %}
-                </tr>
-            </thead>
-            <tbody>
-                {% for payment in payments %}
+        <div class="table-shell table-shell-xl payments-history-shell" data-stack-on-mobile="true">
+            <table>
+                <thead>
                     <tr>
-                        <td>{{ payment.consumer.full_name }}</td>
-                        <td>{% if payment.billing %}{{ payment.billing.billing_month|date:'F Y' }}{% else %}-{% endif %}</td>
-                        <td>{{ payment.get_payment_method_display }}</td>
-                        <td>{{ payment.get_payment_option_display }}</td>
-                        <td>&#8369;{{ payment.amount_paid }}</td>
-                        <td>{% if payment.payment_method == 'cash' %}-{% else %}{{ payment.reference_number|default:payment.gateway_reference|default:'-' }}{% endif %}</td>
-                        <td>{{ payment.payment_date }}</td>
-                        <td class="payment-status-display">{{ payment.get_status_display }}</td>
-                        <td class="billing-paid-display">{% if payment.billing %}PHP {{ payment.billing.amount_paid }}{% else %}-{% endif %}</td>
-                        <td class="billing-due-display">{% if payment.billing %}PHP {{ payment.billing.amount_due }}{% else %}-{% endif %}</td>
-                        <td class="billing-status-display">{% if payment.billing %}{{ payment.billing.get_status_display }}{% else %}-{% endif %}</td>
-                        <td class="email-notification-display">-</td>
-                        <td class="sms-notification-display">-</td>
-                        <td><a href="{% url 'payment_receipt' payment.id %}" class="btn secondary">View</a></td>
-                        {% if can_edit %}
-                            <td>
-                                <form method="post" class="payment-status-form" data-url="{% url 'update_payment_status' payment.id %}">
-                                    {% csrf_token %}
-                                    <select name="status" class="status-select">
-                                        {% for value, label in payment_status_choices %}
-                                            <option value="{{ value }}" {% if payment.status == value %}selected{% endif %}>{{ label }}</option>
-                                        {% endfor %}
-                                    </select>
-                                </form>
-                            </td>
-                        {% endif %}
+                        <th>Consumer</th>
+                        <th>Billing Month</th>
+                        <th>Method</th>
+                        <th>Option</th>
+                        <th>Amount</th>
+                        <th>Reference</th>
+                        <th>Date</th>
+                        <th>Payment Status</th>
+                        <th>Bill Paid</th>
+                        <th>Bill Due</th>
+                        <th>Bill Status</th>
+                        <th>Email</th>
+                        <th>SMS</th>
+                        <th>Receipt</th>
+                        {% if can_edit %}<th>Update</th>{% endif %}
                     </tr>
-                {% empty %}
-                    <tr><td colspan="{% if can_edit %}15{% else %}14{% endif %}" class="empty-state">No payment transactions found.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                    {% for payment in payments %}
+                        <tr>
+                            <td data-label="Consumer">{{ payment.consumer.full_name }}</td>
+                            <td data-label="Billing Month">{% if payment.display_covered_month %}{{ payment.display_covered_month|date:'F Y' }}{% else %}-{% endif %}</td>
+                            <td data-label="Method">{{ payment.display_payment_method }}</td>
+                            <td data-label="Option">{{ payment.get_payment_option_display }}</td>
+                            <td data-label="Amount">&#8369;{{ payment.amount_paid }}</td>
+                            <td data-label="Reference">{{ payment.display_reference_number }}</td>
+                            <td data-label="Date">{{ payment.payment_date }}</td>
+                            <td data-label="Payment Status" class="payment-status-display">{{ payment.get_status_display }}</td>
+                            <td data-label="Bill Paid" class="billing-paid-display">{% if payment.billing %}PHP {{ payment.billing.amount_paid }}{% else %}-{% endif %}</td>
+                            <td data-label="Bill Due" class="billing-due-display">{% if payment.billing %}PHP {{ payment.billing.amount_due }}{% else %}-{% endif %}</td>
+                            <td data-label="Bill Status" class="billing-status-display">{% if payment.billing %}{{ payment.billing.get_status_display }}{% else %}-{% endif %}</td>
+                            <td data-label="Email" class="email-notification-display">-</td>
+                            <td data-label="SMS" class="sms-notification-display">-</td>
+                            <td data-label="Receipt" class="table-action-cell"><a href="{% url 'payment_receipt' payment.id %}" class="btn secondary">View</a></td>
+                            {% if can_edit %}
+                                <td data-label="Update">
+                                    <form method="post" class="payment-status-form" data-url="{% url 'update_payment_status' payment.id %}">
+                                        {% csrf_token %}
+                                        <select name="status" class="status-select">
+                                            {% for value, label in payment_status_choices %}
+                                                <option value="{{ value }}" {% if payment.status == value %}selected{% endif %}>{{ label }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </form>
+                                </td>
+                            {% endif %}
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="{% if can_edit %}15{% else %}14{% endif %}" class="empty-state">No payment transactions found.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </section>
+
+<!-- Payment Wallet Modal -->
+<div class="payment-wallet-modal" id="payment-wallet-modal" aria-hidden="true">
+    <div class="wallet-dialog" role="dialog" aria-modal="true" aria-labelledby="wallet-dialog-title">
+        <div class="wallet-dialog-header">
+            <h3 id="wallet-dialog-title">Choose E-Wallet</h3>
+            <p class="muted">Select the e-wallet to record for this PayMongo transaction. This removes duplicate method selection while keeping cash available in the main payment method field.</p>
+        </div>
+        <div class="wallet-dialog-body">
+            <p class="status-chip" style="margin-top: 0;">Payment Amount: <span id="wallet-current-balance" style="margin-left: 6px;">PHP 0.00</span></p>
+            <div class="wallet-options">
+                <button type="button" class="wallet-option" data-wallet="gcash">
+                    <span class="wallet-mark gcash">G</span>
+                    <span class="wallet-copy">
+                        <strong>GCash</strong>
+                        <span class="muted">Pay using GCash e-wallet</span>
+                    </span>
+                </button>
+                <button type="button" class="wallet-option" data-wallet="paymaya">
+                    <span class="wallet-mark maya">M</span>
+                    <span class="wallet-copy">
+                        <strong>Maya</strong>
+                        <span class="muted">Pay using Maya e-wallet</span>
+                    </span>
+                </button>
+            </div>
+            <div class="comparison-card" style="margin-top: 16px;">
+                <h4 style="margin: 0 0 8px;">PayMongo Checkout Process</h4>
+                <p class="muted" style="margin-bottom: 0;">Use the same wallet in the PayMongo checkout page:</p>
+                <ol style="margin: 12px 0 0; padding-left: 18px; display: grid; gap: 8px;">
+                    <li><strong>Payment Selection:</strong> Open the E-wallets tab and choose the same provider selected here</li>
+                    <li><strong>Contact Details:</strong> Verify your contact and billing information</li>
+                    <li><strong>Authentication:</strong> Complete payment via your selected method (OTP/app PIN)</li>
+                    <li><strong>Confirmation:</strong> Receive payment confirmation and return to billing system</li>
+                </ol>
+                <p class="muted" style="margin-top: 12px; font-size: 0.9em;">
+                    <strong>Note:</strong> PayMongo is a secure payment gateway. Your payment information is encrypted and protected.
+                </p>
+            </div>
+        </div>
+        <div class="wallet-dialog-actions">
+            <button type="button" class="btn secondary" id="wallet-cancel-button">Cancel</button>
+            <button type="button" class="btn" id="wallet-continue-button">Continue to PayMongo</button>
+        </div>
+    </div>
+</div>
+
+
+<!-- Payment Guide Modal -->
+<div class="payment-guide-modal" id="payment-guide-modal" aria-hidden="true">
+    <div class="payment-guide-dialog" role="dialog" aria-modal="true" aria-labelledby="payment-guide-modal-title">
+        <div class="payment-guide-header">
+            <h3 id="payment-guide-modal-title">Payment Processing Guide</h3>
+            <button type="button" class="payment-guide-close" id="payment-guide-close-button" aria-label="Close guide">×</button>
+        </div>
+        <div class="payment-guide-body">
+            <div class="payment-guide-content">
+                <h4>How to Process Online Payments with PayMongo</h4>
+                <div class="payment-guide-image-container">
+                    <img src="{% static 'legacy_img/payment-guide.png' %}" alt="Payment Processing Guide" id="payment-guide-image">
+                </div>
+                <div class="payment-guide-steps">
+                    <h5>Quick Steps:</h5>
+                    <ol>
+                        <li><strong>Select Consumer:</strong> Choose the consumer from the dropdown list</li>
+                        <li><strong>Choose Billing Record:</strong> Select the appropriate billing record (filtered by consumer)</li>
+                        <li><strong>Select Payment Method:</strong> Choose either Cash or Online Payment</li>
+                        <li><strong>Choose E-Wallet:</strong> If online is selected, pick GCash or Maya in the modal</li>
+                        <li><strong>Fill Payment Details:</strong> Review amount, status, and optional reference number</li>
+                        <li><strong>Save Payment:</strong> Submit the cash or online payment record</li>
+                    </ol>
+                </div>
+                <div class="payment-guide-tips">
+                    <h5>Important Tips:</h5>
+                    <ul>
+                        <li>Use Cash for over-the-counter settlements that do not need wallet selection</li>
+                        <li>Use GCash or Maya only when recording PayMongo e-wallet transactions</li>
+                        <li>Save payment reference numbers after completion when one is available</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="payment-guide-actions">
+            <button type="button" class="btn" id="payment-guide-understood-button">I Understand</button>
+        </div>
+    </div>
+</div>
 {% endblock %}
 {% block extra_js %}
     {{ billing_balance_data|json_script:"admin-billing-balance-data" }}
@@ -128,13 +788,132 @@
             const methodField = document.getElementById('id_payment_method');
             const amountField = document.getElementById('id_amount_paid');
             const referenceRow = document.getElementById('admin-reference-row');
+            const checkoutGuide = document.getElementById('paymongo-checkout-guide');
+            const guideIntro = document.getElementById('paymongo-guide-intro');
+            const guideSteps = document.getElementById('paymongo-guide-steps');
+            const selectedWalletNote = document.getElementById('admin-selected-wallet-note');
+            const selectedWalletName = document.getElementById('admin-selected-wallet-name');
             const balanceLabel = document.getElementById('admin-current-balance');
+            const statusField = document.getElementById('id_status');
             const dataElement = document.getElementById('admin-billing-balance-data');
             const balances = dataElement ? JSON.parse(dataElement.textContent) : [];
+            const channelModal = document.getElementById('payment-channel-modal');
+            const channelModalTitle = document.getElementById('payment-channel-modal-title');
+            const channelModalCopy = document.getElementById('payment-channel-modal-copy');
+            const channelSelectedChip = document.getElementById('payment-channel-selected-chip');
+            const channelGuidePoints = document.getElementById('payment-channel-guide-points');
+            const channelPreviewTitleOne = document.getElementById('payment-preview-title-1');
+            const channelPreviewCopyOne = document.getElementById('payment-preview-copy-1');
+            const channelPreviewTitleTwo = document.getElementById('payment-preview-title-2');
+            const channelPreviewCopyTwo = document.getElementById('payment-preview-copy-2');
+            const channelPreviewTitleThree = document.getElementById('payment-preview-title-3');
+            const channelPreviewCopyThree = document.getElementById('payment-preview-copy-3');
+            const channelCloseButton = document.getElementById('payment-channel-close-button');
+            const channelKeepButton = document.getElementById('payment-channel-keep-button');
+            const channelField = document.getElementById('id_online_channel');
+
+            const channelPreviewContent = {
+                gcash: {
+                    label: 'GCash',
+                    title: 'GCash Checkout Preview',
+                    copy: 'Use the PayMongo E-wallets tab and choose GCash before finishing the wallet verification flow.',
+                    guide: [
+                        'Open the E-wallets section and select GCash from the PayMongo method list.',
+                        'Review the payer contact details before continuing to the wallet handoff.',
+                        'Complete the GCash OTP or app approval, then save the confirmed payment reference in this form.'
+                    ],
+                    previewTitles: [
+                        'Start at the payment method screen',
+                        'Review payer details',
+                        'Finish the GCash confirmation'
+                    ],
+                    previewCopy: [
+                        'Open the E-wallets panel and choose GCash from the wallet list.',
+                        'Check the email, mobile number, and billing details before continuing.',
+                        'The payer completes OTP or in-app approval, then you can store the confirmed reference.'
+                    ],
+                },
+                paymaya: {
+                    label: 'Maya',
+                    title: 'Maya Checkout Preview',
+                    copy: 'Use the PayMongo E-wallets tab and choose Maya before finishing the wallet verification flow.',
+                    guide: [
+                        'Open the E-wallets section and select Maya from the PayMongo method list.',
+                        'Review the payer contact details before continuing to the wallet handoff.',
+                        'Complete the Maya OTP or app approval, then save the confirmed payment reference in this form.'
+                    ],
+                    previewTitles: [
+                        'Start at the payment method screen',
+                        'Review payer details',
+                        'Finish the Maya confirmation'
+                    ],
+                    previewCopy: [
+                        'Open the E-wallets panel and choose Maya from the wallet list.',
+                        'Check the email, mobile number, and billing details before continuing.',
+                        'The payer completes OTP or in-app approval, then you can store the confirmed reference.'
+                    ],
+                },
+                bank: {
+                    label: 'Bank',
+                    title: 'Online Banking Preview',
+                    copy: 'Use the Online Banking section instead of E-wallets, then wait for the bank authorization result before saving the record.',
+                    guide: [
+                        'Open the Online Banking section in PayMongo and choose the correct bank or bank app.',
+                        'Review the payer contact details before handing off to the bank page or OTP step.',
+                        'Record the final confirmed bank reference only after the bank authorizes the transaction.'
+                    ],
+                    previewTitles: [
+                        'Start at the payment method screen',
+                        'Review payer details',
+                        'Finish the bank authorization'
+                    ],
+                    previewCopy: [
+                        'Open the Online Banking panel rather than E-wallets, then choose the consumer bank.',
+                        'Check the email, mobile number, and billing details before continuing.',
+                        'Wait for the bank OTP or approval result, then store the final confirmed reference number.'
+                    ],
+                },
+            };
 
             function selectedPaymentOption() {
                 const selected = form.querySelector('input[name="payment_option"]:checked');
                 return selected ? selected.value : 'full';
+            }
+
+            function filterBillingByConsumer() {
+                const consumerField = document.getElementById('id_consumer');
+                const billingField = document.getElementById('id_billing');
+                const selectedConsumerId = consumerField ? consumerField.value : '';
+                
+                if (!billingField || !selectedConsumerId) return;
+                
+                // Filter billing options based on selected consumer
+                const billingOptions = billingField.querySelectorAll('option');
+                billingOptions.forEach(function(option) {
+                    if (option.value === '') return; // Keep the empty option
+                    
+                    const billing = balances.find(function(item) {
+                        return String(item.id) === String(option.value);
+                    });
+                    
+                    if (billing && String(billing.consumer_id) === selectedConsumerId) {
+                        option.style.display = 'block';
+                    } else {
+                        option.style.display = 'none';
+                    }
+                });
+                
+                // Reset billing selection if current selection doesn't match consumer
+                const currentBilling = billingField.value;
+                if (currentBilling) {
+                    const currentBillingData = balances.find(function(item) {
+                        return String(item.id) === String(currentBilling);
+                    });
+                    if (!currentBillingData || String(currentBillingData.consumer_id) !== selectedConsumerId) {
+                        billingField.value = '';
+                        syncAmount();
+                    }
+                }
             }
 
             function syncAmount() {
@@ -147,20 +926,495 @@
                 if (balanceLabel) balanceLabel.textContent = `PHP ${balance.toFixed(2)}`;
             }
 
-            function syncReference() {
-                if (!referenceRow || !methodField) return;
-                referenceRow.hidden = methodField.value === 'cash';
-                const input = document.getElementById('id_reference_number');
-                if (methodField.value === 'cash' && input) input.value = '';
+            function syncPaymentMode() {
+                if (!methodField) return;
+                const isOnline = methodField.value === 'online';
+                const processButton = document.getElementById('admin-process-payment-button');
+                const saveButton = document.getElementById('admin-save-payment-button');
+
+                if (checkoutGuide) checkoutGuide.hidden = !isOnline;
+
+                if (isOnline) {
+                    if (statusField) statusField.value = 'pending';
+                    if (processButton) {
+                        processButton.style.display = 'inline-block';
+                        processButton.textContent = 'Continue to PayMongo';
+                    }
+                    if (saveButton) saveButton.style.display = 'none';
+                } else {
+                    if (processButton) processButton.style.display = 'none';
+                    if (saveButton) {
+                        saveButton.style.display = 'inline-block';
+                        saveButton.textContent = 'Save Cash Payment';
+                    }
+                }
+
+                if (!isOnline) {
+                    if (channelField) channelField.value = '';
+                    if (selectedWalletNote) selectedWalletNote.hidden = true;
+                    closeWalletModal();
+                }
+                syncCheckoutGuide();
             }
 
+            function syncCheckoutGuide() {
+                if (!checkoutGuide || !guideIntro || !guideSteps || !methodField) return;
+
+                if (methodField.value !== 'online') {
+                    checkoutGuide.hidden = true;
+                    return;
+                }
+
+                checkoutGuide.hidden = false;
+                const channel = channelField ? channelField.value : '';
+                const walletLabel = channel === 'paymaya' ? 'Maya' : channel === 'gcash' ? 'GCash' : 'GCash or Maya';
+                guideIntro.textContent = 'In the PayMongo checkout screen, select the E-wallets tab before choosing the wallet provider.';
+                guideSteps.innerHTML = [
+                    `<li><strong>Choose Wallet:</strong> Click ${walletLabel} in the PayMongo E-wallets tab.</li>`,
+                    '<li><strong>Authentication:</strong> The consumer completes OTP or app PIN verification from the selected wallet.</li>',
+                    '<li><strong>Completion:</strong> Save the matching payment record here after the transaction is confirmed.</li>'
+                ].join('');
+            }
+
+            function walletLabel(value) {
+                if (value === 'gcash') return 'GCash';
+                if (value === 'paymaya') return 'Maya';
+                return '';
+            }
+
+            function syncWalletSelectionUi() {
+                const walletModal = document.getElementById('payment-wallet-modal');
+                if (!walletModal) return;
+                const currentValue = channelField ? channelField.value : '';
+                walletModal.querySelectorAll('.wallet-option').forEach(function (option) {
+                    option.classList.toggle('selected', option.dataset.wallet === currentValue);
+                });
+                if (selectedWalletNote && selectedWalletName) {
+                    const label = walletLabel(currentValue);
+                    selectedWalletNote.hidden = !label || (methodField && methodField.value !== 'online');
+                    if (label) selectedWalletName.textContent = label;
+                }
+            }
+
+            function updateChannelPreview(channel) {
+                const content = channelPreviewContent[channel];
+                if (!content) return;
+                if (channelModalTitle) channelModalTitle.textContent = content.title;
+                if (channelModalCopy) channelModalCopy.textContent = content.copy;
+                if (channelSelectedChip) channelSelectedChip.textContent = `Selected channel: ${content.label}`;
+                if (channelGuidePoints) {
+                    channelGuidePoints.innerHTML = content.guide.map(function (item) {
+                        return `<li>${item}</li>`;
+                    }).join('');
+                }
+                if (channelPreviewTitleOne) channelPreviewTitleOne.textContent = content.previewTitles[0];
+                if (channelPreviewCopyOne) channelPreviewCopyOne.textContent = content.previewCopy[0];
+                if (channelPreviewTitleTwo) channelPreviewTitleTwo.textContent = content.previewTitles[1];
+                if (channelPreviewCopyTwo) channelPreviewCopyTwo.textContent = content.previewCopy[1];
+                if (channelPreviewTitleThree) channelPreviewTitleThree.textContent = content.previewTitles[2];
+                if (channelPreviewCopyThree) channelPreviewCopyThree.textContent = content.previewCopy[2];
+                
+                // Show/hide payment details fields based on channel
+                const gcashFields = document.getElementById('gcash-payment-fields');
+                const mayaFields = document.getElementById('maya-payment-fields');
+                const bankFields = document.getElementById('bank-payment-fields');
+                const paymentDetailsCard = document.getElementById('paymongo-payment-details');
+                
+                if (paymentDetailsCard) {
+                    paymentDetailsCard.style.display = 'block';
+                }
+                
+                // Hide all fields first
+                if (gcashFields) gcashFields.style.display = 'none';
+                if (mayaFields) mayaFields.style.display = 'none';
+                if (bankFields) bankFields.style.display = 'none';
+                
+                // Show relevant fields
+                if (channel === 'gcash' && gcashFields) {
+                    gcashFields.style.display = 'block';
+                } else if (channel === 'paymaya' && mayaFields) {
+                    mayaFields.style.display = 'block';
+                } else if (channel === 'bank' && bankFields) {
+                    bankFields.style.display = 'block';
+                }
+            }
+
+            function openWalletModal() {
+                const modal = document.getElementById('payment-wallet-modal');
+                if (modal) {
+                    syncWalletSelectionUi();
+                    modal.classList.add('visible');
+                    modal.setAttribute('aria-hidden', 'false');
+                    
+                    // Update balance display
+                    const balanceLabel = document.getElementById('wallet-current-balance');
+                    const amountField = document.getElementById('id_amount_paid');
+                    if (balanceLabel && amountField) {
+                        const amount = parseFloat(amountField.value) || 0;
+                        balanceLabel.textContent = `PHP ${amount.toFixed(2)}`;
+                    }
+                }
+            }
+
+            function closeWalletModal() {
+                const modal = document.getElementById('payment-wallet-modal');
+                if (modal) {
+                    modal.classList.remove('visible');
+                    modal.setAttribute('aria-hidden', 'true');
+                }
+            }
+
+            function redirectToPayMongo() {
+                console.log('redirectToPayMongo function called');
+                
+                // Get payment details from the form
+                const consumerField = document.getElementById('id_consumer');
+                const billingField = document.getElementById('id_billing');
+                const amountField = document.getElementById('id_amount_paid');
+                const channelField = document.getElementById('id_online_channel');
+                
+                console.log('Form fields found:', {
+                    consumerField: !!consumerField,
+                    billingField: !!billingField,
+                    amountField: !!amountField,
+                    channelField: !!channelField
+                });
+                
+                if (!consumerField || !billingField || !amountField || !channelField) {
+                    alert('Please fill in all required payment details.');
+                    return;
+                }
+                
+                const consumerId = consumerField.value;
+                const billingId = billingField.value;
+                const amount = parseFloat(amountField.value) || 0;
+                const channel = channelField.value;
+                
+                console.log('Payment details:', { consumerId, billingId, amount, channel });
+                
+                if (!consumerId || !billingId || amount <= 0 || !channel) {
+                    alert('Please complete all payment details before proceeding.');
+                    return;
+                }
+                
+                // Get consumer information from the balances data
+                const billing = balances.find(function(item) {
+                    return String(item.id) === String(billingId);
+                });
+                
+                console.log('Billing record found:', !!billing);
+                
+                if (!billing) {
+                    alert('Invalid billing record selected.');
+                    return;
+                }
+                
+                // Show loading state
+                const processButton = document.getElementById('admin-process-payment-button');
+                if (processButton) {
+                    processButton.disabled = true;
+                    processButton.textContent = 'Opening PayMongo...';
+                }
+                
+                console.log('Making API call to PayMongo initiate endpoint...');
+                
+                // Call backend to initiate PayMongo payment
+                fetch('/payments/paymongo/initiate/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    },
+                    body: JSON.stringify({
+                        consumer_id: consumerId,
+                        billing_id: billingId,
+                        amount: amount,
+                        channel: channel
+                    })
+                })
+                .then(response => {
+                    console.log('API response status:', response.status);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('API response data:', data);
+                    if (data.success) {
+                        // Store payment details in session storage for retrieval after payment
+                        const paymentData = {
+                            sessionId: data.session_id,
+                            consumerId: consumerId,
+                            billingId: billingId,
+                            amount: amount,
+                            channel: channel,
+                            timestamp: new Date().toISOString()
+                        };
+                        sessionStorage.setItem('paymongo_payment_data', JSON.stringify(paymentData));
+                        
+                        console.log('Opening PayMongo checkout:', data.checkout_url);
+                        
+                        // Show success message and redirect
+                        const confirmMessage = `You will be redirected to PayMongo's secure checkout page to complete your payment of PHP ${amount.toFixed(2)}.\n\nClick OK to continue.`;
+                        
+                        if (confirm(confirmMessage)) {
+                            // Redirect to PayMongo checkout in the same window for better UX
+                            window.location.href = data.checkout_url;
+                        } else {
+                            // User cancelled, reset button
+                            if (processButton) {
+                                processButton.disabled = false;
+                                processButton.textContent = 'Choose E-Wallet';
+                            }
+                        }
+                    } else {
+                        console.error('API error:', data.error);
+                        alert('Payment Error: ' + (data.error || 'Failed to initiate payment'));
+                        // Reset button on error
+                        if (processButton) {
+                            processButton.disabled = false;
+                            processButton.textContent = 'Choose E-Wallet';
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('Network error:', error);
+                    alert('Payment Error: Failed to connect to payment service. Please try again.');
+                    // Reset button on error
+                    if (processButton) {
+                        processButton.disabled = false;
+                        processButton.textContent = 'Choose E-Wallet';
+                    }
+                });
+            }
+            
+            function getCookie(name) {
+                let cookieValue = null;
+                if (document.cookie && document.cookie !== '') {
+                    const cookies = document.cookie.split(';');
+                    for (let i = 0; i < cookies.length; i++) {
+                        const cookie = cookies[i].trim();
+                        if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                            cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                            break;
+                        }
+                    }
+                }
+                return cookieValue;
+            }
+            
+            function generateSessionId() {
+                // Generate a random session ID (in production, this would come from PayMongo API)
+                const chars = '0123456789abcdef';
+                let sessionId = '';
+                for (let i = 0; i < 24; i++) {
+                    sessionId += chars.charAt(Math.floor(Math.random() * chars.length));
+                }
+                return sessionId;
+            }
+
+            function generateQRCode(channel, number) {
+                // Simple QR code generation using placeholder URL
+                // In a real implementation, this would integrate with PayMongo's API
+                const amount = amountField ? parseFloat(amountField.value) || 0 : 0;
+                const consumerId = document.getElementById('id_consumer').value;
+                const billingId = billingField ? billingField.value : '';
+                
+                // Generate a mock PayMongo payment URL
+                const paymentUrl = `https://paymongo.com/pay/${channel}?amount=${amount}&number=${number}&consumer=${consumerId}&billing=${billingId}`;
+                
+                if (channel === 'gcash') {
+                    // Show the actual GCash QR code image
+                    const qrImage = document.getElementById('gcash-qr-image');
+                    const qrPlaceholder = document.getElementById('gcash-qr-placeholder');
+                    
+                    if (qrImage && qrPlaceholder) {
+                        qrImage.style.display = 'block';
+                        qrPlaceholder.style.display = 'none';
+                    }
+                } else {
+                    // For Maya, create a simple text-based QR code (you can add image later)
+                    const qrContainer = document.getElementById(`${channel}-qr-code`);
+                    if (qrContainer) {
+                        qrContainer.innerHTML = `
+                            <div style="font-size: 10px; line-height: 1.2; padding: 10px;">
+                                <strong>PayMongo Payment</strong><br>
+                                Channel: ${channel.toUpperCase()}<br>
+                                Amount: PHP ${amount.toFixed(2)}<br>
+                                Number: ${number}<br>
+                                Consumer ID: ${consumerId}<br>
+                                Billing ID: ${billingId}<br><br>
+                                <em>Scan with Maya app</em>
+                            </div>
+                        `;
+                        qrContainer.style.background = '#fff';
+                        qrContainer.style.border = '2px solid #007bff';
+                    }
+                }
+                
+                return paymentUrl;
+            }
+
+            function setupQRCodeGeneration() {
+                const gcashNumber = document.getElementById('gcash-number');
+                const mayaNumber = document.getElementById('maya-number');
+                
+                if (gcashNumber) {
+                    gcashNumber.addEventListener('input', function() {
+                        const number = this.value.trim();
+                        const qrContainer = document.getElementById('gcash-qr-container');
+                        
+                        if (number.length === 11 && number.startsWith('09')) {
+                            generateQRCode('gcash', number);
+                            if (qrContainer) qrContainer.style.display = 'block';
+                        } else {
+                            if (qrContainer) qrContainer.style.display = 'none';
+                        }
+                    });
+                }
+                
+                if (mayaNumber) {
+                    mayaNumber.addEventListener('input', function() {
+                        const number = this.value.trim();
+                        const qrContainer = document.getElementById('maya-qr-container');
+                        
+                        if (number.length === 11 && number.startsWith('09')) {
+                            generateQRCode('maya', number);
+                            if (qrContainer) qrContainer.style.display = 'block';
+                        } else {
+                            if (qrContainer) qrContainer.style.display = 'none';
+                        }
+                    });
+                }
+            }
+
+            // Payment guide modal functionality
+            const guideModal = document.getElementById('payment-guide-modal');
+            const guideLink = document.getElementById('payment-guide-link');
+            const guideCloseButton = document.getElementById('payment-guide-close-button');
+            const guideUnderstoodButton = document.getElementById('payment-guide-understood-button');
+
+            function openPaymentGuide() {
+                if (guideModal) {
+                    guideModal.classList.add('visible');
+                    guideModal.setAttribute('aria-hidden', 'false');
+                }
+            }
+
+            function closePaymentGuide() {
+                if (guideModal) {
+                    guideModal.classList.remove('visible');
+                    guideModal.setAttribute('aria-hidden', 'true');
+                }
+            }
+
+            if (guideLink) guideLink.addEventListener('click', function(e) {
+                e.preventDefault();
+                openPaymentGuide();
+            });
+
+            if (guideCloseButton) guideCloseButton.addEventListener('click', closePaymentGuide);
+            if (guideUnderstoodButton) guideUnderstoodButton.addEventListener('click', closePaymentGuide);
+
+            if (guideModal) {
+                guideModal.addEventListener('click', function(event) {
+                    if (event.target === guideModal) closePaymentGuide();
+                });
+            }
+
+            const consumerField = document.getElementById('id_consumer');
+            const processButton = document.getElementById('admin-process-payment-button');
+            
+            if (consumerField) consumerField.addEventListener('change', filterBillingByConsumer);
             if (billingField) billingField.addEventListener('change', syncAmount);
-            if (methodField) methodField.addEventListener('change', syncReference);
+            if (methodField) methodField.addEventListener('change', syncPaymentMode);
+            if (channelField) {
+                channelField.addEventListener('change', function () {
+                    syncCheckoutGuide();
+                });
+            }
+            
+            // Add event listener for wallet modal
+            if (processButton) {
+                processButton.addEventListener('click', function() {
+                    console.log('Process button clicked, payment method:', methodField ? methodField.value : 'not found');
+                    if (methodField && methodField.value === 'online') {
+                        console.log('Opening wallet modal...');
+                        openWalletModal();
+                    } else {
+                        console.log('Processing cash payment...');
+                        // For cash payments, submit the form
+                        const form = document.getElementById('admin-payment-form');
+                        if (form) {
+                            const saveButton = document.getElementById('admin-save-payment-button');
+                            if (saveButton) {
+                                saveButton.click();
+                            }
+                        }
+                    }
+                });
+            }
+
+            // Wallet modal event handlers
+            const walletModal = document.getElementById('payment-wallet-modal');
+            const walletCancelButton = document.getElementById('wallet-cancel-button');
+            const walletContinueButton = document.getElementById('wallet-continue-button');
+            const walletOptions = walletModal ? walletModal.querySelectorAll('.wallet-option') : [];
+            let selectedWallet = channelField ? channelField.value : '';
+
+            // Wallet option selection
+            walletOptions.forEach(function(option) {
+                option.addEventListener('click', function() {
+                    selectedWallet = this.getAttribute('data-wallet');
+                    if (channelField) {
+                        channelField.value = selectedWallet;
+                    }
+                    syncWalletSelectionUi();
+                });
+            });
+
+            // Cancel button
+            if (walletCancelButton) {
+                walletCancelButton.addEventListener('click', closeWalletModal);
+            }
+
+            // Continue button - redirect to PayMongo
+            if (walletContinueButton) {
+                walletContinueButton.addEventListener('click', function() {
+                    if (selectedWallet) {
+                        if (channelField) {
+                            channelField.value = selectedWallet;
+                        }
+                        syncWalletSelectionUi();
+                        closeWalletModal();
+                        form.requestSubmit();
+                    } else {
+                        alert('Please select a wallet option first.');
+                    }
+                });
+            }
+
+            // Close modal when clicking outside
+            if (walletModal) {
+                walletModal.addEventListener('click', function(event) {
+                    if (event.target === walletModal) closeWalletModal();
+                });
+            }
             form.querySelectorAll('input[name="payment_option"]').forEach(function (option) {
                 option.addEventListener('change', syncAmount);
             });
+                        window.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape') {
+                    closeWalletModal();
+                    closePaymentGuide();
+                }
+            });
+            filterBillingByConsumer();
             syncAmount();
-            syncReference();
+            syncPaymentMode();
+            syncWalletSelectionUi();
+            setupQRCodeGeneration();
         })();
     </script>
 {% endblock %}

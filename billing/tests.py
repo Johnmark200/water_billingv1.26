@@ -1,14 +1,17 @@
+import socket
+from unittest.mock import MagicMock, patch
 from datetime import date, timedelta
 from decimal import Decimal
+from urllib.error import URLError
 
 from django.contrib.auth.models import User
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from .forms import BillingRecordForm, MeterReadingForm, SignUpForm
-from .models import BillingRecord, Consumer, ConsumerProfile, MeterReading, Payment
-from .services import build_consumer_chart_data, build_consumer_payment_month_choices
+from .forms import AdminPaymentForm, BillingRecordForm, ConsumerForm, ConsumerPaymentForm, MeterReadingForm, PortalAccountForm, SignUpForm
+from .models import BillingRecord, Consumer, ConsumerProfile, MeterReading, Notification, Payment, SystemSettings
+from .services import build_consumer_chart_data, build_consumer_payment_month_choices, send_test_sms
 from .views import _build_soa_summary, _build_soa_transactions
 
 
@@ -38,6 +41,159 @@ class SignUpFormTests(TestCase):
 
         self.assertFalse(form.is_valid())
         self.assertIn('Your username cannot be used as your password.', form.errors['password1'])
+
+
+class ConsumerFormTests(TestCase):
+    def setUp(self):
+        self.linked_user = User.objects.create_user(username='linked-user', password='StrongPass1!')
+        self.linked_profile = ConsumerProfile.objects.create(
+            user=self.linked_user,
+            full_name='Linked Profile',
+            contact='+639171234567',
+            address='Original Address',
+            role=ConsumerProfile.Roles.SECRETARY,
+        )
+
+    def test_exposes_unlinked_profiles_and_persists_selected_role(self):
+        form = ConsumerForm(
+            data={
+                'profile': self.linked_profile.id,
+                'linked_account_role': ConsumerProfile.Roles.CONSUMER,
+                'full_name': 'Updated Consumer Name',
+                'address': 'Updated Address',
+                'contact_number': '+639181112222',
+                'status': Consumer.Statuses.ACTIVE,
+            }
+        )
+
+        self.assertIn(self.linked_profile, form.fields['profile'].queryset)
+        self.assertTrue(form.is_valid(), form.errors)
+
+        consumer = form.save()
+        self.linked_profile.refresh_from_db()
+
+        self.assertEqual(consumer.profile_id, self.linked_profile.id)
+        self.assertEqual(self.linked_profile.role, ConsumerProfile.Roles.CONSUMER)
+        self.assertEqual(self.linked_profile.full_name, 'Updated Consumer Name')
+        self.assertEqual(self.linked_profile.address, 'Updated Address')
+        self.assertEqual(self.linked_profile.contact, '+639181112222')
+
+
+class PortalAccountFormTests(TestCase):
+    def test_creates_reader_account_with_credentials_and_profile(self):
+        form = PortalAccountForm(
+            data={
+                'role': ConsumerProfile.Roles.READER,
+                'username': 'reader-form',
+                'full_name': 'Reader Form',
+                'email': 'reader@example.com',
+                'contact': '+639171234568',
+                'address': 'Reader Street',
+                'password1': 'StrongPass1!',
+                'password2': 'StrongPass1!',
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        user = form.save()
+        profile = ConsumerProfile.objects.get(user=user)
+
+        self.assertEqual(profile.role, ConsumerProfile.Roles.READER)
+        self.assertEqual(profile.full_name, 'Reader Form')
+        self.assertTrue(user.check_password('StrongPass1!'))
+
+    def test_creates_admin_account_as_staff(self):
+        form = PortalAccountForm(
+            data={
+                'role': ConsumerProfile.Roles.ADMIN,
+                'username': 'admin-form',
+                'full_name': 'Admin Form',
+                'email': 'admin@example.com',
+                'contact': '+639171234569',
+                'address': 'Admin Street',
+                'password1': 'StrongPass1!',
+                'password2': 'StrongPass1!',
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        user = form.save()
+        profile = ConsumerProfile.objects.get(user=user)
+
+        self.assertTrue(user.is_staff)
+        self.assertEqual(profile.role, ConsumerProfile.Roles.ADMIN)
+
+
+class AddConsumerPageAccountCreationTests(TestCase):
+    def setUp(self):
+        self.admin_user = User.objects.create_user(username='page-admin', password='StrongPass1!')
+        ConsumerProfile.objects.create(
+            user=self.admin_user,
+            full_name='Page Admin',
+            role=ConsumerProfile.Roles.ADMIN,
+        )
+
+    def test_admin_can_create_secretary_account_from_add_account_page(self):
+        self.client.force_login(self.admin_user)
+
+        response = self.client.post(
+            reverse('add_consumer'),
+            data={
+                'action': 'create_portal_account',
+                'role': ConsumerProfile.Roles.SECRETARY,
+                'username': 'secretary-page',
+                'full_name': 'Secretary Page',
+                'email': 'secretary@example.com',
+                'contact': '+639171234570',
+                'address': 'Office',
+                'password1': 'StrongPass1!',
+                'password2': 'StrongPass1!',
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        created_user = User.objects.get(username='secretary-page')
+        created_profile = ConsumerProfile.objects.get(user=created_user)
+        self.assertEqual(created_profile.role, ConsumerProfile.Roles.SECRETARY)
+
+
+@override_settings(
+    SMS_DELIVERY_PROVIDER='sms_api_ph',
+    SMS_API_TIMEOUT=10,
+    SMS_API_RETRY_ATTEMPTS=2,
+    SMS_API_PH_ENDPOINT='https://dashboard.philsms.com/api/v3/',
+    SMS_API_PH_API_KEY='2740|test-token',
+    SMS_API_PH_RECIPIENT_FIELD='recipient',
+    SMS_API_PH_MESSAGE_FIELD='message',
+    SMS_API_PH_SENDER_ID='TABUAN',
+    SMS_API_PH_MESSAGE_TYPE='plain',
+)
+class SMSDeliveryErrorTests(TestCase):
+    def test_dns_failure_logs_provider_aware_message(self):
+        with patch('billing.services.request.urlopen', side_effect=URLError(socket.gaierror(11001, 'getaddrinfo failed'))):
+            result = send_test_sms('+639171234567', 'Test DNS failure')
+
+        self.assertEqual(result.status, Notification.Statuses.FAILED)
+        self.assertIn('Unable to reach SMS API PH', result.response_message)
+        self.assertIn('DNS lookup failed', result.response_message)
+        self.assertIn('dashboard.philsms.com', result.response_message)
+
+    def test_timeout_is_retried_before_logging_failure(self):
+        successful_response = MagicMock()
+        successful_response.read.return_value = b'{"status":"success","message_id":"msg-123"}'
+        successful_context = MagicMock()
+        successful_context.__enter__.return_value = successful_response
+        successful_context.__exit__.return_value = False
+
+        with patch(
+            'billing.services.request.urlopen',
+            side_effect=[TimeoutError('The read operation timed out'), successful_context],
+        ) as mocked_urlopen:
+            result = send_test_sms('+639171234567', 'Retry on timeout')
+
+        self.assertEqual(mocked_urlopen.call_count, 2)
+        self.assertEqual(result.status, Notification.Statuses.SENT)
+        self.assertIn('msg-123', result.response_message)
 
 
 class ConsumerPaymentChoiceTests(TestCase):
@@ -79,6 +235,51 @@ class ConsumerPaymentChoiceTests(TestCase):
 
         self.assertTrue(choices)
         self.assertEqual(choices[0][0], '2026-05')
+
+
+class ConsumerPaymongoFormTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='portal-consumer', password='StrongPass1!')
+        self.profile = ConsumerProfile.objects.create(
+            user=self.user,
+            full_name='Portal Consumer',
+            role=ConsumerProfile.Roles.CONSUMER,
+        )
+        self.consumer = Consumer.objects.create(
+            profile=self.profile,
+            full_name='Portal Consumer',
+            status=Consumer.Statuses.ACTIVE,
+        )
+        self.billing = BillingRecord.objects.create(
+            consumer=self.consumer,
+            billing_month=date(2026, 4, 1),
+            previous_reading=Decimal('0'),
+            current_reading=Decimal('10'),
+            rate_per_m3=Decimal('20'),
+            amount_paid=Decimal('0'),
+            billing_date=date(2026, 4, 1),
+            due_date=date(2026, 4, 15),
+        )
+
+    def test_consumer_payment_form_forces_online_method_and_selected_wallet(self):
+        form = ConsumerPaymentForm(
+            data={
+                'covered_month': '2026-04',
+                'payment_option': Payment.PaymentOptions.FULL,
+                'amount_paid': '0',
+                'online_wallet': 'gcash',
+            },
+            consumer=self.consumer,
+            system_settings=SystemSettings.load(),
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        payment = form.save()
+
+        self.assertEqual(payment.payment_method, Payment.Methods.ONLINE)
+        self.assertEqual(payment.gateway, Payment.Methods.GCASH)
+        self.assertEqual(payment.amount_paid, Decimal('200'))
+        self.assertEqual(payment.display_payment_method, 'GCash')
 
 
 class MeterReadingFormTests(TestCase):
@@ -830,3 +1031,586 @@ class AuthAndBrandingRegressionTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Tabuan Water Billing System')
         self.assertContains(response, 'tabuan-logo.png')
+
+
+class OnlinePaymentMethodDisplayTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='online-admin', password='StrongPass1!')
+        ConsumerProfile.objects.create(
+            user=self.user,
+            full_name='Online Admin',
+            role=ConsumerProfile.Roles.ADMIN,
+        )
+        self.consumer = Consumer.objects.create(
+            full_name='Online Consumer',
+            status=Consumer.Statuses.ACTIVE,
+        )
+        self.billing = BillingRecord.objects.create(
+            consumer=self.consumer,
+            billing_month=date(2026, 4, 1),
+            previous_reading=Decimal('0'),
+            current_reading=Decimal('10'),
+            rate_per_m3=Decimal('20'),
+            amount_paid=Decimal('0'),
+            billing_date=date(2026, 4, 1),
+            due_date=date(2026, 4, 15),
+        )
+
+    def test_admin_payment_form_requires_online_channel_for_online_method(self):
+        form = AdminPaymentForm(
+            data={
+                'consumer': self.consumer.id,
+                'billing': self.billing.id,
+                'payment_method': Payment.Methods.ONLINE,
+                'payment_option': Payment.PaymentOptions.FULL,
+                'amount_paid': '200',
+                'discount_amount': '0',
+                'payment_date': '2026-04-10',
+                'status': Payment.Statuses.COMPLETED,
+                'reference_number': 'PAY-REF-1',
+            }
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn('Choose the online payment channel for this transaction.', form.errors['online_channel'])
+
+    def test_admin_payment_form_keeps_cash_method_and_wallet_only_online_choices(self):
+        form = AdminPaymentForm()
+
+        self.assertEqual(
+            form.fields['payment_method'].choices,
+            [
+                (Payment.Methods.CASH, Payment.Methods.CASH.label),
+                (Payment.Methods.ONLINE, Payment.Methods.ONLINE.label),
+            ],
+        )
+        self.assertEqual(
+            form.fields['online_channel'].choices,
+            [
+                (Payment.Methods.GCASH, Payment.Methods.GCASH.label),
+                (Payment.Methods.PAYMAYA, 'Maya'),
+            ],
+        )
+
+    def test_admin_payment_form_saves_online_channel_and_display_method(self):
+        form = AdminPaymentForm(
+            data={
+                'consumer': self.consumer.id,
+                'billing': self.billing.id,
+                'payment_method': Payment.Methods.ONLINE,
+                'online_channel': Payment.Methods.PAYMAYA,
+                'payment_option': Payment.PaymentOptions.FULL,
+                'amount_paid': '200',
+                'discount_amount': '0',
+                'payment_date': '2026-04-10',
+                'status': Payment.Statuses.COMPLETED,
+                'reference_number': 'PAY-REF-2',
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        payment = form.save()
+
+        self.assertEqual(payment.gateway, Payment.Methods.PAYMAYA)
+        self.assertEqual(payment.display_payment_method, 'Maya')
+
+    def test_paymongo_response_fallback_displays_wallet_label(self):
+        payment = Payment.objects.create(
+            consumer=self.consumer,
+            billing=self.billing,
+            covered_month=date(2026, 4, 1),
+            payment_method=Payment.Methods.ONLINE,
+            amount_paid=Decimal('200'),
+            payment_date=date(2026, 4, 10),
+            status=Payment.Statuses.COMPLETED,
+            gateway='paymongo',
+            gateway_response={
+                'payment_intent': {
+                    'attributes': {
+                        'payment_method_allowed': ['paymaya'],
+                    }
+                }
+            },
+        )
+
+        self.assertEqual(payment.display_payment_method, 'Maya')
+
+
+class ReceiptActionRegressionTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='receipt-consumer', password='StrongPass1!')
+        profile = ConsumerProfile.objects.create(
+            user=self.user,
+            full_name='Receipt Consumer',
+            role=ConsumerProfile.Roles.CONSUMER,
+        )
+        self.consumer = Consumer.objects.create(
+            profile=profile,
+            full_name='Receipt Consumer',
+            status=Consumer.Statuses.ACTIVE,
+        )
+        self.billing = BillingRecord.objects.create(
+            consumer=self.consumer,
+            billing_month=date(2026, 4, 1),
+            previous_reading=Decimal('0'),
+            current_reading=Decimal('10'),
+            rate_per_m3=Decimal('20'),
+            amount_paid=Decimal('0'),
+            billing_date=date(2026, 4, 1),
+            due_date=date(2026, 4, 15),
+        )
+        self.payment = Payment.objects.create(
+            consumer=self.consumer,
+            billing=self.billing,
+            covered_month=date(2026, 4, 1),
+            payment_method=Payment.Methods.ONLINE,
+            amount_paid=Decimal('200'),
+            payment_date=date(2026, 4, 10),
+            status=Payment.Statuses.COMPLETED,
+            gateway=Payment.Methods.GCASH,
+            reference_number='pi_123456789',
+        )
+
+    def test_consumer_dashboard_receipts_offer_view_and_print_links(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('consumer_panel'))
+        receipt_url = reverse('payment_receipt', args=[self.payment.id])
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, receipt_url)
+        self.assertContains(response, f'{receipt_url}?print=1')
+        self.assertContains(response, 'Print')
+
+    def test_receipt_page_enables_auto_print_mode(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(f"{reverse('payment_receipt', args=[self.payment.id])}?print=1")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Print Receipt')
+        self.assertContains(response, "shouldPrintOnLoad = true")
+
+
+class ConsumerDashboardMonitoringTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='monitor-consumer', password='StrongPass1!')
+        profile = ConsumerProfile.objects.create(
+            user=self.user,
+            full_name='Monitor Consumer',
+            role=ConsumerProfile.Roles.CONSUMER,
+        )
+        self.consumer = Consumer.objects.create(
+            profile=profile,
+            full_name='Monitor Consumer',
+            status=Consumer.Statuses.ACTIVE,
+        )
+        billing = BillingRecord.objects.create(
+            consumer=self.consumer,
+            billing_month=date(2026, 4, 1),
+            previous_reading=Decimal('0'),
+            current_reading=Decimal('10'),
+            rate_per_m3=Decimal('20'),
+            amount_paid=Decimal('0'),
+            billing_date=date(2026, 4, 1),
+            due_date=date(2026, 4, 15),
+        )
+        self.completed_payment = Payment.objects.create(
+            consumer=self.consumer,
+            billing=billing,
+            covered_month=date(2026, 4, 1),
+            payment_method=Payment.Methods.ONLINE,
+            amount_paid=Decimal('200'),
+            payment_date=date(2026, 4, 10),
+            status=Payment.Statuses.COMPLETED,
+            gateway=Payment.Methods.GCASH,
+            reference_number='pi_completed',
+        )
+        self.pending_payment = Payment.objects.create(
+            consumer=self.consumer,
+            billing=billing,
+            covered_month=date(2026, 4, 1),
+            payment_method=Payment.Methods.ONLINE,
+            amount_paid=Decimal('200'),
+            payment_date=date(2026, 4, 11),
+            status=Payment.Statuses.PENDING,
+            gateway=Payment.Methods.PAYMAYA,
+            gateway_redirect_url='https://checkout.paymongo.com/test-session',
+            reference_number='pi_pending',
+        )
+
+    def test_consumer_dashboard_uses_wallet_checkout_flow_without_method_selector(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('consumer_panel'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, '<label for="id_payment_method">Payment method</label>', html=True)
+        self.assertContains(response, 'Continue to PayMongo')
+        self.assertContains(response, 'Choose E-Wallet')
+
+    def test_consumer_dashboard_splits_receipts_from_payment_monitoring(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('consumer_panel'))
+        receipt_url = reverse('payment_receipt', args=[self.completed_payment.id])
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Payment Monitoring')
+        self.assertContains(response, 'Continue Checkout')
+        self.assertContains(response, 'https://checkout.paymongo.com/test-session')
+        self.assertContains(response, receipt_url)
+        self.assertEqual(response.content.decode().count('pi_completed'), 1)
+        self.assertEqual(response.content.decode().count('pi_pending'), 1)
+
+    def test_consumer_panel_data_only_returns_active_monitoring_rows(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('consumer_panel_data'), HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('Continue Checkout', response.json()['payment_rows_html'])
+        self.assertNotIn('pi_completed', response.json()['payment_rows_html'])
+
+
+class PaymentCheckoutGuideTests(TestCase):
+    def setUp(self):
+        self.admin_user = User.objects.create_user(username='checkout-admin', password='StrongPass1!')
+        ConsumerProfile.objects.create(
+            user=self.admin_user,
+            full_name='Checkout Admin',
+            role=ConsumerProfile.Roles.ADMIN,
+        )
+        self.consumer_user = User.objects.create_user(username='checkout-consumer', password='StrongPass1!')
+        consumer_profile = ConsumerProfile.objects.create(
+            user=self.consumer_user,
+            full_name='Checkout Consumer',
+            role=ConsumerProfile.Roles.CONSUMER,
+        )
+        self.consumer = Consumer.objects.create(
+            profile=consumer_profile,
+            full_name='Checkout Consumer',
+            status=Consumer.Statuses.ACTIVE,
+        )
+        BillingRecord.objects.create(
+            consumer=self.consumer,
+            billing_month=date(2026, 4, 1),
+            previous_reading=Decimal('0'),
+            current_reading=Decimal('10'),
+            rate_per_m3=Decimal('20'),
+            amount_paid=Decimal('0'),
+            billing_date=date(2026, 4, 1),
+            due_date=date(2026, 4, 15),
+        )
+
+    def test_payments_page_contains_checkout_guidance_for_online_methods(self):
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(reverse('payments'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Payment method')
+        self.assertContains(response, 'Choose E-Wallet')
+        self.assertContains(response, 'Save Cash Payment')
+        self.assertContains(response, 'select the E-wallets tab')
+        self.assertContains(response, 'authenticate the payment through OTP or app PIN')
+        self.assertContains(response, 'Selected e-wallet')
+        self.assertNotContains(response, '<label for="id_online_channel">', html=False)
+
+    def test_consumer_dashboard_contains_paymongo_wallet_steps(self):
+        self.client.force_login(self.consumer_user)
+
+        response = self.client.get(reverse('consumer_panel'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'PayMongo Checkout Steps')
+        self.assertContains(response, 'Choose Wallet')
+        self.assertContains(response, 'After the wallet confirms the payment')
+
+
+class StaffPaymongoCheckoutTests(TestCase):
+    def setUp(self):
+        self.admin_user = User.objects.create_user(username='staff-admin', password='StrongPass1!')
+        ConsumerProfile.objects.create(
+            user=self.admin_user,
+            full_name='Staff Admin',
+            role=ConsumerProfile.Roles.ADMIN,
+        )
+        self.consumer_user = User.objects.create_user(username='staff-consumer', password='StrongPass1!')
+        consumer_profile = ConsumerProfile.objects.create(
+            user=self.consumer_user,
+            full_name='Staff Consumer',
+            role=ConsumerProfile.Roles.CONSUMER,
+            contact='+639171234567',
+        )
+        self.consumer = Consumer.objects.create(
+            profile=consumer_profile,
+            full_name='Staff Consumer',
+            contact_number='+639171234567',
+            status=Consumer.Statuses.ACTIVE,
+        )
+        self.billing = BillingRecord.objects.create(
+            consumer=self.consumer,
+            billing_month=date(2026, 4, 1),
+            previous_reading=Decimal('0'),
+            current_reading=Decimal('10'),
+            rate_per_m3=Decimal('20'),
+            amount_paid=Decimal('0'),
+            billing_date=date(2026, 4, 1),
+            due_date=date(2026, 4, 15),
+        )
+
+    def test_staff_online_payment_redirects_to_paymongo_and_stores_reference(self):
+        self.client.force_login(self.admin_user)
+        fake_checkout = {
+            'attached_intent': {
+                'id': 'pi_staff_123',
+                'attributes': {
+                    'status': 'awaiting_payment_method',
+                    'payment_method_allowed': ['gcash'],
+                },
+            },
+            'payment_method': {
+                'attributes': {
+                    'type': 'gcash',
+                }
+            },
+            'redirect_url': 'https://checkout.paymongo.com/staff-session',
+        }
+
+        with patch('billing.views.create_paymongo_ewallet_payment', return_value=fake_checkout):
+            response = self.client.post(
+                reverse('payments'),
+                data={
+                    'consumer': self.consumer.id,
+                    'billing': self.billing.id,
+                    'payment_method': Payment.Methods.ONLINE,
+                    'online_channel': Payment.Methods.GCASH,
+                    'payment_option': Payment.PaymentOptions.FULL,
+                    'amount_paid': '0',
+                    'discount_amount': '0',
+                    'payment_date': '2026-04-10',
+                    'status': Payment.Statuses.COMPLETED,
+                    'reference_number': '',
+                },
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response['Location'], 'https://checkout.paymongo.com/staff-session')
+
+        payment = Payment.objects.get(consumer=self.consumer, payment_method=Payment.Methods.ONLINE)
+        self.assertEqual(payment.status, Payment.Statuses.PENDING)
+        self.assertEqual(payment.gateway, Payment.Methods.GCASH)
+        self.assertEqual(payment.reference_number, 'pi_staff_123')
+        self.assertEqual(payment.gateway_reference, 'pi_staff_123')
+        self.assertEqual(payment.gateway_redirect_url, 'https://checkout.paymongo.com/staff-session')
+
+    def test_staff_can_open_paymongo_processing_page_for_online_payment(self):
+        self.client.force_login(self.admin_user)
+        payment = Payment.objects.create(
+            consumer=self.consumer,
+            billing=self.billing,
+            covered_month=date(2026, 4, 1),
+            payment_method=Payment.Methods.ONLINE,
+            amount_paid=Decimal('200'),
+            payment_date=date(2026, 4, 10),
+            status=Payment.Statuses.PENDING,
+            gateway=Payment.Methods.PAYMAYA,
+            reference_number='pi_staff_456',
+            gateway_reference='pi_staff_456',
+        )
+
+        response = self.client.get(reverse('paymongo_success', args=[payment.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse('paymongo_verify', args=[payment.id]))
+        self.assertContains(response, reverse('payments'))
+
+
+class ReaderPanelPreviewTests(TestCase):
+    def setUp(self):
+        self.reader_user = User.objects.create_user(username='reader-preview', password='StrongPass1!')
+        ConsumerProfile.objects.create(
+            user=self.reader_user,
+            full_name='Reader Preview',
+            role=ConsumerProfile.Roles.READER,
+        )
+        consumer_user = User.objects.create_user(username='preview-consumer', password='StrongPass1!')
+        consumer_profile = ConsumerProfile.objects.create(
+            user=consumer_user,
+            full_name='Preview Consumer',
+            role=ConsumerProfile.Roles.CONSUMER,
+        )
+        self.consumer = Consumer.objects.create(
+            profile=consumer_profile,
+            full_name='Preview Consumer',
+            status=Consumer.Statuses.ACTIVE,
+        )
+        settings_obj = SystemSettings.load()
+        settings_obj.rate_per_m3 = Decimal('27.50')
+        settings_obj.save()
+        MeterReading.objects.create(
+            consumer=self.consumer,
+            reading_date=date(2026, 3, 31),
+            previous_reading=Decimal('0'),
+            current_reading=Decimal('100'),
+        )
+
+    def test_reader_panel_exposes_amount_preview_and_current_rate(self):
+        self.client.force_login(self.reader_user)
+
+        panel_response = self.client.get(reverse('reader_panel'))
+        context_response = self.client.get(
+            reverse('reader_reading_context'),
+            {'consumer': self.consumer.id, 'reading_date': '2026-04-30'},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+
+        self.assertEqual(panel_response.status_code, 200)
+        self.assertContains(panel_response, 'Estimated Amount')
+        self.assertContains(panel_response, 'Billable Usage')
+        self.assertEqual(context_response.status_code, 200)
+        self.assertEqual(Decimal(context_response.json()['previous_reading']), Decimal('100'))
+        self.assertEqual(Decimal(context_response.json()['rate_per_m3']), Decimal('27.50'))
+
+
+class AdminPanelMonthFilterTests(TestCase):
+    def setUp(self):
+        self.admin_user = User.objects.create_user(username='admin-month', password='StrongPass1!')
+        ConsumerProfile.objects.create(
+            user=self.admin_user,
+            full_name='Admin Month',
+            role=ConsumerProfile.Roles.ADMIN,
+        )
+        self.consumer = Consumer.objects.create(
+            full_name='Month Filter Consumer',
+            status=Consumer.Statuses.ACTIVE,
+        )
+        BillingRecord.objects.create(
+            consumer=self.consumer,
+            billing_month=date(2026, 4, 1),
+            previous_reading=Decimal('0'),
+            current_reading=Decimal('10'),
+            rate_per_m3=Decimal('20'),
+            amount_paid=Decimal('0'),
+            billing_date=date(2026, 4, 1),
+            due_date=date(2026, 4, 15),
+        )
+        BillingRecord.objects.create(
+            consumer=self.consumer,
+            billing_month=date(2026, 5, 1),
+            previous_reading=Decimal('10'),
+            current_reading=Decimal('30'),
+            rate_per_m3=Decimal('20'),
+            amount_paid=Decimal('0'),
+            billing_date=date(2026, 5, 1),
+            due_date=date(2026, 5, 15),
+        )
+
+    def test_admin_panel_filters_statistics_by_selected_month(self):
+        self.client.force_login(self.admin_user)
+
+        page_response = self.client.get(reverse('admin_panel'), {'month': '2026-04'})
+        data_response = self.client.get(
+            reverse('admin_panel_data'),
+            {'month': '2026-04'},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+
+        self.assertEqual(page_response.status_code, 200)
+        self.assertEqual(page_response.context['selected_month'], date(2026, 4, 1))
+        self.assertEqual(page_response.context['monthly_billed'], Decimal('200'))
+        self.assertContains(page_response, 'Statistics Month')
+        self.assertEqual(data_response.status_code, 200)
+        self.assertEqual(data_response.json()['monthly_billed'], '200.00')
+        self.assertIn('April 2026', data_response.json()['billing_rows_html'])
+        self.assertNotIn('May 2026', data_response.json()['billing_rows_html'])
+
+    def test_admin_panel_uses_payment_date_for_live_collection_totals(self):
+        april_billing = BillingRecord.objects.get(consumer=self.consumer, billing_month=date(2026, 4, 1))
+        payment = Payment.objects.create(
+            consumer=self.consumer,
+            billing=april_billing,
+            payment_method=Payment.Methods.CASH,
+            payment_option=Payment.PaymentOptions.FULL,
+            amount_paid=Decimal('75'),
+            payment_date=date(2026, 5, 10),
+            covered_month=date(2026, 4, 1),
+            status=Payment.Statuses.COMPLETED,
+        )
+
+        self.client.force_login(self.admin_user)
+        page_response = self.client.get(reverse('admin_panel'), {'month': '2026-05'})
+        data_response = self.client.get(
+            reverse('admin_panel_data'),
+            {'month': '2026-05'},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+
+        self.assertEqual(page_response.status_code, 200)
+        self.assertEqual(page_response.context['monthly_collected'], Decimal('75'))
+        self.assertIn(payment, page_response.context['recent_payments'])
+        self.assertEqual(data_response.status_code, 200)
+        self.assertEqual(data_response.json()['monthly_collected'], '75.00')
+        self.assertIn('Month Filter Consumer', data_response.json()['payment_rows_html'])
+
+
+class SettingsPropagationTests(TestCase):
+    def setUp(self):
+        self.admin_user = User.objects.create_user(username='settings-admin', password='StrongPass1!')
+        ConsumerProfile.objects.create(
+            user=self.admin_user,
+            full_name='Settings Admin',
+            role=ConsumerProfile.Roles.ADMIN,
+        )
+        self.consumer_user = User.objects.create_user(username='settings-consumer', password='StrongPass1!')
+        consumer_profile = ConsumerProfile.objects.create(
+            user=self.consumer_user,
+            full_name='Settings Consumer',
+            role=ConsumerProfile.Roles.CONSUMER,
+        )
+        self.consumer = Consumer.objects.create(
+            profile=consumer_profile,
+            full_name='Settings Consumer',
+            status=Consumer.Statuses.ACTIVE,
+        )
+        self.billing = BillingRecord.objects.create(
+            consumer=self.consumer,
+            billing_month=date(2026, 4, 1),
+            previous_reading=Decimal('0'),
+            current_reading=Decimal('10'),
+            rate_per_m3=Decimal('20'),
+            amount_paid=Decimal('0'),
+            billing_date=date(2026, 4, 5),
+            due_date=date(2026, 4, 20),
+        )
+
+    def test_settings_changes_recalculate_existing_billings_across_panels(self):
+        self.client.force_login(self.admin_user)
+
+        response = self.client.post(
+            reverse('payment_settings'),
+            data={
+                'rate_per_m3': '35.00',
+                'billing_due_days': '10',
+                'enable_cash_payments': 'on',
+                'enable_online_payments': 'on',
+                'notify_by_email': 'on',
+                'payment_gateway_notes': 'Updated panel settings',
+            },
+            follow=True,
+        )
+
+        self.billing.refresh_from_db()
+        self.assertEqual(self.billing.rate_per_m3, Decimal('35.00'))
+        self.assertEqual(self.billing.total_amount, Decimal('350.00'))
+        self.assertEqual(self.billing.due_date, date(2026, 4, 15))
+        self.assertContains(response, 'recalculated across all panels')
+
+        self.client.force_login(self.consumer_user)
+        consumer_response = self.client.get(reverse('consumer_panel'))
+        self.assertEqual(consumer_response.context['billing_records'][0].total_amount, Decimal('350.00'))
+
+        self.client.force_login(self.admin_user)
+        admin_response = self.client.get(reverse('admin_panel'), {'month': '2026-04'})
+        self.assertEqual(admin_response.context['monthly_billed'], Decimal('350.00'))

@@ -1,15 +1,23 @@
 {% for payment in payments %}
     <tr>
-        <td>{{ payment.payment_date }}</td>
-        <td>{{ payment.display_covered_month|date:'F Y' }}</td>
-        <td>{{ payment.get_payment_method_display }}</td>
-        <td>{{ payment.get_payment_option_display }}</td>
-        <td>&#8369;{{ payment.amount_paid }}</td>
-        <td>&#8369;{{ payment.discount_amount }}</td>
-        <td>{{ payment.get_status_display }}</td>
-        <td>{% if payment.payment_method == 'cash' %}-{% else %}{{ payment.reference_number|default:payment.gateway_reference|default:'-' }}{% endif %}</td>
-        <td><a href="{% url 'payment_receipt' payment.id %}" class="btn secondary">View</a></td>
+        <td data-label="Date">{{ payment.payment_date }}</td>
+        <td data-label="Month Covered">{{ payment.display_covered_month|date:'F Y' }}</td>
+        <td data-label="Method">{{ payment.display_payment_method }}</td>
+        <td data-label="Option">{{ payment.get_payment_option_display }}</td>
+        <td data-label="Paid">&#8369;{{ payment.amount_paid }}</td>
+        <td data-label="Discount">&#8369;{{ payment.discount_amount }}</td>
+        <td data-label="Status">{{ payment.get_status_display }}</td>
+        <td data-label="Reference">{{ payment.display_reference_number }}</td>
+        <td data-label="Action">
+            {% if payment.status == 'pending' and payment.gateway_redirect_url %}
+                <a href="{{ payment.gateway_redirect_url }}" class="btn secondary">Continue Checkout</a>
+            {% elif payment.status == 'failed' %}
+                <span class="muted">Submit a new payment to retry.</span>
+            {% else %}
+                <span class="muted">Waiting for status update</span>
+            {% endif %}
+        </td>
     </tr>
 {% empty %}
-    <tr><td colspan="9" class="empty-state">No payment submissions available.</td></tr>
+    <tr><td colspan="9" class="empty-state">No payment items to monitor.</td></tr>
 {% endfor %}
