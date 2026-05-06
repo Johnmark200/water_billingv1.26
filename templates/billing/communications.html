@@ -16,7 +16,7 @@
     <div class="form-card" style="margin: 0; max-width: none;">
         <h2 class="page-title">Send SMS Blast</h2>
         <p class="muted">Send bulk SMS updates to selected consumer groups through the configured SMS provider.</p>
-        <form method="post">
+        <form method="post" data-transaction-form data-transaction-title="Sending SMS Blast" data-transaction-message="Sending the SMS blast. Please wait until the operation is complete.">
             {% csrf_token %}
             <input type="hidden" name="action" value="sms">
             {{ sms_form.as_p }}
@@ -26,7 +26,7 @@
     <div class="form-card" style="margin: 0; max-width: none;">
         <h2 class="page-title">Send Email Blast</h2>
         <p class="muted">Use this form to send instant email updates to the same consumer audiences used by SMS blasts. Each send is logged below.</p>
-        <form method="post">
+        <form method="post" data-transaction-form data-transaction-title="Sending Email Blast" data-transaction-message="Sending the email blast. Please wait until the operation is complete.">
             {% csrf_token %}
             <input type="hidden" name="action" value="email">
             {{ email_form.as_p }}

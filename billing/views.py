@@ -1,13 +1,16 @@
 import csv
+import secrets
 from io import BytesIO
 from datetime import datetime, timedelta
 from decimal import Decimal
+import random
 
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth import logout
+from django.contrib.auth import logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView
+from django.core.cache import cache
 from django.db.models import Q, Sum
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -26,6 +29,8 @@ from .forms import (
     LoginForm,
     MeterReadingForm,
     MeterReadingUpdateForm,
+    PasswordChangeOTPRequestForm,
+    PasswordChangeOTPVerifyForm,
     PortalAccountForm,
     ProfileUpdateForm,
     SignUpForm,
@@ -68,9 +73,15 @@ from .services import (
     send_sms_blast,
     send_test_email,
     send_test_sms,
+    send_user_security_otp,
     sync_existing_billings_with_settings,
     update_payment_status,
 )
+
+
+PASSWORD_CHANGE_OTP_SESSION_KEY = 'password_change_otp_token'
+PASSWORD_CHANGE_OTP_CACHE_PREFIX = 'password_change_otp:'
+PASSWORD_CHANGE_OTP_TIMEOUT = 600
 
 
 def get_selected_month(month_value):
@@ -80,6 +91,33 @@ def get_selected_month(month_value):
         except ValueError:
             pass
     return timezone.localdate().replace(day=1)
+
+
+def _password_change_cache_key(token):
+    return f'{PASSWORD_CHANGE_OTP_CACHE_PREFIX}{token}'
+
+
+def _mask_delivery_destination(channel, value):
+    raw_value = str(value or '').strip()
+    if channel == 'email':
+        local_part, _, domain = raw_value.partition('@')
+        if not domain:
+            return raw_value
+        masked_local = f'{local_part[:2]}***' if local_part else '***'
+        return f'{masked_local}@{domain}'
+    digits = ''.join(character for character in raw_value if character.isdigit())
+    if len(digits) >= 4:
+        return f'***{digits[-4:]}'
+    return raw_value or 'configured account contact'
+
+
+def _otp_destination_for_user(user, channel):
+    profile = get_user_profile(user, create=True)
+    if channel == 'email':
+        return (user.email or (profile.email if profile else '')).strip()
+    if channel == 'sms':
+        return (profile.contact if profile else '').strip()
+    return ''
 
 
 def get_selected_date(date_value, default):
@@ -299,6 +337,7 @@ def _build_soa_transactions(selected_month=None, consumer=None, start_date=None,
                 ),
                 'debit': bill.total_amount,
                 'credit': Decimal('0'),
+                'balance_effect': bill.total_amount,
                 'source': bill,
             }
         )
@@ -306,6 +345,8 @@ def _build_soa_transactions(selected_month=None, consumer=None, start_date=None,
         is_completed = payment.status == Payment.Statuses.COMPLETED
         covered_month = payment.display_covered_month
         covered_label = covered_month.strftime('%B %Y') if covered_month else 'the selected billing month'
+        payment_amount = payment.amount_credited if is_completed else Decimal('0')
+        is_cash_payment = payment.payment_method == Payment.Methods.CASH
         transactions.append(
             {
                 'date': payment.payment_date,
@@ -314,8 +355,9 @@ def _build_soa_transactions(selected_month=None, consumer=None, start_date=None,
                     f'{payment.consumer.full_name} - {payment.display_payment_method} payment '
                     f'for {covered_label} ({payment.get_status_display()})'
                 ),
-                'debit': Decimal('0'),
-                'credit': payment.amount_credited if is_completed else Decimal('0'),
+                'debit': payment_amount if is_cash_payment else Decimal('0'),
+                'credit': payment_amount if not is_cash_payment else Decimal('0'),
+                'balance_effect': Decimal('0') - payment_amount,
                 'source': payment,
             }
         )
@@ -455,7 +497,7 @@ def _build_soa_pdf(selected_month=None, consumer=None, start_date=None, end_date
             if y > 1280:
                 image, draw, y = add_continuation_page(page_number + 1)
                 page_number += 1
-            balance += item['debit'] - item['credit']
+            balance += item.get('balance_effect', item['debit'] - item['credit'])
             draw.text((columns[0][1], y), f"{item['date']:%m/%d/%y}", font=font_small, fill=ink)
             draw.text((columns[1][1], y), str(item['reference'])[:16], font=font_small, fill=ink)
             _draw_wrapped_text(draw, (columns[2][1], y), item['description'], font_small, ink, columns[2][2], line_gap=2)
@@ -465,16 +507,14 @@ def _build_soa_pdf(selected_month=None, consumer=None, start_date=None, end_date
             y += 48
             draw.line((left, y - 10, right, y - 10), fill='#eef2f7', width=1)
 
-    total_debit = sum((item['debit'] for item in transactions), Decimal('0'))
-    total_credit = sum((item['credit'] for item in transactions), Decimal('0'))
-    current_balance = total_debit - total_credit
-    amount_overdue = sum((bill.amount_due for bill in billings if _has_unpaid_overdue_balance(bill)), Decimal('0'))
     soa_summary = _build_soa_summary(billings, payments)
+    overall_total_paid = soa_summary['cash_payments_total'] + soa_summary['online_payments_total']
+    amount_overdue = sum((bill.amount_due for bill in billings if _has_unpaid_overdue_balance(bill)), Decimal('0'))
 
     summary_x = right - 360
     summary_y = max(y + 30, 1200)
-    draw.text((summary_x, summary_y), 'Current Balance:', font=font_small_bold, fill=ink)
-    draw.text((summary_x + 215, summary_y), _money(current_balance), font=font_small_bold, fill=ink)
+    draw.text((summary_x, summary_y), 'Overall Total Paid:', font=font_small_bold, fill=ink)
+    draw.text((summary_x + 215, summary_y), _money(overall_total_paid), font=font_small_bold, fill=ink)
     draw.line((summary_x + 210, summary_y + 32, right, summary_y + 32), fill=ink, width=2)
     draw.text((summary_x, summary_y + 50), 'Amount Overdue:', font=font_small_bold, fill=ink)
     draw.text((summary_x + 215, summary_y + 50), _money(amount_overdue), font=font_small_bold, fill=ink)
@@ -625,6 +665,7 @@ def _build_profile_context(user):
         'payments': payments,
         'meter_readings': meter_readings,
         'show_all_consumer_transactions': show_all_consumer_transactions,
+        'show_profile_transactions': role != ConsumerProfile.Roles.READER,
     }
 
 
@@ -895,6 +936,87 @@ def signup_view(request):
 def logout_view(request):
     logout(request)
     return render(request, 'registration/logged_out.html')
+
+
+@login_required
+def password_change_request_view(request):
+    if request.method == 'POST':
+        form = PasswordChangeOTPRequestForm(request.user, request.POST)
+        if form.is_valid():
+            otp_channel = form.cleaned_data['otp_channel']
+            otp_code = f'{random.randint(0, 999999):06d}'
+            destination = _otp_destination_for_user(request.user, otp_channel)
+            notification = send_user_security_otp(request.user, otp_channel, otp_code)
+
+            if notification.status != Notification.Statuses.SENT:
+                messages.error(
+                    request,
+                    notification.response_message or f'Unable to send the OTP via {otp_channel.upper()}.',
+                )
+            else:
+                token = secrets.token_urlsafe(24)
+                cache.set(
+                    _password_change_cache_key(token),
+                    {
+                        'user_id': request.user.id,
+                        'new_password': form.cleaned_data['new_password1'],
+                        'otp_code': otp_code,
+                        'channel': otp_channel,
+                        'destination': destination,
+                    },
+                    PASSWORD_CHANGE_OTP_TIMEOUT,
+                )
+                request.session[PASSWORD_CHANGE_OTP_SESSION_KEY] = token
+                request.session.modified = True
+                return redirect('password_change_verify')
+    else:
+        form = PasswordChangeOTPRequestForm(request.user, initial={'otp_channel': 'email'})
+
+    return render(request, 'registration/password_change_form.html', {'form': form})
+
+
+@login_required
+def password_change_verify_view(request):
+    token = request.session.get(PASSWORD_CHANGE_OTP_SESSION_KEY, '')
+    payload = cache.get(_password_change_cache_key(token)) if token else None
+
+    if not token or not payload or payload.get('user_id') != request.user.id:
+        messages.error(request, 'Your password change request expired. Please start again.')
+        request.session.pop(PASSWORD_CHANGE_OTP_SESSION_KEY, None)
+        return redirect('password_change')
+
+    destination_hint = _mask_delivery_destination(payload.get('channel'), payload.get('destination'))
+
+    if request.method == 'POST':
+        form = PasswordChangeOTPVerifyForm(request.POST)
+        if form.is_valid():
+            if form.cleaned_data['otp_code'] != payload.get('otp_code'):
+                form.add_error('otp_code', 'The OTP code is incorrect.')
+            else:
+                request.user.set_password(payload['new_password'])
+                request.user.save(update_fields=['password'])
+                update_session_auth_hash(request, request.user)
+                cache.delete(_password_change_cache_key(token))
+                request.session.pop(PASSWORD_CHANGE_OTP_SESSION_KEY, None)
+                messages.success(request, 'Password changed successfully.')
+                return redirect('password_change_done')
+    else:
+        form = PasswordChangeOTPVerifyForm()
+
+    return render(
+        request,
+        'registration/password_change_verify.html',
+        {
+            'form': form,
+            'otp_channel': payload.get('channel'),
+            'destination_hint': destination_hint,
+        },
+    )
+
+
+@login_required
+def password_change_done_view(request):
+    return render(request, 'registration/password_change_done.html')
 
 
 @login_required

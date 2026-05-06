@@ -1289,38 +1289,15 @@
                 }
             }
 
-            // Payment guide modal functionality
+            // Remove the payment guide entry point from the payment monitoring page.
             const guideModal = document.getElementById('payment-guide-modal');
             const guideLink = document.getElementById('payment-guide-link');
-            const guideCloseButton = document.getElementById('payment-guide-close-button');
-            const guideUnderstoodButton = document.getElementById('payment-guide-understood-button');
-
-            function openPaymentGuide() {
-                if (guideModal) {
-                    guideModal.classList.add('visible');
-                    guideModal.setAttribute('aria-hidden', 'false');
-                }
+            if (guideLink) {
+                const guideRow = guideLink.closest('p');
+                if (guideRow) guideRow.remove();
             }
-
-            function closePaymentGuide() {
-                if (guideModal) {
-                    guideModal.classList.remove('visible');
-                    guideModal.setAttribute('aria-hidden', 'true');
-                }
-            }
-
-            if (guideLink) guideLink.addEventListener('click', function(e) {
-                e.preventDefault();
-                openPaymentGuide();
-            });
-
-            if (guideCloseButton) guideCloseButton.addEventListener('click', closePaymentGuide);
-            if (guideUnderstoodButton) guideUnderstoodButton.addEventListener('click', closePaymentGuide);
-
             if (guideModal) {
-                guideModal.addEventListener('click', function(event) {
-                    if (event.target === guideModal) closePaymentGuide();
-                });
+                guideModal.remove();
             }
 
             const consumerField = document.getElementById('id_consumer');

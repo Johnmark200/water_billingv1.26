@@ -1032,6 +1032,54 @@ class AuthAndBrandingRegressionTests(TestCase):
         self.assertContains(response, 'Tabuan Water Billing System')
         self.assertContains(response, 'tabuan-logo.png')
 
+    @patch('billing.views.send_user_security_otp')
+    def test_password_change_otp_updates_only_logged_in_account(self, mocked_send_otp):
+        self.profile.email = 'brand@example.com'
+        self.profile.contact = '+639171234567'
+        self.profile.save(update_fields=['email', 'contact'])
+        self.user.email = 'brand@example.com'
+        self.user.save(update_fields=['email'])
+        other_user = User.objects.create_user(username='other-user', password='OtherPass1!')
+        ConsumerProfile.objects.create(
+            user=other_user,
+            full_name='Other User',
+            email='other@example.com',
+            contact='+639171234568',
+            role=ConsumerProfile.Roles.CONSUMER,
+        )
+        mocked_send_otp.return_value = MagicMock(status=Notification.Statuses.SENT, response_message='OTP sent')
+
+        self.client.force_login(self.user)
+        request_response = self.client.post(
+            reverse('password_change'),
+            data={
+                'current_password': 'StrongPass1!',
+                'new_password1': 'BrandNewPass1!',
+                'new_password2': 'BrandNewPass1!',
+                'otp_channel': 'email',
+            },
+        )
+
+        self.assertRedirects(request_response, reverse('password_change_verify'))
+        session = self.client.session
+        token = session.get('password_change_otp_token')
+        self.assertTrue(token)
+
+        from django.core.cache import cache
+        payload = cache.get(f'password_change_otp:{token}')
+        self.assertIsNotNone(payload)
+
+        verify_response = self.client.post(
+            reverse('password_change_verify'),
+            data={'otp_code': payload['otp_code']},
+        )
+
+        self.assertRedirects(verify_response, reverse('password_change_done'))
+        self.user.refresh_from_db()
+        other_user.refresh_from_db()
+        self.assertTrue(self.user.check_password('BrandNewPass1!'))
+        self.assertTrue(other_user.check_password('OtherPass1!'))
+
 
 class OnlinePaymentMethodDisplayTests(TestCase):
     def setUp(self):

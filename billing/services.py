@@ -424,6 +424,112 @@ def _log_outbound_notification(channel, title, message, status, consumer=None, r
     )
 
 
+def send_user_security_otp(user, channel, otp_code):
+    profile = ConsumerProfile.objects.filter(user=user).first()
+    title = 'Password Change OTP'
+    message = f'Your Tabuan Water Billing System verification code is {otp_code}. It expires in 10 minutes.'
+
+    if channel == 'email':
+        email_address = normalize_email_address((user.email or (profile.email if profile else '')).strip())
+        if not email_address or not is_valid_email_address(email_address):
+            return _log_outbound_notification(
+                Notification.Channels.EMAIL,
+                title,
+                message,
+                Notification.Statuses.FAILED,
+                recipient=user,
+                response_message='No valid email address is configured for this account.',
+                notification_type=Notification.Types.GENERAL,
+            )
+
+        config_error = _email_configuration_error()
+        if config_error:
+            return _log_outbound_notification(
+                Notification.Channels.EMAIL,
+                title,
+                message,
+                Notification.Statuses.FAILED,
+                recipient=user,
+                response_message=config_error,
+                notification_type=Notification.Types.GENERAL,
+            )
+
+        try:
+            provider = email_provider_name()
+            if provider == 'sendgrid':
+                response_message = _send_via_sendgrid(email_address, title, message)
+            elif provider == 'smtp':
+                response_message = _send_via_smtp(email_address, title, message)
+            else:
+                raise ValueError(
+                    'EMAIL_DELIVERY_PROVIDER is set to console. Change it to sendgrid or smtp in the .env file for live email delivery.'
+                )
+            status = Notification.Statuses.SENT
+        except Exception as exc:  # pragma: no cover - environment-specific
+            status = Notification.Statuses.FAILED
+            response_message = _truncate_response_text(str(exc))
+
+        return _log_outbound_notification(
+            Notification.Channels.EMAIL,
+            title,
+            message,
+            status,
+            recipient=user,
+            response_message=response_message,
+            notification_type=Notification.Types.GENERAL,
+        )
+
+    if channel == 'sms':
+        phone_number = normalize_phone_number(profile.contact if profile else '')
+        if not phone_number or not is_e164_phone_number(phone_number):
+            return _log_outbound_notification(
+                Notification.Channels.SMS,
+                title,
+                message,
+                Notification.Statuses.FAILED,
+                recipient=user,
+                response_message='No valid SMS contact number is configured for this account.',
+                notification_type=Notification.Types.GENERAL,
+            )
+
+        provider = sms_provider_name()
+        try:
+            if provider == 'sms_api_ph':
+                response_message = _send_via_sms_api_ph(phone_number, message)
+                status = Notification.Statuses.SENT
+            elif provider == 'twilio':
+                test_result = send_test_sms(phone_number, message)
+                response_message = test_result.response_message
+                status = test_result.status
+            else:
+                raise ValueError(
+                    f'Unsupported SMS provider "{provider}". Set SMS_DELIVERY_PROVIDER to sms_api_ph or twilio.'
+                )
+        except Exception as exc:  # pragma: no cover - environment-specific
+            status = Notification.Statuses.FAILED
+            response_message = _truncate_response_text(str(exc))
+
+        return _log_outbound_notification(
+            Notification.Channels.SMS,
+            title,
+            message,
+            status,
+            recipient=user,
+            response_message=response_message,
+            notification_type=Notification.Types.GENERAL,
+        )
+
+    return _log_outbound_notification(
+        Notification.Channels.IN_APP,
+        title,
+        message,
+        Notification.Statuses.FAILED,
+        recipient=user,
+        response_message='Unsupported OTP delivery channel.',
+        notification_type=Notification.Types.GENERAL,
+    )
+
+
 def _send_via_sendgrid(email_address, subject, message):
     api_key = getattr(settings, 'SENDGRID_API_KEY', '')
     from_email = getattr(settings, 'SENDGRID_FROM_EMAIL', '') or getattr(settings, 'DEFAULT_FROM_EMAIL', '')

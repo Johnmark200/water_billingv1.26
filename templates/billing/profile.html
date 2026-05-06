@@ -23,6 +23,7 @@
     </div>
 </section>
 
+{% if show_profile_transactions %}
 <section class="page-wrap grid-3">
     <div class="table-card">
         <h3>{% if show_all_consumer_transactions %}Recent Consumer Billing{% else %}Recent Billing{% endif %}</h3>
@@ -100,6 +101,7 @@
         </table>
     </div>
 </section>
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}

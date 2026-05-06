@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Water Billing System{% endblock %}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <script>
         (function () {
             try {
@@ -157,6 +158,49 @@
             gap: 12px;
         }
 
+        .header-utility-nav {
+            display: inline-flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 6px;
+            padding: 8px 14px;
+            border-radius: 999px;
+            background: linear-gradient(90deg, rgba(15, 118, 110, 0.88), rgba(14, 165, 233, 0.72));
+            color: #fff;
+            box-shadow: var(--shadow);
+        }
+
+        .header-utility-nav a,
+        .header-utility-nav button,
+        .header-utility-nav span {
+            color: inherit;
+            font-size: 12px;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .header-utility-nav a,
+        .header-utility-nav button {
+            background: transparent;
+            border: 0;
+            padding: 0;
+            cursor: pointer;
+        }
+
+        .header-utility-nav a:hover,
+        .header-utility-nav button:hover {
+            text-decoration: underline;
+            text-underline-offset: 3px;
+        }
+
+        .header-utility-separator {
+            opacity: 0.72;
+        }
+
+        .header-utility-user {
+            font-weight: 700;
+        }
+
         .brand-block {
             display: flex;
             flex-direction: column;
@@ -240,6 +284,32 @@
             font-size: 13px;
         }
 
+        .theme-toggle.compact-theme-toggle {
+            min-width: auto;
+            width: 38px;
+            height: 38px;
+            padding: 0;
+            border-radius: 999px;
+            background: rgba(24, 54, 66, 0.08);
+            box-shadow: none;
+            justify-content: center;
+        }
+
+        .theme-toggle.compact-theme-toggle .theme-toggle-track,
+        .theme-toggle.compact-theme-toggle .theme-toggle-copy {
+            display: none;
+        }
+
+        .theme-toggle-icon {
+            display: none;
+            font-size: 18px;
+            line-height: 1;
+        }
+
+        .theme-toggle.compact-theme-toggle .theme-toggle-icon {
+            display: inline-flex;
+        }
+
         .top-nav {
             display: flex;
             gap: 10px;
@@ -277,6 +347,10 @@
         .nav-link-button {
             border: 0;
             cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
         }
 
         .role-chip {
@@ -375,6 +449,28 @@
             transform: translateX(2px);
         }
 
+        .sidebar-link-main {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 0;
+        }
+
+        .sidebar-link-icon,
+        .sidebar-sublink-icon,
+        .nav-link-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            font-size: 16px;
+            flex: 0 0 20px;
+        }
+
+        .sidebar-link-label {
+            min-width: 0;
+        }
+
         .sidebar-link-stack {
             display: flex;
             flex-direction: column;
@@ -382,6 +478,9 @@
         }
 
         .sidebar-sublink {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
             margin-left: 14px;
             padding: 8px 12px;
             border-radius: 12px;
@@ -850,6 +949,11 @@
                 flex-wrap: wrap;
                 justify-content: flex-end;
             }
+
+            .header-utility-nav {
+                width: 100%;
+                justify-content: center;
+            }
         }
 
         @media (max-width: 960px) {
@@ -964,26 +1068,42 @@
                 <img src="{% static 'legacy_img/tabuan-logo.png' %}" alt="Tabuan Water Billing System Logo" class="brand-logo">
                 <div class="brand-block">
                     <strong>Tabuan Water Billing</strong>
-                    <span>System v1.26 | 2026 | Created by Omale J. Ohn</span>
                 </div>
             </div>
             <div class="header-actions">
-                <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Switch theme">
-                    <span class="theme-toggle-track" aria-hidden="true">
-                        <span class="theme-toggle-knob"></span>
-                    </span>
-                    <span class="theme-toggle-copy">
-                        <span>Theme</span>
-                        <strong id="theme-toggle-label">Light</strong>
-                    </span>
-                </button>
-                <nav class="top-nav">
-                    {% if not user.is_authenticated %}
+                {% if user.is_authenticated %}
+                    <div class="header-utility-nav">
+                        <span>Welcome,</span>
+                        <span class="header-utility-user">{{ user.username }}</span>
+                        <span class="header-utility-separator">/</span>
+                        <a href="{% url 'password_change' %}">Change Password</a>
+                    </div>
+                    <button type="button" class="theme-toggle compact-theme-toggle" id="theme-toggle" aria-label="Switch theme">
+                        <i class="bi bi-moon-stars-fill theme-toggle-icon" aria-hidden="true"></i>
+                        <span class="theme-toggle-track" aria-hidden="true">
+                            <span class="theme-toggle-knob"></span>
+                        </span>
+                        <span class="theme-toggle-copy">
+                            <span>Theme</span>
+                            <strong id="theme-toggle-label">Light</strong>
+                        </span>
+                    </button>
+                {% else %}
+                    <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Switch theme">
+                        <span class="theme-toggle-track" aria-hidden="true">
+                            <span class="theme-toggle-knob"></span>
+                        </span>
+                        <span class="theme-toggle-copy">
+                            <span>Theme</span>
+                            <strong id="theme-toggle-label">Light</strong>
+                        </span>
+                    </button>
+                    <nav class="top-nav">
                         <a href="{% url 'home' %}">Home</a>
                         <a href="{% url 'login' %}">Login</a>
                         <a href="{% url 'signup' %}">Sign Up</a>
-                    {% endif %}
-                </nav>
+                    </nav>
+                {% endif %}
             </div>
         </div>
     </header>
@@ -1001,13 +1121,19 @@
                         {% for item in navigation_items %}
                             <div class="sidebar-link-stack">
                                 <a href="{% url item.url_name %}" class="sidebar-link {% if item.active %}active{% endif %}">
-                                    <span>{{ item.label }}</span>
+                                    <span class="sidebar-link-main">
+                                        <i class="sidebar-link-icon bi {{ item.icon|default:'bi-circle' }}" aria-hidden="true"></i>
+                                        <span class="sidebar-link-label">{{ item.label }}</span>
+                                    </span>
                                     {% if item.url_name == 'notifications' and unread_notifications %}
                                         <span class="badge">{{ unread_notifications }}</span>
                                     {% endif %}
                                 </a>
                                 {% if item.url_name == 'profile' %}
-                                    <a href="{% url 'profile' %}" class="sidebar-sublink {% if current_url_name == 'profile' %}active{% endif %}">Update Profile</a>
+                                    <a href="{% url 'profile' %}" class="sidebar-sublink {% if current_url_name == 'profile' %}active{% endif %}">
+                                        <i class="sidebar-sublink-icon bi bi-pencil-square" aria-hidden="true"></i>
+                                        <span>Update Profile</span>
+                                    </a>
                                 {% endif %}
                             </div>
                         {% endfor %}
@@ -1015,7 +1141,10 @@
                     <div class="sidebar-footer">
                         <form method="post" action="{% url 'logout' %}" class="nav-inline-form" style="width: 100%;">
                             {% csrf_token %}
-                            <button type="submit" class="nav-link-button" style="width: 100%;">Logout</button>
+                            <button type="submit" class="nav-link-button" style="width: 100%;">
+                                <i class="nav-link-icon bi bi-box-arrow-right" aria-hidden="true"></i>
+                                <span>Logout</span>
+                            </button>
                         </form>
                     </div>
                 </div>
@@ -1138,7 +1267,9 @@
                         if (button.tagName === 'BUTTON') button.dataset.originalText = button.textContent;
                         if (button.tagName === 'BUTTON') button.textContent = 'Processing...';
                     }
-                    window.showTransactionOverlay('Processing Transaction', 'Submitting your request. Please wait.', 35);
+                    const title = form.dataset.transactionTitle || 'Processing Transaction';
+                    const message = form.dataset.transactionMessage || 'Submitting your request. Please wait.';
+                    window.showTransactionOverlay(title, message, 35);
                 });
             });
         })();

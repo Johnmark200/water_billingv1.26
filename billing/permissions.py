@@ -101,42 +101,42 @@ def get_dashboard_url_for_user(user):
 
 def build_navigation_items(role):
     items = [
-        {'label': 'Dashboard', 'url_name': get_dashboard_route(role)},
+        {'label': 'Dashboard', 'url_name': get_dashboard_route(role), 'icon': 'bi-speedometer2'},
     ]
 
     if role in ADMIN_ROLES:
-        items.append({'label': 'Consumers', 'url_name': 'consumers'})
+        items.append({'label': 'Consumers', 'url_name': 'consumers', 'icon': 'bi-people'})
 
     if role in {ConsumerProfile.Roles.ADMIN, ConsumerProfile.Roles.SECRETARY, ConsumerProfile.Roles.TREASURER}:
         items.extend(
             [
-                {'label': 'Billing', 'url_name': 'billing'},
-                {'label': 'Payments', 'url_name': 'payments'},
+                {'label': 'Billing', 'url_name': 'billing', 'icon': 'bi-receipt-cutoff'},
+                {'label': 'Payments', 'url_name': 'payments', 'icon': 'bi-cash-coin'},
             ]
         )
 
     if role in REPORT_ROLES:
-        items.append({'label': 'Reports', 'url_name': 'reports'})
+        items.append({'label': 'Reports', 'url_name': 'reports', 'icon': 'bi-bar-chart-line'})
 
     if role == ConsumerProfile.Roles.ADMIN:
         items.extend(
             [
-                {'label': 'Communications', 'url_name': 'communications'},
-                {'label': 'Settings', 'url_name': 'payment_settings'},
+                {'label': 'Communications', 'url_name': 'communications', 'icon': 'bi-megaphone'},
+                {'label': 'Settings', 'url_name': 'payment_settings', 'icon': 'bi-gear'},
             ]
         )
 
     if role == ConsumerProfile.Roles.SECRETARY:
-        items.append({'label': 'Communications', 'url_name': 'communications'})
+        items.append({'label': 'Communications', 'url_name': 'communications', 'icon': 'bi-megaphone'})
 
     if role in READING_ENTRY_ROLES:
-        items.append({'label': 'Meter Readings', 'url_name': 'reader_panel'})
+        items.append({'label': 'Meter Readings', 'url_name': 'reader_panel', 'icon': 'bi-speedometer'})
 
     if role == ConsumerProfile.Roles.CONSUMER:
-        items.append({'label': 'Account Center', 'url_name': 'account_center'})
-        items.append({'label': 'Notifications', 'url_name': 'notifications'})
+        items.append({'label': 'Account Center', 'url_name': 'account_center', 'icon': 'bi-person-badge'})
+        items.append({'label': 'Notifications', 'url_name': 'notifications', 'icon': 'bi-bell'})
 
-    items.append({'label': 'Profile', 'url_name': 'profile'})
+    items.append({'label': 'Profile', 'url_name': 'profile', 'icon': 'bi-person-circle'})
     return items
 
 

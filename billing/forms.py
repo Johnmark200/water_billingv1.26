@@ -62,6 +62,79 @@ class LoginForm(AuthenticationForm):
     password = forms.CharField(widget=forms.PasswordInput(attrs={'class': 'form-control'}))
 
 
+class PasswordChangeOTPRequestForm(forms.Form):
+    OTP_CHANNEL_CHOICES = (
+        ('email', 'Email OTP'),
+        ('sms', 'SMS OTP'),
+    )
+
+    current_password = forms.CharField(widget=forms.PasswordInput)
+    new_password1 = forms.CharField(widget=forms.PasswordInput)
+    new_password2 = forms.CharField(widget=forms.PasswordInput)
+    otp_channel = forms.ChoiceField(choices=OTP_CHANNEL_CHOICES, widget=forms.RadioSelect)
+
+    def __init__(self, user, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.user = user
+        self.profile = ConsumerProfile.objects.filter(user=user).first()
+
+    def clean_current_password(self):
+        current_password = self.cleaned_data.get('current_password', '')
+        if not self.user.check_password(current_password):
+            raise forms.ValidationError('Current password is incorrect.')
+        return current_password
+
+    def clean_otp_channel(self):
+        channel = self.cleaned_data.get('otp_channel', '')
+        if channel == 'email':
+            email = (self.user.email or (self.profile.email if self.profile else '')).strip()
+            if not email or not is_valid_email_address(email):
+                raise forms.ValidationError('No valid email address is available for this account.')
+        elif channel == 'sms':
+            phone = normalize_phone_number(self.profile.contact if self.profile else '')
+            if not phone or not is_e164_phone_number(phone):
+                raise forms.ValidationError('No valid SMS contact number is available for this account.')
+        return channel
+
+    def clean(self):
+        cleaned_data = super().clean()
+        password1 = cleaned_data.get('new_password1', '')
+        password2 = cleaned_data.get('new_password2', '')
+        email = self.user.email or (self.profile.email if self.profile else '')
+
+        if password1 and password2 and password1 != password2:
+            self.add_error('new_password2', 'Passwords do not match. Please try again.')
+
+        if password1 and self.user.check_password(password1):
+            self.add_error('new_password1', 'Your new password must be different from your current password.')
+
+        if password1:
+            issues = collect_password_strength_issues(password1, username=self.user.username, email=email)
+            if issues:
+                self.add_error('new_password1', 'Your password is too weak. Please use a stronger password.')
+                for issue in issues:
+                    self.add_error('new_password1', issue)
+
+        if password1:
+            try:
+                password_validation.validate_password(password1, user=self.user)
+            except ValidationError as exc:
+                for message in exc.messages:
+                    self.add_error('new_password1', message)
+
+        return cleaned_data
+
+
+class PasswordChangeOTPVerifyForm(forms.Form):
+    otp_code = forms.CharField(max_length=6, min_length=6)
+
+    def clean_otp_code(self):
+        otp_code = ''.join(character for character in self.cleaned_data.get('otp_code', '') if character.isdigit())
+        if len(otp_code) != 6:
+            raise forms.ValidationError('Enter the 6-digit OTP code.')
+        return otp_code
+
+
 class SignUpForm(UserCreationForm):
     full_name = forms.CharField(max_length=255)
     email = forms.EmailField(required=False)

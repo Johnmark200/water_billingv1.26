@@ -34,6 +34,10 @@
         min-height: auto;
     }
 
+    .reader-hidden {
+        display: none !important;
+    }
+
     @media (min-width: 961px) {
         .grid-2,
         .grid-3 {
@@ -93,13 +97,13 @@
 </section>
 
 <section class="page-wrap grid-2 reader-panel-grid">
-    <div class="form-card">
+    <div class="form-card" id="reader-submit-card">
         <h3>Submit Meter Reading</h3>
         <div id="reader-reading-form-container">
             {% include 'billing/includes/reader_reading_form.html' %}
         </div>
     </div>
-    <div class="form-card">
+    <div class="form-card" id="reader-edit-card">
         <h3>Edit Submitted Reading</h3>
         <p class="muted">Use this to correct a misread or overlooked current reading before final review.</p>
         <div id="reader-edit-form-container">
@@ -145,6 +149,8 @@
         const profileSummaryContainer = document.getElementById('reader-profile-summary');
         const readingFormContainer = document.getElementById('reader-reading-form-container');
         const editFormContainer = document.getElementById('reader-edit-form-container');
+        const submitCard = document.getElementById('reader-submit-card');
+        const editCard = document.getElementById('reader-edit-card');
         const readingRows = document.getElementById('reader-reading-rows');
         const billingRows = document.getElementById('reader-billing-rows');
 
@@ -166,6 +172,11 @@
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2
             });
+        }
+
+        function setEditMode(isEditing) {
+            if (submitCard) submitCard.classList.toggle('reader-hidden', Boolean(isEditing));
+            if (editCard) editCard.classList.toggle('reader-hidden', !isEditing);
         }
 
         function updateReadingPreview() {
@@ -236,6 +247,7 @@
             const consumerField = form.querySelector('#id_consumer');
             const dateField = form.querySelector('#id_reading_date');
             const currentField = form.querySelector('#id_current_reading');
+            const submitButton = form.querySelector('button[type="submit"], input[type="submit"]');
 
             if (consumerField) consumerField.addEventListener('change', loadReadingContext);
             if (dateField) dateField.addEventListener('change', loadReadingContext);
@@ -243,35 +255,74 @@
 
             form.addEventListener('submit', async function (event) {
                 event.preventDefault();
-                const response = await fetch(form.action, {
-                    method: 'POST',
-                    body: new FormData(form),
-                    headers: {
-                        'X-Requested-With': 'XMLHttpRequest'
+                if (submitButton) {
+                    submitButton.disabled = true;
+                    submitButton.classList.add('loading');
+                    if (submitButton.tagName === 'BUTTON' && !submitButton.dataset.originalText) {
+                        submitButton.dataset.originalText = submitButton.textContent;
                     }
-                });
-                const payload = await response.json();
-                if (payload.form_html && readingFormContainer) readingFormContainer.innerHTML = payload.form_html;
-                if (payload.rows_html && readingRows) readingRows.innerHTML = payload.rows_html;
-                if (payload.billing_rows_html && billingRows) billingRows.innerHTML = payload.billing_rows_html;
-                if (payload.edit_form_html && editFormContainer) editFormContainer.innerHTML = payload.edit_form_html;
-                const totalReadings = document.querySelector('[data-reader-total-readings]');
-                const totalBillings = document.querySelector('[data-reader-total-billings]');
-                const totalUsage = document.querySelector('[data-reader-total-usage]');
-                const latestSync = document.querySelector('[data-reader-latest-sync]');
-                if (totalReadings) totalReadings.textContent = payload.total_readings;
-                if (totalBillings) totalBillings.textContent = payload.total_billings;
-                if (totalUsage) totalUsage.textContent = `${payload.total_usage} m3`;
-                if (latestSync) latestSync.textContent = payload.latest_sync;
-                bindReadingForm();
-                bindEditTriggers();
-                bindEditForm();
-                loadReadingContext();
-                showFeedback(payload.message, !payload.ok);
-                window.showTransactionOverlay && window.showTransactionOverlay('Reading Saved', 'The reading and linked billing record were updated.', 100, 'success');
-                setTimeout(function () {
+                    if (submitButton.tagName === 'BUTTON') {
+                        submitButton.textContent = 'Processing...';
+                    }
+                }
+                window.showTransactionOverlay && window.showTransactionOverlay('Processing Transaction', 'Submitting your request. Please wait.', 35);
+
+                try {
+                    const response = await fetch(form.action, {
+                        method: 'POST',
+                        body: new FormData(form),
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    });
+                    const payload = await response.json();
+                    if (payload.form_html && readingFormContainer) readingFormContainer.innerHTML = payload.form_html;
+                    if (payload.rows_html && readingRows) readingRows.innerHTML = payload.rows_html;
+                    if (payload.billing_rows_html && billingRows) billingRows.innerHTML = payload.billing_rows_html;
+                    if (payload.edit_form_html && editFormContainer) editFormContainer.innerHTML = payload.edit_form_html;
+                    const totalReadings = document.querySelector('[data-reader-total-readings]');
+                    const totalBillings = document.querySelector('[data-reader-total-billings]');
+                    const totalUsage = document.querySelector('[data-reader-total-usage]');
+                    const latestSync = document.querySelector('[data-reader-latest-sync]');
+                    if (totalReadings) totalReadings.textContent = payload.total_readings;
+                    if (totalBillings) totalBillings.textContent = payload.total_billings;
+                    if (totalUsage) totalUsage.textContent = `${payload.total_usage} m3`;
+                    if (latestSync) latestSync.textContent = payload.latest_sync;
+                    bindReadingForm();
+                    bindEditTriggers();
+                    bindEditForm();
+                    bindEditCancel();
+                    setEditMode(false);
+                    loadReadingContext();
+                    showFeedback(payload.message, !payload.ok);
+
+                    if (payload.ok) {
+                        window.showTransactionOverlay && window.showTransactionOverlay('Reading Saved', 'The reading and linked billing record were updated.', 100, 'success');
+                        setTimeout(function () {
+                            window.hideTransactionOverlay && window.hideTransactionOverlay();
+                        }, 1200);
+                    } else {
+                        window.hideTransactionOverlay && window.hideTransactionOverlay();
+                        if (submitButton) {
+                            submitButton.disabled = false;
+                            submitButton.classList.remove('loading');
+                            if (submitButton.tagName === 'BUTTON' && submitButton.dataset.originalText) {
+                                submitButton.textContent = submitButton.dataset.originalText;
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error(error);
                     window.hideTransactionOverlay && window.hideTransactionOverlay();
-                }, 700);
+                    showFeedback('Unable to submit the reading right now. Please try again.', true);
+                    if (submitButton) {
+                        submitButton.disabled = false;
+                        submitButton.classList.remove('loading');
+                        if (submitButton.tagName === 'BUTTON' && submitButton.dataset.originalText) {
+                            submitButton.textContent = submitButton.dataset.originalText;
+                        }
+                    }
+                }
             });
 
             loadReadingContext();
@@ -293,6 +344,7 @@
                     if (targetLabel) {
                         targetLabel.textContent = `${button.dataset.consumer} | ${button.dataset.month} | Previous reading: ${button.dataset.previous}`;
                     }
+                    setEditMode(true);
                     showFeedback(`Editing ${button.dataset.consumer} for ${button.dataset.month}.`, false);
                     form.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 });
@@ -332,11 +384,35 @@
                 if (latestSync) latestSync.textContent = payload.latest_sync;
                 bindEditTriggers();
                 bindEditForm();
+                bindEditCancel();
+                setEditMode(Boolean(!payload.ok));
                 showFeedback(payload.message, !payload.ok);
-                window.showTransactionOverlay && window.showTransactionOverlay('Reading Updated', 'The corrected reading was saved.', 100, 'success');
-                setTimeout(function () {
+                if (payload.ok) {
+                    window.showTransactionOverlay && window.showTransactionOverlay('Reading Updated', 'The corrected reading was saved.', 100, 'success');
+                    setTimeout(function () {
+                        window.hideTransactionOverlay && window.hideTransactionOverlay();
+                    }, 700);
+                } else {
                     window.hideTransactionOverlay && window.hideTransactionOverlay();
-                }, 700);
+                }
+            });
+        }
+
+        function bindEditCancel() {
+            const button = document.getElementById('reader-edit-cancel');
+            const form = document.getElementById('reader-edit-form');
+            if (!button || !form) return;
+
+            button.addEventListener('click', function () {
+                form.reset();
+                form.action = '';
+                const targetLabel = document.getElementById('reader-edit-target-label');
+                if (targetLabel) {
+                    targetLabel.textContent = 'Select a submitted reading to edit.';
+                }
+                setEditMode(false);
+                showFeedback('Edit cancelled.', false);
+                if (submitCard) submitCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
             });
         }
 
@@ -369,6 +445,8 @@
         bindReadingForm();
         bindEditTriggers();
         bindEditForm();
+        bindEditCancel();
+        setEditMode(false);
         setInterval(refreshReadings, 15000);
     })();
 </script>
