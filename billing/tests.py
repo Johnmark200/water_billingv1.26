@@ -742,6 +742,72 @@ class SecretaryMeetingMinutesTests(TestCase):
         self.assertGreater(len(response.content), 100)
 
 
+class GoogleConsumerLoginTests(TestCase):
+    def test_google_callback_creates_consumer_account_from_gmail_details(self):
+        session = self.client.session
+        session['google_oauth_state'] = 'state-123'
+        session.save()
+
+        with patch('billing.views._google_oauth_exchange_code', return_value={'access_token': 'token-123'}), patch(
+            'billing.views._google_oauth_fetch_userinfo',
+            return_value={
+                'email': 'consumer@gmail.com',
+                'email_verified': True,
+                'name': 'Consumer Gmail',
+                'given_name': 'Consumer',
+                'family_name': 'Gmail',
+            },
+        ):
+            response = self.client.get(
+                reverse('google_login_callback'),
+                {'state': 'state-123', 'code': 'code-123'},
+                follow=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        user = User.objects.get(email='consumer@gmail.com')
+        profile = ConsumerProfile.objects.get(user=user)
+        consumer = Consumer.objects.get(profile=profile)
+        self.assertEqual(profile.role, ConsumerProfile.Roles.CONSUMER)
+        self.assertEqual(profile.full_name, 'Consumer Gmail')
+        self.assertEqual(consumer.full_name, 'Consumer Gmail')
+
+    def test_google_callback_rejects_staff_email_for_consumer_login(self):
+        staff_user = User.objects.create_user(
+            username='secretary-login',
+            email='staff@gmail.com',
+            password='StrongPass1!',
+        )
+        ConsumerProfile.objects.create(
+            user=staff_user,
+            full_name='Staff Login',
+            email='staff@gmail.com',
+            role=ConsumerProfile.Roles.SECRETARY,
+        )
+        session = self.client.session
+        session['google_oauth_state'] = 'state-456'
+        session.save()
+
+        with patch('billing.views._google_oauth_exchange_code', return_value={'access_token': 'token-456'}), patch(
+            'billing.views._google_oauth_fetch_userinfo',
+            return_value={
+                'email': 'staff@gmail.com',
+                'email_verified': True,
+                'name': 'Staff Login',
+                'given_name': 'Staff',
+                'family_name': 'Login',
+            },
+        ):
+            response = self.client.get(
+                reverse('google_login_callback'),
+                {'state': 'state-456', 'code': 'code-456'},
+                follow=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Use the regular staff login instead')
+
+
 class ReportIntegrityTests(TestCase):
     def setUp(self):
         self.consumer_user = User.objects.create_user(username='consumer2', password='StrongPass1!')

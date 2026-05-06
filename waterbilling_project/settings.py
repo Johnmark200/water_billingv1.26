@@ -139,3 +139,7 @@ PAYMONGO_SECRET_KEY = 'sk_test_t8mWkPe3mexXU9qwoR7pU4xa'
 PAYMONGO_API_TIMEOUT = 10
 PAYMONGO_BASE_URL = 'https://api.paymongo.com/v1'
 PAYMONGO_EWALLET_TYPE = 'gcash'
+
+GOOGLE_OAUTH_CLIENT_ID = os.getenv('GOOGLE_OAUTH_CLIENT_ID', '').strip()
+GOOGLE_OAUTH_CLIENT_SECRET = os.getenv('GOOGLE_OAUTH_CLIENT_SECRET', '').strip()
+GOOGLE_OAUTH_REDIRECT_PATH = os.getenv('GOOGLE_OAUTH_REDIRECT_PATH', '/login/google/callback/').strip()

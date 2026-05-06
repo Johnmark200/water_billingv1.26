@@ -50,4 +50,13 @@
         <a href="{% url 'signup' %}" class="auth-secondary-link">Create Consumer Account</a>
     </div>
 </form>
+
+{% if google_login_enabled %}
+    <div class="auth-form" style="margin-top: 18px;">
+        <p class="auth-help">Consumer accounts can also continue with a Google account. The Gmail profile name and email will be used for the consumer account details.</p>
+        <div class="auth-actions">
+            <a href="{% url 'google_login_start' %}" class="btn secondary">Sign in with Google</a>
+        </div>
+    </div>
+{% endif %}
 {% endblock %}

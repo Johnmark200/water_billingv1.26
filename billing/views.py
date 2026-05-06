@@ -1,16 +1,19 @@
 import csv
+import json
 import secrets
 from io import BytesIO
 from datetime import datetime, timedelta
 from decimal import Decimal
 import random
+from urllib import parse, request
 
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth import logout, update_session_auth_hash
+from django.contrib.auth import get_user_model, login, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView
 from django.core.cache import cache
+from django.db import transaction
 from django.db.models import Q, Sum
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -83,6 +86,9 @@ from .services import (
 PASSWORD_CHANGE_OTP_SESSION_KEY = 'password_change_otp_token'
 PASSWORD_CHANGE_OTP_CACHE_PREFIX = 'password_change_otp:'
 PASSWORD_CHANGE_OTP_TIMEOUT = 600
+GOOGLE_OAUTH_STATE_SESSION_KEY = 'google_oauth_state'
+
+User = get_user_model()
 
 
 def get_selected_month(month_value):
@@ -119,6 +125,136 @@ def _otp_destination_for_user(user, channel):
     if channel == 'sms':
         return (profile.contact if profile else '').strip()
     return ''
+
+
+def _google_login_enabled():
+    return bool(settings.GOOGLE_OAUTH_CLIENT_ID and settings.GOOGLE_OAUTH_CLIENT_SECRET)
+
+
+def _google_redirect_uri(request):
+    return request.build_absolute_uri(settings.GOOGLE_OAUTH_REDIRECT_PATH)
+
+
+def _google_oauth_exchange_code(code, redirect_uri):
+    payload = parse.urlencode(
+        {
+            'code': code,
+            'client_id': settings.GOOGLE_OAUTH_CLIENT_ID,
+            'client_secret': settings.GOOGLE_OAUTH_CLIENT_SECRET,
+            'redirect_uri': redirect_uri,
+            'grant_type': 'authorization_code',
+        }
+    ).encode('utf-8')
+    token_request = request.Request(
+        'https://oauth2.googleapis.com/token',
+        data=payload,
+        headers={'Content-Type': 'application/x-www-form-urlencoded'},
+    )
+    with request.urlopen(token_request, timeout=15) as response:
+        return json.loads(response.read().decode('utf-8'))
+
+
+def _google_oauth_fetch_userinfo(access_token):
+    userinfo_request = request.Request(
+        'https://www.googleapis.com/oauth2/v3/userinfo',
+        headers={'Authorization': f'Bearer {access_token}'},
+    )
+    with request.urlopen(userinfo_request, timeout=15) as response:
+        return json.loads(response.read().decode('utf-8'))
+
+
+def _build_unique_consumer_username(email_address):
+    base_username = (email_address or 'consumer').strip().lower()[:150] or 'consumer'
+    candidate = base_username
+    suffix = 1
+    while User.objects.filter(username=candidate).exists():
+        suffix_text = f'-{suffix}'
+        candidate = f'{base_username[:150 - len(suffix_text)]}{suffix_text}'
+        suffix += 1
+    return candidate
+
+
+@transaction.atomic
+def _get_or_create_google_consumer(userinfo):
+    email_address = (userinfo.get('email') or '').strip().lower()
+    full_name = (userinfo.get('name') or '').strip() or email_address
+
+    if not email_address:
+        raise ValueError('Google did not return an email address for this account.')
+    if not userinfo.get('email_verified', False):
+        raise ValueError('The selected Google account email address is not verified.')
+
+    existing_profile = ConsumerProfile.objects.filter(email__iexact=email_address).select_related('user').first()
+    existing_user = User.objects.filter(email__iexact=email_address).first()
+    user = existing_profile.user if existing_profile else existing_user
+
+    if user is not None and (user.is_staff or user.is_superuser):
+        raise ValueError('This Google email is already assigned to a staff account. Use the regular staff login instead.')
+
+    if user is None:
+        user = User.objects.create_user(
+            username=_build_unique_consumer_username(email_address),
+            email=email_address,
+            first_name=(userinfo.get('given_name') or '').strip(),
+            last_name=(userinfo.get('family_name') or '').strip(),
+        )
+
+    profile = ConsumerProfile.objects.filter(user=user).first()
+    if profile and profile.role != ConsumerProfile.Roles.CONSUMER:
+        raise ValueError('This Google email is already assigned to a staff account. Use the regular staff login instead.')
+
+    if profile is None:
+        profile = ConsumerProfile.objects.create(
+            user=user,
+            full_name=full_name or user.username,
+            email=email_address,
+            role=ConsumerProfile.Roles.CONSUMER,
+        )
+    else:
+        changed_fields = []
+        if profile.role != ConsumerProfile.Roles.CONSUMER:
+            profile.role = ConsumerProfile.Roles.CONSUMER
+            changed_fields.append('role')
+        if email_address and profile.email != email_address:
+            profile.email = email_address
+            changed_fields.append('email')
+        if full_name and profile.full_name != full_name:
+            profile.full_name = full_name
+            changed_fields.append('full_name')
+        if changed_fields:
+            profile.save(update_fields=changed_fields)
+
+    consumer = getattr(profile, 'consumer_record', None)
+    if consumer is None:
+        Consumer.objects.create(
+            profile=profile,
+            full_name=profile.full_name,
+            address=profile.address,
+            contact_number=profile.contact,
+            status=Consumer.Statuses.ACTIVE,
+        )
+    else:
+        consumer_updates = []
+        if consumer.full_name != profile.full_name:
+            consumer.full_name = profile.full_name
+            consumer_updates.append('full_name')
+        if consumer.address != profile.address:
+            consumer.address = profile.address
+            consumer_updates.append('address')
+        if consumer.contact_number != profile.contact:
+            consumer.contact_number = profile.contact
+            consumer_updates.append('contact_number')
+        if consumer.status != Consumer.Statuses.ACTIVE:
+            consumer.status = Consumer.Statuses.ACTIVE
+            consumer_updates.append('status')
+        if consumer_updates:
+            consumer.save(update_fields=consumer_updates)
+
+    if user.email != email_address:
+        user.email = email_address
+        user.save(update_fields=['email'])
+
+    return user, profile
 
 
 def get_selected_date(date_value, default):
@@ -1099,6 +1235,11 @@ class RoleBasedLoginView(LoginView):
     template_name = 'registration/login.html'
     authentication_form = LoginForm
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['google_login_enabled'] = _google_login_enabled()
+        return context
+
     def form_valid(self, form):
         response = super().form_valid(form)
         ensure_user_profile(self.request.user)
@@ -1119,6 +1260,69 @@ def signup_view(request):
     else:
         form = SignUpForm()
     return render(request, 'registration/signup.html', {'form': form})
+
+
+def google_login_start(request):
+    if not _google_login_enabled():
+        messages.error(request, 'Google sign-in is not configured yet.')
+        return redirect('login')
+
+    state = secrets.token_urlsafe(24)
+    request.session[GOOGLE_OAUTH_STATE_SESSION_KEY] = state
+    request.session.modified = True
+    query = parse.urlencode(
+        {
+            'client_id': settings.GOOGLE_OAUTH_CLIENT_ID,
+            'redirect_uri': _google_redirect_uri(request),
+            'response_type': 'code',
+            'scope': 'openid email profile',
+            'state': state,
+            'access_type': 'online',
+            'prompt': 'select_account',
+        }
+    )
+    return redirect(f'https://accounts.google.com/o/oauth2/v2/auth?{query}')
+
+
+def google_login_callback(request):
+    expected_state = request.session.get(GOOGLE_OAUTH_STATE_SESSION_KEY, '')
+    returned_state = request.GET.get('state', '').strip()
+    request.session.pop(GOOGLE_OAUTH_STATE_SESSION_KEY, None)
+
+    if not expected_state or expected_state != returned_state:
+        messages.error(request, 'Google sign-in could not be verified. Please try again.')
+        return redirect('login')
+
+    if request.GET.get('error'):
+        messages.error(request, 'Google sign-in was cancelled or denied.')
+        return redirect('login')
+
+    code = request.GET.get('code', '').strip()
+    if not code:
+        messages.error(request, 'Google did not return an authorization code.')
+        return redirect('login')
+
+    try:
+        token_payload = _google_oauth_exchange_code(code, _google_redirect_uri(request))
+        access_token = (token_payload.get('access_token') or '').strip()
+        if not access_token:
+            raise ValueError('Google did not return an access token.')
+        userinfo = _google_oauth_fetch_userinfo(access_token)
+        user, profile = _get_or_create_google_consumer(userinfo)
+    except Exception as exc:
+        messages.error(request, f'Google sign-in failed: {exc}')
+        return redirect('login')
+
+    login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+    ensure_user_profile(user)
+    log_audit_action(
+        user,
+        'Signed in with Google',
+        target=profile.full_name,
+        details='Consumer portal access created or confirmed through Google OAuth.',
+    )
+    messages.success(request, 'Signed in with Google successfully.')
+    return redirect('consumer_panel')
 
 
 @login_required
