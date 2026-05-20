@@ -1,0 +1,18 @@
+{% for item in outbound_notifications %}
+    <tr>
+        <td data-label="Timestamp">{{ item.created_at|date:'Y-m-d H:i' }}</td>
+        <td data-label="Channel">{{ item.get_channel_display }}</td>
+        <td data-label="Recipient">{{ item.destination_label }}</td>
+        <td data-label="Consumer">{{ item.consumer_label }}</td>
+        <td data-label="Status">{{ item.get_status_display }}</td>
+        <td data-label="Message">
+            <strong>{{ item.title }}</strong><br>
+            <span class="muted">{{ item.message|truncatechars:140 }}</span>
+            {% if item.response_message %}
+                <br><span class="muted">Response: {{ item.response_message|truncatechars:120 }}</span>
+            {% endif %}
+        </td>
+    </tr>
+{% empty %}
+    <tr><td colspan="6" class="empty-state">No outbound email or SMS logs match the current filters.</td></tr>
+{% endfor %}

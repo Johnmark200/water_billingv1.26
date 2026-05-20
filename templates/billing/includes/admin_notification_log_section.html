@@ -1,0 +1,42 @@
+<section class="page-wrap">
+    <div class="table-card">
+        <div class="toolbar" style="justify-content: space-between; margin-bottom: 16px;">
+            <div>
+                <h3>Outbound Email and SMS Logs</h3>
+                <p class="muted">Track all non in-app notification attempts, delivery status, recipients, and message previews from one place.</p>
+            </div>
+            <div class="toolbar">
+                <span class="status-chip">Matched: {{ notification_log_total }}</span>
+                <span class="status-chip">Sent: {{ notification_log_sent }}</span>
+                <span class="status-chip">Failed: {{ notification_log_failed }}</span>
+                <span class="status-chip">Pending: {{ notification_log_pending }}</span>
+            </div>
+        </div>
+
+        <form method="get" class="toolbar" id="admin-notification-filter-form" style="margin-bottom: 16px;">
+            <input type="hidden" name="month" value="{{ selected_month|date:'Y-m' }}">
+            <select name="notification_channel">
+                {% for value, label in notification_channel_choices %}
+                    <option value="{{ value }}" {% if selected_notification_channel == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <select name="notification_status">
+                {% for value, label in notification_status_choices %}
+                    <option value="{{ value }}" {% if selected_notification_status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <input type="search" name="notification_query" value="{{ notification_query }}" placeholder="Search recipient, consumer, title, or message">
+            <button type="submit" class="btn secondary">Filter</button>
+            <a href="{% url 'admin_panel' %}?month={{ selected_month|date:'Y-m' }}" class="btn secondary">Reset</a>
+        </form>
+
+        <div class="table-shell table-shell-xl" data-stack-on-mobile="true">
+            <table>
+                <thead><tr><th>Timestamp</th><th>Channel</th><th>Recipient</th><th>Consumer</th><th>Status</th><th>Message</th></tr></thead>
+                <tbody id="admin-notification-log-rows">
+                    {% include 'billing/includes/admin_notification_log_rows.html' %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>

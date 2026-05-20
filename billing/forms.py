@@ -15,6 +15,7 @@ from .models import (
     ConsumerProfile,
     MeetingMinutes,
     MeterReading,
+    MINIMUM_BILLABLE_USAGE_M3,
     Payment,
     SMSBlast,
     SystemSettings,
@@ -390,16 +391,27 @@ class BillingRecordForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['consumer'].queryset = Consumer.objects.order_by('full_name')
+        self.fields['current_reading'].help_text = (
+            f'Enter the actual current meter reading. Minimum billable usage is {MINIMUM_BILLABLE_USAGE_M3} m3.'
+        )
 
     def clean(self):
         cleaned_data = super().clean()
         consumer = cleaned_data.get('consumer')
         billing_month = cleaned_data.get('billing_month')
+        previous_reading = cleaned_data.get('previous_reading')
+        current_reading = cleaned_data.get('current_reading')
 
         if consumer and billing_month:
             existing_billing = get_existing_billing_for_month(consumer, billing_month)
             if existing_billing and existing_billing.pk != self.instance.pk:
                 self.add_error('billing_month', 'A billing record for this consumer and month already exists.')
+        if (
+            previous_reading is not None
+            and current_reading is not None
+            and current_reading < previous_reading
+        ):
+            self.add_error('current_reading', 'Current reading cannot be lower than the previous reading.')
 
         return cleaned_data
 
@@ -456,6 +468,7 @@ class AdminPaymentForm(forms.ModelForm):
         self.fields['discount_amount'].required = False
         self.fields['discount_amount'].label = 'Discount applied'
         self.fields['reference_number'].required = False
+        self.fields['reference_number'].widget = forms.HiddenInput()
         self.fields['amount_paid'].required = False
         self.fields['amount_paid'].widget.attrs.update({'readonly': 'readonly'})
         self.fields['online_channel'].widget = forms.HiddenInput()
@@ -641,6 +654,9 @@ class MeterReadingForm(forms.ModelForm):
             self.fields['consumer'].queryset = Consumer.objects.filter(status=Consumer.Statuses.ACTIVE).order_by(
                 'full_name'
             )
+        self.fields['current_reading'].help_text = (
+            f'Enter the actual current meter reading. Minimum billable usage is {MINIMUM_BILLABLE_USAGE_M3} m3.'
+        )
 
     def clean_current_reading(self):
         current_reading = self.cleaned_data['current_reading']
@@ -657,6 +673,8 @@ class MeterReadingForm(forms.ModelForm):
         if consumer and reading_date and current_reading is not None:
             previous_reading = get_previous_reading_for_month(consumer, reading_date.replace(day=1))
             cleaned_data['previous_reading_snapshot'] = previous_reading
+            if current_reading < previous_reading:
+                self.add_error('current_reading', 'Current reading cannot be lower than the previous reading.')
 
         return cleaned_data
 

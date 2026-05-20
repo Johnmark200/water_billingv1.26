@@ -38,6 +38,7 @@ urlpatterns = [
     path('payments/', views.payments_list, name='payments'),
     path('payments/<int:payment_id>/status/', views.update_payment_status_view, name='update_payment_status'),
     path('payments/<int:payment_id>/notify/', views.notify_payment_status, name='notify_payment_status'),
+    path('staff-accounts/<int:profile_id>/status/', views.update_staff_account_status, name='update_staff_account_status'),
     path('reports/', views.reports_view, name='reports'),
     path('reports/export/', views.reports_export_view, name='reports_export'),
     path('communications/', views.communications_view, name='communications'),

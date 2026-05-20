@@ -1,0 +1,26 @@
+{% for account in staff_accounts %}
+    <tr>
+        <td data-label="Name">
+            <strong>{{ account.full_name }}</strong><br>
+            <span class="muted">{{ account.user.username }}</span>
+        </td>
+        <td data-label="Role">{{ account.get_role_display }}</td>
+        <td data-label="Email">{{ account.email|default:account.user.email|default:'-' }}</td>
+        <td data-label="Contact">{{ account.contact|default:'-' }}</td>
+        <td data-label="Status">
+            <span class="status-chip">{{ account.account_status|title }}</span>
+        </td>
+        <td data-label="Update" class="table-action-cell">
+            <form method="post" action="{% url 'update_staff_account_status' account.id %}" class="status-actions">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ admin_panel_return_url }}">
+                <select name="account_status" onchange="this.form.submit()">
+                    <option value="active" {% if account.account_status == 'active' %}selected{% endif %}>Active</option>
+                    <option value="inactive" {% if account.account_status == 'inactive' %}selected{% endif %}>Inactive</option>
+                </select>
+            </form>
+        </td>
+    </tr>
+{% empty %}
+    <tr><td colspan="6" class="empty-state">No secretary, treasurer, or reader accounts match the current filters.</td></tr>
+{% endfor %}

@@ -158,6 +158,66 @@ class AddConsumerPageAccountCreationTests(TestCase):
         self.assertEqual(created_profile.role, ConsumerProfile.Roles.SECRETARY)
 
 
+class StaffAccountStatusManagementTests(TestCase):
+    def setUp(self):
+        self.admin_user = User.objects.create_user(username='status-admin', password='StrongPass1!')
+        ConsumerProfile.objects.create(
+            user=self.admin_user,
+            full_name='Status Admin',
+            role=ConsumerProfile.Roles.ADMIN,
+        )
+        self.secretary_user = User.objects.create_user(username='status-secretary', password='StrongPass1!')
+        self.secretary_profile = ConsumerProfile.objects.create(
+            user=self.secretary_user,
+            full_name='Status Secretary',
+            email='secretary-status@example.com',
+            contact='+639171234580',
+            role=ConsumerProfile.Roles.SECRETARY,
+        )
+
+    def test_admin_panel_lists_staff_accounts_with_status_controls(self):
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(reverse('admin_panel'), {'month': '2026-05'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Staff Account Management')
+        self.assertContains(response, 'Status Secretary')
+        self.assertContains(response, 'status-secretary')
+        self.assertContains(response, 'Active')
+        self.assertContains(response, f'name="next" value="{reverse("admin_panel")}?month=2026-05"')
+
+    def test_admin_can_mark_staff_account_inactive_and_active(self):
+        self.client.force_login(self.admin_user)
+
+        inactive_response = self.client.post(
+            reverse('update_staff_account_status', args=[self.secretary_profile.id]),
+            data={'account_status': 'inactive', 'next': reverse('admin_panel')},
+            follow=True,
+        )
+        self.secretary_user.refresh_from_db()
+        self.assertFalse(self.secretary_user.is_active)
+        self.assertContains(inactive_response, 'marked inactive')
+
+        active_response = self.client.post(
+            reverse('update_staff_account_status', args=[self.secretary_profile.id]),
+            data={'account_status': 'active', 'next': reverse('admin_panel')},
+            follow=True,
+        )
+        self.secretary_user.refresh_from_db()
+        self.assertTrue(self.secretary_user.is_active)
+        self.assertContains(active_response, 'marked active')
+
+    def test_inactive_staff_user_is_logged_out_and_redirected(self):
+        self.secretary_user.is_active = False
+        self.secretary_user.save(update_fields=['is_active'])
+        self.client.force_login(self.secretary_user)
+
+        response = self.client.get(reverse('secretary_panel'), follow=True)
+
+        self.assertRedirects(response, f"{reverse('login')}?next={reverse('secretary_panel')}")
+
+
 @override_settings(
     SMS_DELIVERY_PROVIDER='sms_api_ph',
     SMS_API_TIMEOUT=10,
@@ -279,7 +339,7 @@ class ConsumerPaymongoFormTests(TestCase):
 
         self.assertEqual(payment.payment_method, Payment.Methods.ONLINE)
         self.assertEqual(payment.gateway, Payment.Methods.GCASH)
-        self.assertEqual(payment.amount_paid, Decimal('200'))
+        self.assertEqual(payment.amount_paid, Decimal('600'))
         self.assertEqual(payment.display_payment_method, 'GCash')
 
 
@@ -303,7 +363,7 @@ class MeterReadingFormTests(TestCase):
             current_reading=Decimal('100'),
         )
 
-    def test_allows_lower_than_previous_reading(self):
+    def test_rejects_lower_than_previous_reading(self):
         form = MeterReadingForm(
             data={
                 'consumer': self.consumer.id,
@@ -313,7 +373,8 @@ class MeterReadingFormTests(TestCase):
             }
         )
 
-        self.assertTrue(form.is_valid())
+        self.assertFalse(form.is_valid())
+        self.assertIn('Current reading cannot be lower than the previous reading.', form.errors['current_reading'])
 
     def test_allows_large_reading_jump(self):
         form = MeterReadingForm(
@@ -327,27 +388,27 @@ class MeterReadingFormTests(TestCase):
 
         self.assertTrue(form.is_valid())
 
-    def test_lower_current_input_is_used_as_billable_usage(self):
+    def test_usage_applies_minimum_billable_volume(self):
         reading = MeterReading.objects.create(
             consumer=self.consumer,
             reading_date=date(2026, 4, 30),
             previous_reading=Decimal('100'),
-            current_reading=Decimal('15'),
+            current_reading=Decimal('120'),
         )
         billing = BillingRecord.objects.create(
             consumer=self.consumer,
             billing_month=date(2026, 4, 1),
             previous_reading=Decimal('100'),
-            current_reading=Decimal('15'),
+            current_reading=Decimal('120'),
             rate_per_m3=Decimal('20'),
             amount_paid=Decimal('0'),
             billing_date=date(2026, 4, 30),
             due_date=date(2026, 5, 15),
         )
 
-        self.assertEqual(reading.usage_m3, Decimal('15'))
-        self.assertEqual(billing.usage_m3, Decimal('15'))
-        self.assertEqual(billing.total_amount, Decimal('300'))
+        self.assertEqual(reading.usage_m3, Decimal('30'))
+        self.assertEqual(billing.usage_m3, Decimal('30'))
+        self.assertEqual(billing.total_amount, Decimal('600'))
 
 
 class BillingRecordFormTests(TestCase):
@@ -390,6 +451,78 @@ class BillingRecordFormTests(TestCase):
 
         self.assertFalse(form.is_valid())
         self.assertIn('A billing record for this consumer and month already exists.', form.errors['billing_month'])
+
+    def test_rejects_current_reading_lower_than_previous_reading(self):
+        form = BillingRecordForm(
+            data={
+                'consumer': self.consumer.id,
+                'billing_month': '2026-05-01',
+                'previous_reading': '120',
+                'current_reading': '110',
+                'rate_per_m3': '20',
+                'amount_paid': '0',
+                'status': BillingRecord.Statuses.PENDING,
+                'billing_date': '2026-05-01',
+                'due_date': '2026-05-15',
+            }
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn('Current reading cannot be lower than the previous reading.', form.errors['current_reading'])
+
+
+class PaymentLegacyBillingSafetyTests(TestCase):
+    def setUp(self):
+        self.admin_user = User.objects.create_user(username='legacy-admin', password='StrongPass1!')
+        ConsumerProfile.objects.create(
+            user=self.admin_user,
+            full_name='Legacy Admin',
+            role=ConsumerProfile.Roles.ADMIN,
+        )
+        self.consumer = Consumer.objects.create(
+            full_name='Legacy Billing Consumer',
+            status=Consumer.Statuses.ACTIVE,
+        )
+
+    def test_cash_payment_does_not_revalidate_unchanged_legacy_readings(self):
+        billing = BillingRecord.objects.create(
+            consumer=self.consumer,
+            billing_month=date(2026, 4, 1),
+            previous_reading=Decimal('0'),
+            current_reading=Decimal('30'),
+            rate_per_m3=Decimal('20'),
+            amount_paid=Decimal('0'),
+            billing_date=date(2026, 4, 1),
+            due_date=date(2026, 4, 15),
+        )
+        BillingRecord.objects.filter(pk=billing.pk).update(
+            previous_reading=Decimal('120'),
+            current_reading=Decimal('110'),
+            usage_m3=Decimal('30'),
+            total_amount=Decimal('600'),
+        )
+
+        self.client.force_login(self.admin_user)
+        response = self.client.post(
+            reverse('payments'),
+            data={
+                'consumer': self.consumer.id,
+                'billing': billing.id,
+                'payment_method': Payment.Methods.CASH,
+                'payment_option': Payment.PaymentOptions.FULL,
+                'amount_paid': '0',
+                'discount_amount': '0',
+                'payment_date': '2026-04-10',
+                'status': Payment.Statuses.COMPLETED,
+                'reference_number': '',
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        billing.refresh_from_db()
+        self.assertEqual(billing.amount_paid, Decimal('600'))
+        self.assertEqual(billing.status, BillingRecord.Statuses.PAID)
 
 
 class ProfileTransactionVisibilityTests(TestCase):
@@ -1061,7 +1194,7 @@ class ConsumerChartDataTests(TestCase):
             previous_reading=Decimal('0'),
             current_reading=Decimal('10'),
             rate_per_m3=Decimal('20'),
-            amount_paid=Decimal('200'),
+            amount_paid=Decimal('600'),
             billing_date=date(2026, 4, 1),
             due_date=date(2026, 4, 15),
         )
@@ -1403,7 +1536,7 @@ class OnlinePaymentMethodDisplayTests(TestCase):
             billing=self.billing,
             covered_month=date(2026, 4, 1),
             payment_method=Payment.Methods.ONLINE,
-            amount_paid=Decimal('200'),
+            amount_paid=Decimal('600'),
             payment_date=date(2026, 4, 10),
             status=Payment.Statuses.COMPLETED,
             gateway='paymongo',
@@ -1447,7 +1580,7 @@ class ReceiptActionRegressionTests(TestCase):
             billing=self.billing,
             covered_month=date(2026, 4, 1),
             payment_method=Payment.Methods.ONLINE,
-            amount_paid=Decimal('200'),
+            amount_paid=Decimal('600'),
             payment_date=date(2026, 4, 10),
             status=Payment.Statuses.COMPLETED,
             gateway=Payment.Methods.GCASH,
@@ -1503,7 +1636,7 @@ class ConsumerDashboardMonitoringTests(TestCase):
             billing=billing,
             covered_month=date(2026, 4, 1),
             payment_method=Payment.Methods.ONLINE,
-            amount_paid=Decimal('200'),
+            amount_paid=Decimal('600'),
             payment_date=date(2026, 4, 10),
             status=Payment.Statuses.COMPLETED,
             gateway=Payment.Methods.GCASH,
@@ -1514,7 +1647,7 @@ class ConsumerDashboardMonitoringTests(TestCase):
             billing=billing,
             covered_month=date(2026, 4, 1),
             payment_method=Payment.Methods.ONLINE,
-            amount_paid=Decimal('200'),
+            amount_paid=Decimal('600'),
             payment_date=date(2026, 4, 11),
             status=Payment.Statuses.PENDING,
             gateway=Payment.Methods.PAYMAYA,
@@ -1695,7 +1828,7 @@ class StaffPaymongoCheckoutTests(TestCase):
             billing=self.billing,
             covered_month=date(2026, 4, 1),
             payment_method=Payment.Methods.ONLINE,
-            amount_paid=Decimal('200'),
+            amount_paid=Decimal('600'),
             payment_date=date(2026, 4, 10),
             status=Payment.Statuses.PENDING,
             gateway=Payment.Methods.PAYMAYA,
@@ -1755,6 +1888,15 @@ class ReaderPanelPreviewTests(TestCase):
         self.assertEqual(context_response.status_code, 200)
         self.assertEqual(Decimal(context_response.json()['previous_reading']), Decimal('100'))
         self.assertEqual(Decimal(context_response.json()['rate_per_m3']), Decimal('27.50'))
+
+    def test_reader_sidebar_link_targets_submit_meter_reading_section(self):
+        self.client.force_login(self.reader_user)
+
+        response = self.client.get(reverse('reader_panel'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f'{reverse("reader_panel")}#submit-meter-reading')
+        self.assertContains(response, 'id="submit-meter-reading"', html=False)
 
 
 class AdminPanelMonthFilterTests(TestCase):
@@ -1824,10 +1966,10 @@ class AdminPanelMonthFilterTests(TestCase):
 
         self.assertEqual(page_response.status_code, 200)
         self.assertEqual(page_response.context['selected_month'], date(2026, 4, 1))
-        self.assertEqual(page_response.context['monthly_billed'], Decimal('200'))
+        self.assertEqual(page_response.context['monthly_billed'], Decimal('600'))
         self.assertContains(page_response, 'Statistics Month')
         self.assertEqual(data_response.status_code, 200)
-        self.assertEqual(data_response.json()['monthly_billed'], '200.00')
+        self.assertEqual(data_response.json()['monthly_billed'], '600.00')
         self.assertIn('April 2026', data_response.json()['billing_rows_html'])
         self.assertNotIn('May 2026', data_response.json()['billing_rows_html'])
 
@@ -1877,6 +2019,69 @@ class AdminPanelMonthFilterTests(TestCase):
         self.assertEqual(data_response.status_code, 200)
         self.assertIn('Meeting Minutes Oversight', data_response.json()['minutes_monitoring_html'])
         self.assertIn('Admin Oversight Minutes', data_response.json()['minutes_monitoring_html'])
+
+    def test_admin_panel_displays_outbound_notification_logs(self):
+        Notification.objects.create(
+            consumer=self.consumer,
+            channel=Notification.Channels.EMAIL,
+            notification_type=Notification.Types.BILL_DUE,
+            title='Water bill due notice',
+            message='Statement of account sent to the consumer email.',
+            status=Notification.Statuses.SENT,
+            response_message='Delivered by SMTP provider.',
+        )
+        Notification.objects.create(
+            consumer=self.consumer,
+            channel=Notification.Channels.SMS,
+            notification_type=Notification.Types.PAYMENT,
+            title='Payment status update',
+            message='Payment notification sent to the registered mobile number.',
+            status=Notification.Statuses.FAILED,
+            response_message='Provider timeout.',
+        )
+
+        self.client.force_login(self.admin_user)
+        response = self.client.get(reverse('admin_panel'), {'month': '2026-05'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Outbound Email and SMS Logs')
+        self.assertContains(response, 'Water bill due notice')
+        self.assertContains(response, 'Payment status update')
+        self.assertContains(response, 'Delivered by SMTP provider.')
+        self.assertContains(response, 'Provider timeout.')
+
+    def test_admin_panel_filters_outbound_notification_logs(self):
+        Notification.objects.create(
+            consumer=self.consumer,
+            channel=Notification.Channels.EMAIL,
+            notification_type=Notification.Types.BILL_DUE,
+            title='Email due notice',
+            message='Email notification for the due bill.',
+            status=Notification.Statuses.SENT,
+        )
+        Notification.objects.create(
+            consumer=self.consumer,
+            channel=Notification.Channels.SMS,
+            notification_type=Notification.Types.PAYMENT,
+            title='SMS payment update',
+            message='SMS notification for the latest payment.',
+            status=Notification.Statuses.FAILED,
+        )
+
+        self.client.force_login(self.admin_user)
+        response = self.client.get(
+            reverse('admin_panel'),
+            {
+                'month': '2026-05',
+                'notification_channel': Notification.Channels.SMS,
+                'notification_status': Notification.Statuses.FAILED,
+                'notification_query': 'payment',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'SMS payment update')
+        self.assertNotContains(response, 'Email due notice')
 
 
 class AdminRegistrationTests(TestCase):
@@ -1933,14 +2138,14 @@ class SettingsPropagationTests(TestCase):
 
         self.billing.refresh_from_db()
         self.assertEqual(self.billing.rate_per_m3, Decimal('35.00'))
-        self.assertEqual(self.billing.total_amount, Decimal('350.00'))
+        self.assertEqual(self.billing.total_amount, Decimal('1050.00'))
         self.assertEqual(self.billing.due_date, date(2026, 4, 15))
         self.assertContains(response, 'recalculated across all panels')
 
         self.client.force_login(self.consumer_user)
         consumer_response = self.client.get(reverse('consumer_panel'))
-        self.assertEqual(consumer_response.context['billing_records'][0].total_amount, Decimal('350.00'))
+        self.assertEqual(consumer_response.context['billing_records'][0].total_amount, Decimal('1050.00'))
 
         self.client.force_login(self.admin_user)
         admin_response = self.client.get(reverse('admin_panel'), {'month': '2026-04'})
-        self.assertEqual(admin_response.context['monthly_billed'], Decimal('350.00'))
+        self.assertEqual(admin_response.context['monthly_billed'], Decimal('1050.00'))

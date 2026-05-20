@@ -7,7 +7,39 @@
     }
 
     .reader-panel-grid {
-        align-items: start;
+        align-items: stretch;
+    }
+
+    .reader-panel-grid .card,
+    .reader-panel-grid .form-card {
+        min-height: 320px;
+        height: 320px;
+        overflow: hidden;
+    }
+
+    .reader-panel-grid .card > *,
+    .reader-panel-grid .form-card > * {
+        flex-shrink: 0;
+    }
+
+    .reader-panel-grid .form-card #reader-reading-form-container,
+    .reader-panel-grid .form-card #reader-edit-form-container {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+
+    .reader-panel-grid .form-card textarea {
+        max-height: 80px;
+        resize: vertical;
+        overflow-y: auto;
+    }
+
+    .reader-panel-grid .card .reader-context-list {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
     }
 
     .reader-context-list {
@@ -60,7 +92,7 @@
         <div class="toolbar" style="justify-content: space-between; margin-bottom: 20px;">
             <div>
                 <h2 class="page-title">Reading Panel</h2>
-                <p class="muted">Use the previous reading as reference only, then save the actual current reading or current-cycle usage that was read on site.</p>
+                <p class="muted">Use the previous reading as your baseline, then save the actual current meter reading. The reading cannot go lower than the previous record, and the minimum billable usage is 30 m3.</p>
             </div>
         </div>
     <div class="status-feedback" id="reader-live-feedback" hidden></div>
@@ -96,8 +128,8 @@
     </div>
 </section>
 
-<section class="page-wrap grid-2 reader-panel-grid">
-    <div class="form-card" id="reader-submit-card">
+<section class="page-wrap grid-2 reader-panel-grid" id="submit-meter-reading">
+    <div class="form-card" id="reader-submit-card" tabindex="-1">
         <h3>Submit Meter Reading</h3>
         <div id="reader-reading-form-container">
             {% include 'billing/includes/reader_reading_form.html' %}
@@ -179,6 +211,15 @@
             if (editCard) editCard.classList.toggle('reader-hidden', !isEditing);
         }
 
+        function focusSubmitReadingCard() {
+            if (!submitCard) return;
+            setEditMode(false);
+            submitCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            if (typeof submitCard.focus === 'function') {
+                submitCard.focus({ preventScroll: true });
+            }
+        }
+
         function updateReadingPreview() {
             const currentField = document.getElementById('id_current_reading');
             const previousDisplay = document.getElementById('reading-context-previous');
@@ -199,9 +240,13 @@
             }
 
             const current = parseDecimal(rawCurrentValue);
-            let usage = current - previous;
-            if (usage < 0) usage = current;
-            if (usage < 0) usage = 0;
+            if (current < previous) {
+                usageDisplay.textContent = 'Invalid';
+                amountDisplay.textContent = 'Invalid';
+                return;
+            }
+
+            const usage = Math.max(current - previous, 30);
 
             usageDisplay.textContent = formatDecimal(usage);
             amountDisplay.textContent = formatDecimal(usage * rate);
@@ -447,6 +492,14 @@
         bindEditForm();
         bindEditCancel();
         setEditMode(false);
+        if (window.location.hash === '#submit-meter-reading') {
+            requestAnimationFrame(focusSubmitReadingCard);
+        }
+        window.addEventListener('hashchange', function () {
+            if (window.location.hash === '#submit-meter-reading') {
+                focusSubmitReadingCard();
+            }
+        });
         setInterval(refreshReadings, 15000);
     })();
 </script>

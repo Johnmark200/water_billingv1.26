@@ -442,7 +442,174 @@ def _build_meeting_minutes_admin_snapshot(limit=8):
     }
 
 
-def _build_admin_panel_context(selected_month=None):
+def _notification_destination(notification):
+    if notification.channel == Notification.Channels.EMAIL:
+        if notification.recipient_id and notification.recipient and notification.recipient.email:
+            return notification.recipient.email
+        consumer_profile = getattr(notification.consumer, 'profile', None) if notification.consumer_id else None
+        if consumer_profile and consumer_profile.email:
+            return consumer_profile.email
+        consumer_user = notification.consumer.portal_user if notification.consumer_id and notification.consumer else None
+        if consumer_user and consumer_user.email:
+            return consumer_user.email
+        return 'No email address'
+
+    if notification.channel == Notification.Channels.SMS:
+        if notification.consumer_id and notification.consumer:
+            consumer_profile = getattr(notification.consumer, 'profile', None)
+            if notification.consumer.contact_number:
+                return notification.consumer.contact_number
+            if consumer_profile and consumer_profile.contact:
+                return consumer_profile.contact
+        return 'No contact number'
+
+    if notification.recipient_id and notification.recipient:
+        return notification.recipient.username
+    return '-'
+
+
+def _build_admin_notification_log_context(request, limit=50):
+    selected_channel = request.GET.get('notification_channel', '').strip().lower() if request else ''
+    selected_status = request.GET.get('notification_status', '').strip().lower() if request else ''
+    search_query = request.GET.get('notification_query', '').strip() if request else ''
+
+    queryset = Notification.objects.exclude(channel=Notification.Channels.IN_APP).select_related(
+        'consumer',
+        'consumer__profile',
+        'recipient',
+        'billing',
+        'payment',
+        'meter_reading',
+    )
+
+    if selected_channel in {Notification.Channels.EMAIL, Notification.Channels.SMS}:
+        queryset = queryset.filter(channel=selected_channel)
+    else:
+        selected_channel = ''
+
+    if selected_status in Notification.Statuses.values:
+        queryset = queryset.filter(status=selected_status)
+    else:
+        selected_status = ''
+
+    if search_query:
+        queryset = queryset.filter(
+            Q(title__icontains=search_query)
+            | Q(message__icontains=search_query)
+            | Q(response_message__icontains=search_query)
+            | Q(consumer__full_name__icontains=search_query)
+            | Q(recipient__username__icontains=search_query)
+            | Q(recipient__email__icontains=search_query)
+        )
+
+    outbound_notifications = list(queryset.order_by('-created_at')[:limit])
+    for item in outbound_notifications:
+        item.destination_label = _notification_destination(item)
+        item.consumer_label = item.consumer.full_name if item.consumer_id and item.consumer else '-'
+
+    return {
+        'outbound_notifications': outbound_notifications,
+        'notification_channel_choices': [
+            ('', 'All channels'),
+            (Notification.Channels.EMAIL, Notification.Channels.EMAIL.label),
+            (Notification.Channels.SMS, Notification.Channels.SMS.label),
+        ],
+        'notification_status_choices': [
+            ('', 'All statuses'),
+            *Notification.Statuses.choices,
+        ],
+        'selected_notification_channel': selected_channel,
+        'selected_notification_status': selected_status,
+        'notification_query': search_query,
+        'notification_log_total': queryset.count(),
+        'notification_log_sent': queryset.filter(status=Notification.Statuses.SENT).count(),
+        'notification_log_failed': queryset.filter(status=Notification.Statuses.FAILED).count(),
+        'notification_log_pending': queryset.filter(status=Notification.Statuses.PENDING).count(),
+    }
+
+
+def _build_admin_staff_account_context(request, limit=50):
+    selected_role = request.GET.get('staff_role', '').strip().lower() if request else ''
+    selected_status = request.GET.get('staff_status', '').strip().lower() if request else ''
+    search_query = request.GET.get('staff_query', '').strip() if request else ''
+    staff_roles = {
+        ConsumerProfile.Roles.SECRETARY,
+        ConsumerProfile.Roles.TREASURER,
+        ConsumerProfile.Roles.READER,
+    }
+
+    queryset = ConsumerProfile.objects.filter(role__in=staff_roles).select_related('user').order_by('full_name', 'user__username')
+
+    if selected_role in staff_roles:
+        queryset = queryset.filter(role=selected_role)
+    else:
+        selected_role = ''
+
+    if selected_status == 'active':
+        queryset = queryset.filter(user__is_active=True)
+    elif selected_status == 'inactive':
+        queryset = queryset.filter(user__is_active=False)
+    else:
+        selected_status = ''
+
+    if search_query:
+        queryset = queryset.filter(
+            Q(full_name__icontains=search_query)
+            | Q(email__icontains=search_query)
+            | Q(contact__icontains=search_query)
+            | Q(user__username__icontains=search_query)
+        )
+
+    staff_accounts = list(queryset[:limit])
+    for account in staff_accounts:
+        account.account_status = 'active' if account.user.is_active else 'inactive'
+
+    base_queryset = ConsumerProfile.objects.filter(role__in=staff_roles)
+    return {
+        'staff_accounts': staff_accounts,
+        'staff_role_choices': [
+            ('', 'All staff roles'),
+            (ConsumerProfile.Roles.SECRETARY, ConsumerProfile.Roles.SECRETARY.label),
+            (ConsumerProfile.Roles.TREASURER, ConsumerProfile.Roles.TREASURER.label),
+            (ConsumerProfile.Roles.READER, ConsumerProfile.Roles.READER.label),
+        ],
+        'staff_status_choices': [
+            ('', 'All statuses'),
+            ('active', 'Active'),
+            ('inactive', 'Inactive'),
+        ],
+        'selected_staff_role': selected_role,
+        'selected_staff_status': selected_status,
+        'staff_query': search_query,
+        'staff_account_total': queryset.count(),
+        'staff_account_active_total': base_queryset.filter(user__is_active=True).count(),
+        'staff_account_inactive_total': base_queryset.filter(user__is_active=False).count(),
+    }
+
+
+def _build_admin_panel_return_url(request, selected_month):
+    query_params = {}
+    if selected_month:
+        query_params['month'] = selected_month.strftime('%Y-%m')
+
+    if request:
+        for key in (
+            'notification_channel',
+            'notification_status',
+            'notification_query',
+            'staff_role',
+            'staff_status',
+            'staff_query',
+        ):
+            value = request.GET.get(key, '').strip()
+            if value:
+                query_params[key] = value
+
+    base_url = reverse('admin_panel')
+    return f"{base_url}?{parse.urlencode(query_params)}" if query_params else base_url
+
+
+def _build_admin_panel_context(selected_month=None, request=None):
     selected_month = month_start(selected_month) or timezone.localdate().replace(day=1)
     current_month_billings = get_preferred_billing_records(
         BillingRecord.objects.filter(**month_filter_kwargs('billing_month', selected_month))
@@ -473,6 +640,9 @@ def _build_admin_panel_context(selected_month=None):
         'paymongo_configured': is_paymongo_configured(),
         'admin_monitoring_data': build_system_monitoring_data(selected_month=selected_month),
         **_build_meeting_minutes_admin_snapshot(),
+        **_build_admin_notification_log_context(request),
+        **_build_admin_staff_account_context(request),
+        'admin_panel_return_url': _build_admin_panel_return_url(request, selected_month),
         'selected_month': selected_month,
         'admin_month_choices': build_reporting_month_choices(),
         'payment_status_choices': Payment.Statuses.choices,
@@ -1158,6 +1328,8 @@ def _render_admin_live_payload(request, context):
         'monthly_collected': _format_money(context['monthly_collected']),
         'monitoring_html': render_to_string('billing/includes/admin_monitoring_section.html', context, request=request),
         'minutes_monitoring_html': render_to_string('billing/includes/admin_minutes_monitoring.html', context, request=request),
+        'notification_log_html': render_to_string('billing/includes/admin_notification_log_section.html', context, request=request),
+        'staff_account_html': render_to_string('billing/includes/admin_staff_account_section.html', context, request=request),
         'billing_rows_html': render_to_string('billing/includes/admin_billing_rows.html', context, request=request),
         'payment_rows_html': render_to_string('billing/includes/admin_payment_rows.html', context, request=request),
         'reading_rows_html': render_to_string('billing/includes/admin_reading_rows.html', context, request=request),
@@ -1421,13 +1593,13 @@ def dashboard(request):
 
 @role_required(ConsumerProfile.Roles.ADMIN)
 def admin_panel(request):
-    context = _build_admin_panel_context(get_selected_month(request.GET.get('month')))
+    context = _build_admin_panel_context(get_selected_month(request.GET.get('month')), request=request)
     return render(request, 'billing/admin_dashboard.html', context)
 
 
 @role_required(ConsumerProfile.Roles.ADMIN)
 def admin_panel_data(request):
-    context = _build_admin_panel_context(get_selected_month(request.GET.get('month')))
+    context = _build_admin_panel_context(get_selected_month(request.GET.get('month')), request=request)
     return JsonResponse(_render_admin_live_payload(request, context))
 
 
@@ -2180,6 +2352,42 @@ def notify_payment_status(request, payment_id):
     send_payment_notification(payment)
     messages.success(request, f'Payment status notification sent for {payment.consumer.full_name}.')
     return redirect('payments')
+
+
+@role_required(ConsumerProfile.Roles.ADMIN)
+@require_POST
+def update_staff_account_status(request, profile_id):
+    profile = get_object_or_404(
+        ConsumerProfile.objects.select_related('user'),
+        pk=profile_id,
+        role__in=[
+            ConsumerProfile.Roles.SECRETARY,
+            ConsumerProfile.Roles.TREASURER,
+            ConsumerProfile.Roles.READER,
+        ],
+    )
+    next_url = request.POST.get('next', '').strip()
+    requested_status = request.POST.get('account_status', '').strip().lower()
+
+    if requested_status not in {'active', 'inactive'}:
+        messages.error(request, 'Choose Active or Inactive for the selected staff account.')
+        return redirect(next_url or 'admin_panel')
+
+    is_active = requested_status == 'active'
+    if profile.user.is_active != is_active:
+        profile.user.is_active = is_active
+        profile.user.save(update_fields=['is_active'])
+        log_audit_action(
+            request.user,
+            'Updated staff account status',
+            target=profile.user.username,
+            details=f'{profile.get_role_display()} account marked {requested_status}.',
+        )
+        messages.success(request, f'{profile.get_role_display()} account "{profile.user.username}" marked {requested_status}.')
+    else:
+        messages.info(request, f'{profile.user.username} is already marked {requested_status}.')
+
+    return redirect(next_url or 'admin_panel')
 
 
 @role_required(ConsumerProfile.Roles.ADMIN, ConsumerProfile.Roles.SECRETARY, ConsumerProfile.Roles.TREASURER)

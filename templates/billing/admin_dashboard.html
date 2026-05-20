@@ -296,6 +296,14 @@
     {% include 'billing/includes/admin_minutes_monitoring.html' %}
 </section>
 
+<section id="admin-notification-log-section">
+    {% include 'billing/includes/admin_notification_log_section.html' %}
+</section>
+
+<section id="admin-staff-account-section">
+    {% include 'billing/includes/admin_staff_account_section.html' %}
+</section>
+
 <section class="page-wrap grid-2 admin-panel-grid">
     <div class="table-card">
         <h3>Recent Payments</h3>
@@ -348,6 +356,8 @@
         (function () {
             const monitoringSection = document.getElementById('admin-monitoring-section');
             const minutesMonitoringSection = document.getElementById('admin-minutes-monitoring-section');
+            const notificationLogSection = document.getElementById('admin-notification-log-section');
+            const staffAccountSection = document.getElementById('admin-staff-account-section');
             const paymentRows = document.getElementById('admin-payment-rows');
             const billingRows = document.getElementById('admin-billing-rows');
             const readingRows = document.getElementById('admin-reading-rows');
@@ -502,6 +512,30 @@
                     if (selectedMonthValue()) {
                         url.searchParams.set('month', selectedMonthValue());
                     }
+                    const channelFilter = document.querySelector('#admin-notification-filter-form select[name="notification_channel"]');
+                    const statusFilter = document.querySelector('#admin-notification-filter-form select[name="notification_status"]');
+                    const queryFilter = document.querySelector('#admin-notification-filter-form input[name="notification_query"]');
+                    const staffRoleFilter = document.querySelector('#admin-staff-account-section select[name="staff_role"]');
+                    const staffStatusFilter = document.querySelector('#admin-staff-account-section select[name="staff_status"]');
+                    const staffQueryFilter = document.querySelector('#admin-staff-account-section input[name="staff_query"]');
+                    if (channelFilter && channelFilter.value) {
+                        url.searchParams.set('notification_channel', channelFilter.value);
+                    }
+                    if (statusFilter && statusFilter.value) {
+                        url.searchParams.set('notification_status', statusFilter.value);
+                    }
+                    if (queryFilter && queryFilter.value.trim()) {
+                        url.searchParams.set('notification_query', queryFilter.value.trim());
+                    }
+                    if (staffRoleFilter && staffRoleFilter.value) {
+                        url.searchParams.set('staff_role', staffRoleFilter.value);
+                    }
+                    if (staffStatusFilter && staffStatusFilter.value) {
+                        url.searchParams.set('staff_status', staffStatusFilter.value);
+                    }
+                    if (staffQueryFilter && staffQueryFilter.value.trim()) {
+                        url.searchParams.set('staff_query', staffQueryFilter.value.trim());
+                    }
                     url.searchParams.set('_ts', Date.now().toString());
 
                     const response = await fetch(url, {
@@ -518,6 +552,12 @@
                     }
                     if (minutesMonitoringSection && payload.minutes_monitoring_html) {
                         minutesMonitoringSection.innerHTML = payload.minutes_monitoring_html;
+                    }
+                    if (notificationLogSection && payload.notification_log_html) {
+                        notificationLogSection.innerHTML = payload.notification_log_html;
+                    }
+                    if (staffAccountSection && payload.staff_account_html) {
+                        staffAccountSection.innerHTML = payload.staff_account_html;
                     }
                     if (paymentRows && payload.payment_rows_html) {
                         paymentRows.innerHTML = payload.payment_rows_html;

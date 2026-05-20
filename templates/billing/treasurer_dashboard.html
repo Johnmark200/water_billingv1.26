@@ -4,7 +4,7 @@
 <style>
     .treasurer-stats-grid,
     .treasurer-panel-grid {
-        align-items: start;
+        align-items: stretch;
     }
 
     .treasurer-stats-grid {
@@ -14,6 +14,37 @@
     .treasurer-panel-grid > .table-card,
     .treasurer-panel-grid > .card {
         min-width: 0;
+        min-height: 320px;
+        height: 320px;
+        overflow: hidden;
+    }
+
+    .treasurer-panel-grid .card > *,
+    .treasurer-panel-grid .table-card > * {
+        flex-shrink: 0;
+    }
+
+    .treasurer-panel-grid .card {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .treasurer-panel-grid .card > h3 {
+        flex-shrink: 0;
+    }
+
+    .treasurer-panel-grid .card > p:not(:first-child),
+    .treasurer-panel-grid .card > a {
+        flex-shrink: 0;
+    }
+
+    .treasurer-panel-grid .table-card .table-shell,
+    .treasurer-panel-grid .card .treasurer-summary-list,
+    .treasurer-panel-grid .card > *:not(h3):not(p):not(a) {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
     }
 
     .treasurer-summary-list {

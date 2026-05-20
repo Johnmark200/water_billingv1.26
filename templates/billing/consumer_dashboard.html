@@ -272,31 +272,12 @@
 </section>
 
 {% if consumer %}
-<section id="consumer-usage-charts">
-    {% include 'billing/includes/consumer_usage_charts.html' %}
-</section>
-
-<section class="page-wrap grid-3">
-    <div id="consumer-profile-summary">
-        {% include 'billing/includes/profile_summary.html' %}
-    </div>
+<section class="page-wrap">
     <div class="card">
-        <h3>Payment Channels</h3>
-        <p><strong>Cash:</strong> {{ payment_settings.enable_cash_payments|yesno:'Enabled,Disabled' }}</p>
-        <p><strong>Online:</strong> {{ payment_settings.enable_online_payments|yesno:'Enabled,Disabled' }}</p>
-        <p><strong>Next payment month:</strong> {{ next_payment_month|date:'F Y'|default:'-' }}</p>
-        <p class="muted">After you settle the current month, the next month automatically becomes available. Upcoming months stay open for advance payments.</p>
-        <div class="btn-row" style="margin-top: 16px;">
-            <a href="{% url 'account_center' %}" class="btn secondary">Account Center</a>
-        </div>
-    </div>
-    <div class="card">
-        <h3>Recent Alerts</h3>
-        {% for item in notification_feed %}
-            <p><strong>{{ item.title }}</strong><br><span class="muted">{{ item.created_at }}</span></p>
-        {% empty %}
-            <p class="empty-state">No recent in-app notifications.</p>
-        {% endfor %}
+        <h3>Current Balance</h3>
+        <p class="muted">Total outstanding amount to be paid</p>
+        <p style="font-size: 32px; font-weight: 700; color: var(--brand-dark); margin: 12px 0;" id="consumer-total-balance">PHP 0.00</p>
+        <p class="muted" id="balance-months-count">0 months pending</p>
     </div>
 </section>
 
@@ -617,6 +598,21 @@
             }
         }
 
+        function updateBalanceCard() {
+            const balanceDataElement = document.getElementById('consumer-billing-balance-data');
+            const totalBalanceElement = document.getElementById('consumer-total-balance');
+            const monthsCountElement = document.getElementById('balance-months-count');
+            
+            if (!balanceDataElement || !totalBalanceElement || !monthsCountElement) return;
+            
+            const balanceData = JSON.parse(balanceDataElement.textContent || '[]');
+            const totalBalance = balanceData.reduce((sum, item) => sum + Number(item.balance || 0), 0);
+            const pendingMonths = balanceData.filter(item => Number(item.balance || 0) > 0).length;
+            
+            totalBalanceElement.textContent = `PHP ${totalBalance.toFixed(2)}`;
+            monthsCountElement.textContent = `${pendingMonths} month${pendingMonths !== 1 ? 's' : ''} pending`;
+        }
+
         function initPaymentMode() {
             const form = document.getElementById('consumer-payment-form');
             if (!form) return;
@@ -718,11 +714,13 @@
             syncWalletSelectionUi();
         }
 
+        updateBalanceCard();
         initPaymentMode();
         renderConsumerCharts();
         window.addEventListener('themechange', renderConsumerCharts);
         {% if consumer %}
         setInterval(refreshLivePanel, 15000);
+        setInterval(updateBalanceCard, 15000);
         {% endif %}
     })();
 </script>

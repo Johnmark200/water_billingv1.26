@@ -2,22 +2,23 @@ from datetime import date
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Sum
 from django.utils import timezone
 
 
+MINIMUM_BILLABLE_USAGE_M3 = Decimal('30')
+
+
 def calculate_usage_m3(previous_reading, current_reading):
     previous_value = previous_reading or Decimal('0')
     current_value = current_reading or Decimal('0')
+    if current_value < previous_value:
+        raise ValidationError('Current reading cannot be lower than the previous reading.')
+
     usage_value = current_value - previous_value
-
-    # Readers may enter the actual current meter figure or the current-cycle usage.
-    # When the new input is lower than the prior snapshot, bill the entered amount.
-    if usage_value < 0:
-        return current_value
-
-    return usage_value
+    return usage_value if usage_value >= MINIMUM_BILLABLE_USAGE_M3 else MINIMUM_BILLABLE_USAGE_M3
 
 
 class ConsumerProfile(models.Model):
@@ -140,10 +141,23 @@ class BillingRecord(models.Model):
         return due if due > 0 else Decimal('0')
 
     def save(self, *args, **kwargs):
+        update_fields = kwargs.get('update_fields')
+        tracked_update_fields = set(update_fields) if update_fields is not None else None
+        should_recalculate_totals = tracked_update_fields is None or bool(
+            tracked_update_fields.intersection({'billing_month', 'previous_reading', 'current_reading', 'rate_per_m3'})
+        )
+
         if self.billing_month:
             self.billing_month = self.billing_month.replace(day=1)
-        self.usage_m3 = calculate_usage_m3(self.previous_reading, self.current_reading)
-        self.total_amount = self.usage_m3 * (self.rate_per_m3 or Decimal('0'))
+            if tracked_update_fields is not None and 'billing_month' in tracked_update_fields:
+                tracked_update_fields.add('billing_month')
+
+        if should_recalculate_totals:
+            self.usage_m3 = calculate_usage_m3(self.previous_reading, self.current_reading)
+            self.total_amount = self.usage_m3 * (self.rate_per_m3 or Decimal('0'))
+            if tracked_update_fields is not None:
+                tracked_update_fields.update({'usage_m3', 'total_amount'})
+
         today = timezone.localdate()
         if self.total_amount > 0 and self.amount_paid >= self.total_amount:
             self.status = self.Statuses.PAID
@@ -151,6 +165,9 @@ class BillingRecord(models.Model):
             self.status = self.Statuses.OVERDUE
         else:
             self.status = self.Statuses.PENDING
+        if tracked_update_fields is not None:
+            tracked_update_fields.add('status')
+            kwargs['update_fields'] = list(tracked_update_fields)
 
         super().save(*args, **kwargs)
 
@@ -284,7 +301,7 @@ class Payment(models.Model):
                 )
             )
             self.billing.amount_paid = paid_total
-            self.billing.save(update_fields=['amount_paid', 'usage_m3', 'total_amount', 'status'])
+            self.billing.save(update_fields=['amount_paid', 'status'])
 
     def __str__(self):
         return f'{self.consumer.full_name} - {self.amount_paid}'

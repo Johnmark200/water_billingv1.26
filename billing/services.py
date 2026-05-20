@@ -1947,7 +1947,7 @@ def _sync_advance_payments_to_billing(billing):
         payment.amount_credited
         for payment in billing.payments.filter(status=Payment.Statuses.COMPLETED).only('amount_paid', 'discount_amount')
     )
-    billing.save(update_fields=['amount_paid', 'usage_m3', 'total_amount', 'status'])
+    billing.save(update_fields=['amount_paid', 'status'])
     return billing
 
 

@@ -130,7 +130,14 @@ def build_navigation_items(role):
         items.append({'label': 'Communications', 'url_name': 'communications', 'icon': 'bi-megaphone'})
 
     if role in READING_ENTRY_ROLES:
-        items.append({'label': 'Meter Readings', 'url_name': 'reader_panel', 'icon': 'bi-speedometer'})
+        items.append(
+            {
+                'label': 'Meter Readings',
+                'url_name': 'reader_panel',
+                'icon': 'bi-speedometer',
+                'fragment': 'submit-meter-reading',
+            }
+        )
 
     if role == ConsumerProfile.Roles.CONSUMER:
         items.append({'label': 'Account Center', 'url_name': 'account_center', 'icon': 'bi-person-badge'})

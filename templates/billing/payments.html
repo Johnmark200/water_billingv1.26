@@ -616,11 +616,6 @@
                         {% endfor %}
                     </p>
                 {% endif %}
-                <p id="admin-reference-row">
-                    <label for="{{ form.reference_number.id_for_label }}">Reference number</label>
-                    {{ form.reference_number }}
-                    <span class="muted">Cash transactions do not require a reference number. PayMongo online checkout generates one automatically.</span>
-                </p>
             </form>
         {% else %}
             <p class="muted">Secretary accounts can review transactions here but cannot create or edit payment records.</p>
@@ -787,7 +782,6 @@
             const billingField = document.getElementById('id_billing');
             const methodField = document.getElementById('id_payment_method');
             const amountField = document.getElementById('id_amount_paid');
-            const referenceRow = document.getElementById('admin-reference-row');
             const checkoutGuide = document.getElementById('paymongo-checkout-guide');
             const guideIntro = document.getElementById('paymongo-guide-intro');
             const guideSteps = document.getElementById('paymongo-guide-steps');

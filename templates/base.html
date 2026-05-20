@@ -110,7 +110,6 @@
             content: "";
             position: fixed;
             inset: 0;
-            background: url("{% static 'legacy_img/tabuan-logo.png' %}") center 92px / min(72vw, 680px) auto no-repeat;
             opacity: var(--watermark-opacity);
             pointer-events: none;
             z-index: -1;
@@ -402,7 +401,6 @@
             content: "";
             position: absolute;
             inset: 16px 12px;
-            background: url("{% static 'legacy_img/tabuan-logo.png' %}") center center / 88% auto no-repeat;
             opacity: 0.4;
             z-index: -1;
             pointer-events: none;
@@ -707,7 +705,8 @@
         .card,
         .table-card,
         .form-card,
-        .feature-card {
+        .feature-card,
+        .mini-card {
             padding: 24px;
         }
 
@@ -715,10 +714,6 @@
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 18px;
-        }
-
-        .mini-card {
-            padding: 22px;
         }
 
         .mini-card h3 {
@@ -1172,7 +1167,7 @@
                     <nav class="sidebar-nav">
                         {% for item in navigation_items %}
                             <div class="sidebar-link-stack">
-                                <a href="{% url item.url_name %}" class="sidebar-link {% if item.active %}active{% endif %}">
+                                <a href="{% url item.url_name %}{% if item.fragment %}#{{ item.fragment }}{% endif %}" class="sidebar-link {% if item.active %}active{% endif %}">
                                     <span class="sidebar-link-main">
                                         <i class="sidebar-link-icon bi {{ item.icon|default:'bi-circle' }}" aria-hidden="true"></i>
                                         <span class="sidebar-link-label">{{ item.label }}</span>
