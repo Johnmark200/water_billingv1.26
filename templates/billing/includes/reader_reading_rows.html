@@ -1,6 +1,7 @@
 {% for reading in recent_readings %}
     <tr>
         <td data-label="Consumer">{{ reading.consumer.full_name }}</td>
+        <td data-label="Meter">{{ reading.consumer.meter_number }}</td>
         <td data-label="Month">{{ reading.billing_month|date:'F Y' }}</td>
         <td data-label="Previous">{{ reading.previous_reading }}</td>
         <td data-label="Current">{{ reading.current_reading }}</td>
@@ -23,5 +24,5 @@
         </td>
     </tr>
 {% empty %}
-    <tr><td colspan="7" class="empty-state">No meter readings submitted yet.</td></tr>
+    <tr><td colspan="8" class="empty-state">No meter readings submitted yet.</td></tr>
 {% endfor %}

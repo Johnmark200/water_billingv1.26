@@ -10,9 +10,15 @@
     {% endif %}
 
     <p>
-        <label for="{{ form.consumer.id_for_label }}">Consumer</label>
-        {{ form.consumer }}
-        {% for error in form.consumer.errors %}
+        <label for="{{ form.meter_number.id_for_label }}">Meter number</label>
+        {{ form.meter_number }}
+        <datalist id="reader-meter-number-list">
+            {% for consumer in reader_meter_options %}
+                <option value="{{ consumer.meter_number }}">{{ consumer.full_name }} | ACC-{{ consumer.id|stringformat:'05d' }}</option>
+            {% endfor %}
+        </datalist>
+        <span class="muted">Use the permanent meter identifier assigned to the consumer account.</span>
+        {% for error in form.meter_number.errors %}
             <span class="field-error">{{ error }}</span>
         {% endfor %}
     </p>

@@ -19,6 +19,7 @@ from django.utils import timezone
 from django.utils.html import escape
 
 from .models import (
+    AreaRate,
     AuditLog,
     BillingRecord,
     Consumer,
@@ -35,6 +36,54 @@ from .models import (
 
 
 User = get_user_model()
+
+
+def normalize_location_name(value):
+    return re.sub(r'\s+', ' ', str(value or '').strip())
+
+
+def get_effective_rate_assignment(consumer, system_settings=None):
+    system_settings = system_settings or SystemSettings.load()
+    default_rate = system_settings.rate_per_m3
+    default_assignment = {
+        'rate': default_rate,
+        'category': 'default',
+        'location_name': 'Default rate',
+        'label': f'Default rate - PHP {default_rate:,.2f}/m3',
+    }
+    if consumer is None:
+        return default_assignment
+
+    for category, raw_value in (
+        (AreaRate.Categories.HOUSEHOLD, consumer.household_code),
+        (AreaRate.Categories.VILLAGE, consumer.village),
+        (AreaRate.Categories.BARANGAY, consumer.barangay),
+    ):
+        location_name = normalize_location_name(raw_value)
+        if not location_name:
+            continue
+        area_rate = (
+            AreaRate.objects.filter(
+                category=category,
+                location_name__iexact=location_name,
+                is_active=True,
+            )
+            .order_by('-updated_at', '-id')
+            .first()
+        )
+        if area_rate is not None:
+            return {
+                'rate': area_rate.rate_per_m3,
+                'category': area_rate.category,
+                'location_name': area_rate.location_name,
+                'label': f'{area_rate.get_category_display()}: {area_rate.location_name} - PHP {area_rate.rate_per_m3:,.2f}/m3',
+            }
+
+    return default_assignment
+
+
+def get_effective_rate_per_m3(consumer, system_settings=None):
+    return get_effective_rate_assignment(consumer, system_settings=system_settings)['rate']
 
 
 def log_audit_action(user, action, target='', details=''):
@@ -2450,7 +2499,7 @@ def create_or_update_billing_from_reading(reading, system_settings=None):
 
     billing.previous_reading = reading.previous_reading
     billing.current_reading = reading.current_reading
-    billing.rate_per_m3 = system_settings.rate_per_m3
+    billing.rate_per_m3 = get_effective_rate_per_m3(reading.consumer, system_settings=system_settings)
     billing.previous_arrears = get_previous_arrears_balance(reading.consumer, reading.billing_month)
     billing.billing_date = reading.reading_date
     billing.due_date = reading.reading_date + timedelta(days=system_settings.billing_due_days)
@@ -2460,24 +2509,29 @@ def create_or_update_billing_from_reading(reading, system_settings=None):
     return billing
 
 
-def sync_existing_billings_with_settings(system_settings=None):
+def sync_existing_billings_with_settings(system_settings=None, consumer=None):
     system_settings = system_settings or SystemSettings.load()
     updated_records = 0
 
-    for billing in BillingRecord.objects.all():
+    queryset = BillingRecord.objects.all()
+    if consumer is not None:
+        queryset = queryset.filter(consumer=consumer)
+
+    for billing in queryset:
         baseline_date = billing.billing_date or billing.billing_month
         expected_due_date = (
             baseline_date + timedelta(days=system_settings.billing_due_days)
             if baseline_date
             else billing.due_date
         )
-        should_update = billing.rate_per_m3 != system_settings.rate_per_m3
+        resolved_rate = get_effective_rate_per_m3(billing.consumer, system_settings=system_settings)
+        should_update = billing.rate_per_m3 != resolved_rate
         should_update = should_update or bool(expected_due_date and billing.due_date != expected_due_date)
 
         if not should_update:
             continue
 
-        billing.rate_per_m3 = system_settings.rate_per_m3
+        billing.rate_per_m3 = resolved_rate
         billing.previous_arrears = get_previous_arrears_balance(billing.consumer, billing.billing_month)
         if expected_due_date:
             billing.due_date = expected_due_date
@@ -2558,6 +2612,7 @@ def handle_meter_reading_submission(form, submitted_by):
         billing=billing,
         meter_reading=reading,
     )
+    send_billing_due_notification(billing, system_settings=system_settings)
 
     return reading, billing
 

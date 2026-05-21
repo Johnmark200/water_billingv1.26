@@ -1,19 +1,95 @@
 {% extends 'base.html' %}
-{% block title %}Payment Settings{% endblock %}
+{% block title %}Settings{% endblock %}
 {% block content %}
 <section class="page-wrap">
+    <div class="toolbar" style="justify-content: space-between; margin-bottom: 18px;">
+        <div>
+            <h2 class="page-title">System Settings</h2>
+            <p class="muted">Configure payment behavior, notifications, billing due dates, and area-based cubic meter pricing from one page.</p>
+        </div>
+        <a href="{% url 'admin_panel' %}" class="btn secondary">Back to Admin Panel</a>
+    </div>
+</section>
+
+<section class="page-wrap grid-2">
     <div class="form-card">
-        <h2 class="page-title">Payment and Notification Settings</h2>
-        <p class="muted">Only the admin can configure which payment channels appear in the consumer portal and whether email or SMS notifications are sent automatically.</p>
-        <p class="muted">Saving a new rate or due-day setting now recalculates existing billing amounts and due dates across the admin, reader, treasurer, secretary, and consumer panels.</p>
+        <h3>Payment and Notification Settings</h3>
+        <p class="muted">Saving the default rate or due-day setting recalculates billing amounts and due dates across every dashboard.</p>
         <form method="post">
             {% csrf_token %}
+            <input type="hidden" name="action" value="save_settings">
             {{ form.as_p }}
             <div class="btn-row">
                 <button type="submit" class="btn">Save Settings</button>
-                <a href="{% url 'admin_panel' %}" class="btn secondary">Back to Admin Panel</a>
             </div>
         </form>
+    </div>
+
+    <div class="form-card">
+        <h3>{% if editing_rate %}Edit Area Rate{% else %}Add Area Rate{% endif %}</h3>
+        <p class="muted">Define specific cubic meter rates for household, village, or barangay assignments. Consumer records can then use those exact pricing scopes.</p>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="save_rate">
+            <input type="hidden" name="rate_id" value="{{ editing_rate.id|default:'' }}">
+            {{ rate_form.as_p }}
+            <div class="btn-row">
+                <button type="submit" class="btn">{% if editing_rate %}Update Rate{% else %}Save Area Rate{% endif %}</button>
+                {% if editing_rate %}
+                    <a href="{% url 'payment_settings' %}" class="btn secondary">Cancel Edit</a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+</section>
+
+<section class="page-wrap">
+    <div class="table-card">
+        <div class="toolbar" style="justify-content: space-between; margin-bottom: 16px;">
+            <div>
+                <h3>Configured Area Rates</h3>
+                <p class="muted">Use consumer profile fields for `barangay`, `village`, and `household` to assign these rates automatically during billing generation.</p>
+            </div>
+            <span class="status-chip">{{ rate_entries|length }} configured</span>
+        </div>
+        <div class="table-shell table-shell-wide" data-stack-on-mobile="true">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Category</th>
+                        <th>Location</th>
+                        <th>Rate per m3</th>
+                        <th>Status</th>
+                        <th>Updated</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in rate_entries %}
+                        <tr>
+                            <td data-label="Category">{{ item.get_category_display }}</td>
+                            <td data-label="Location">{{ item.location_name }}</td>
+                            <td data-label="Rate per m3">PHP {{ item.rate_per_m3|floatformat:2 }}</td>
+                            <td data-label="Status">{{ item.is_active|yesno:'Active,Inactive' }}</td>
+                            <td data-label="Updated">{{ item.updated_at|date:'Y-m-d H:i' }}</td>
+                            <td data-label="Actions">
+                                <div class="status-actions">
+                                    <a href="{% url 'payment_settings' %}?rate={{ item.id }}" class="btn secondary">Edit</a>
+                                    <form method="post" style="display: inline;">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="delete_rate">
+                                        <input type="hidden" name="rate_id" value="{{ item.id }}">
+                                        <button type="submit" class="btn secondary">Delete</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="6" class="empty-state">No area rates configured yet. The system will use the default cubic meter rate until area-specific pricing is added.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </section>
 {% endblock %}

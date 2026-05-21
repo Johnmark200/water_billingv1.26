@@ -1,10 +1,13 @@
+import re
 from datetime import date
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.files.storage import default_storage
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Sum
+from django.utils.crypto import get_random_string
 from django.utils import timezone
 
 
@@ -19,6 +22,38 @@ def calculate_usage_m3(previous_reading, current_reading):
 
     usage_value = current_value - previous_value
     return usage_value if usage_value >= MINIMUM_BILLABLE_USAGE_M3 else MINIMUM_BILLABLE_USAGE_M3
+
+
+def _safe_file_url(field_file):
+    if not field_file or not getattr(field_file, 'name', ''):
+        return ''
+    try:
+        if default_storage.exists(field_file.name):
+            return field_file.url
+    except Exception:
+        return ''
+    return ''
+
+
+def _name_initial(name, fallback='U'):
+    cleaned = str(name or '').strip()
+    return cleaned[:1].upper() if cleaned else fallback
+
+
+def _meter_name_prefix(full_name):
+    parts = [segment for segment in re.split(r'\s+', str(full_name or '').strip()) if segment]
+    particles = {'DE', 'DELA', 'DEL', 'DELOS', 'DELAS', 'VAN', 'VON', 'SAN', 'SANTA', 'STA'}
+    if parts:
+        selected = [parts[-1]]
+        index = len(parts) - 2
+        while index >= 0 and re.sub(r'[^A-Za-z0-9]', '', parts[index]).upper() in particles:
+            selected.insert(0, parts[index])
+            index -= 1
+        seed = ''.join(selected)
+    else:
+        seed = 'CONSUMER'
+    normalized = re.sub(r'[^A-Za-z0-9]', '', seed).upper()
+    return normalized[:12] or 'CONSUMER'
 
 
 class ConsumerProfile(models.Model):
@@ -48,6 +83,14 @@ class ConsumerProfile(models.Model):
     def __str__(self):
         return self.full_name or self.user.username
 
+    @property
+    def avatar_url(self):
+        return _safe_file_url(self.photo) or _safe_file_url(getattr(getattr(self, 'consumer_record', None), 'photo', None))
+
+    @property
+    def avatar_initial(self):
+        return _name_initial(self.full_name or self.user.username)
+
 
 class Consumer(models.Model):
     class Statuses(models.TextChoices):
@@ -70,7 +113,11 @@ class Consumer(models.Model):
         related_name='consumer_record',
     )
     full_name = models.CharField(max_length=255)
+    meter_number = models.CharField(max_length=32, unique=True, blank=True)
     address = models.TextField(blank=True)
+    household_code = models.CharField(max_length=120, blank=True)
+    village = models.CharField(max_length=120, blank=True)
+    barangay = models.CharField(max_length=120, blank=True)
     contact_number = models.CharField(max_length=50, blank=True)
     status = models.CharField(max_length=20, choices=Statuses.choices, default=Statuses.ACTIVE)
     account_status = models.CharField(
@@ -84,11 +131,47 @@ class Consumer(models.Model):
     photo = models.ImageField(upload_to='consumers/', blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get('update_fields')
+        if not self.meter_number:
+            self.meter_number = self._generate_meter_number()
+            if update_fields is not None:
+                tracked_fields = set(update_fields)
+                tracked_fields.add('meter_number')
+                kwargs['update_fields'] = list(tracked_fields)
+        super().save(*args, **kwargs)
+
     @property
     def portal_user(self):
         if self.profile:
             return self.profile.user
         return None
+
+    @property
+    def avatar_url(self):
+        return _safe_file_url(self.photo) or _safe_file_url(getattr(self.profile, 'photo', None))
+
+    @property
+    def avatar_initial(self):
+        return _name_initial(self.full_name)
+
+    @property
+    def rate_scope_label(self):
+        if self.household_code:
+            return f'Household: {self.household_code}'
+        if self.village:
+            return f'Village: {self.village}'
+        if self.barangay:
+            return f'Barangay: {self.barangay}'
+        return 'Default rate'
+
+    def _generate_meter_number(self):
+        prefix = _meter_name_prefix(self.full_name)
+        allowed = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+        while True:
+            candidate = f'{prefix}-MTR-{get_random_string(5, allowed)}'
+            if not Consumer.objects.exclude(pk=self.pk).filter(meter_number=candidate).exists():
+                return candidate
 
     def __str__(self):
         return f'{self.id:03d} - {self.full_name}'
@@ -127,6 +210,33 @@ class SystemSettings(models.Model):
 
     def __str__(self):
         return 'System Settings'
+
+
+class AreaRate(models.Model):
+    class Categories(models.TextChoices):
+        HOUSEHOLD = 'household', 'Household'
+        VILLAGE = 'village', 'Village'
+        BARANGAY = 'barangay', 'Barangay'
+
+    category = models.CharField(max_length=20, choices=Categories.choices)
+    location_name = models.CharField(max_length=120)
+    rate_per_m3 = models.DecimalField(max_digits=10, decimal_places=2, default=20)
+    is_active = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['category', 'location_name']
+        constraints = [
+            models.UniqueConstraint(fields=['category', 'location_name'], name='unique_area_rate_category_location'),
+        ]
+
+    def save(self, *args, **kwargs):
+        self.location_name = re.sub(r'\s+', ' ', str(self.location_name or '').strip())
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f'{self.get_category_display()} - {self.location_name}'
 
 
 class BillingRecord(models.Model):

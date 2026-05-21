@@ -10,6 +10,7 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from .models import (
+    AreaRate,
     BillingRecord,
     Consumer,
     ConsumerProfile,
@@ -319,7 +320,18 @@ class ConsumerForm(forms.ModelForm):
 
     class Meta:
         model = Consumer
-        fields = ['profile', 'full_name', 'address', 'contact_number', 'status', 'photo']
+        fields = [
+            'profile',
+            'full_name',
+            'meter_number',
+            'barangay',
+            'village',
+            'household_code',
+            'address',
+            'contact_number',
+            'status',
+            'photo',
+        ]
         widgets = {
             'address': forms.Textarea(attrs={'rows': 3}),
         }
@@ -333,16 +345,37 @@ class ConsumerForm(forms.ModelForm):
         self.fields['profile'].required = False
         self.fields['profile'].label = 'Linked account profile'
         self.fields['profile'].help_text = 'Optional. Link this consumer to an existing system account profile.'
+        self.fields['meter_number'].required = False
+        self.fields['meter_number'].help_text = 'Generated automatically and stays permanent for the consumer account.'
+        self.fields['meter_number'].widget.attrs['readonly'] = 'readonly'
+        self.fields['meter_number'].widget.attrs['placeholder'] = 'Generated after saving'
         self.fields['linked_account_role'].label = 'Linked account role'
         if self.instance.pk and self.instance.profile_id:
             self.fields['linked_account_role'].initial = self.instance.profile.role
-        self.order_fields(['profile', 'linked_account_role', 'full_name', 'address', 'contact_number', 'status', 'photo'])
+        self.order_fields(
+            [
+                'profile',
+                'linked_account_role',
+                'full_name',
+                'meter_number',
+                'barangay',
+                'village',
+                'household_code',
+                'address',
+                'contact_number',
+                'status',
+                'photo',
+            ]
+        )
 
     def clean_contact_number(self):
         contact_number = normalize_phone_number(self.cleaned_data.get('contact_number', ''))
         if contact_number and not is_e164_phone_number(contact_number):
             raise forms.ValidationError('Enter the contact number in E.164 format, for example +639171234567.')
         return contact_number
+
+    def clean_meter_number(self):
+        return getattr(self.instance, 'meter_number', '') or self.initial.get('meter_number', '')
 
     def save(self, commit=True):
         consumer = super().save(commit=False)
@@ -367,7 +400,7 @@ class ConsumerForm(forms.ModelForm):
                 if profile.contact != consumer.contact_number:
                     profile.contact = consumer.contact_number
                     profile_updates.append('contact')
-                if consumer.photo and profile.photo != consumer.photo:
+                if 'photo' in self.changed_data and profile.photo != consumer.photo:
                     profile.photo = consumer.photo
                     profile_updates.append('photo')
 
@@ -796,10 +829,21 @@ class SystemSettingsForm(forms.ModelForm):
         }
 
 
+class AreaRateForm(forms.ModelForm):
+    class Meta:
+        model = AreaRate
+        fields = ['category', 'location_name', 'rate_per_m3', 'is_active']
+
+    def clean_location_name(self):
+        return re.sub(r'\s+', ' ', self.cleaned_data.get('location_name', '').strip())
+
+
 class MeterReadingForm(forms.ModelForm):
+    meter_number = forms.CharField(max_length=32)
+
     class Meta:
         model = MeterReading
-        fields = ['consumer', 'reading_date', 'current_reading', 'notes']
+        fields = ['meter_number', 'reading_date', 'current_reading', 'notes']
         widgets = {
             'reading_date': forms.DateInput(attrs={'type': 'date'}),
             'notes': forms.Textarea(attrs={'rows': 3}),
@@ -807,13 +851,19 @@ class MeterReadingForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if 'consumer' in self.fields:
-            self.fields['consumer'].queryset = Consumer.objects.filter(status=Consumer.Statuses.ACTIVE).order_by(
-                'full_name'
-            )
+        self.fields['meter_number'].widget.attrs.update(
+            {
+                'placeholder': 'Enter assigned meter number',
+                'autocomplete': 'off',
+                'list': 'reader-meter-number-list',
+            }
+        )
         self.fields['current_reading'].help_text = (
             f'Enter the actual current meter reading. Minimum billable usage is {MINIMUM_BILLABLE_USAGE_M3} m3.'
         )
+
+    def clean_meter_number(self):
+        return self.cleaned_data.get('meter_number', '').strip().upper()
 
     def clean_current_reading(self):
         current_reading = self.cleaned_data['current_reading']
@@ -823,7 +873,17 @@ class MeterReadingForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
-        consumer = cleaned_data.get('consumer') or getattr(self.instance, 'consumer', None)
+        meter_number = cleaned_data.get('meter_number')
+        consumer = getattr(self.instance, 'consumer', None)
+        if meter_number:
+            consumer = Consumer.objects.filter(
+                status=Consumer.Statuses.ACTIVE,
+                meter_number__iexact=meter_number,
+            ).first()
+            if consumer is None:
+                self.add_error('meter_number', 'No active consumer account is linked to that meter number.')
+            else:
+                cleaned_data['consumer'] = consumer
         reading_date = cleaned_data.get('reading_date') or getattr(self.instance, 'reading_date', None)
         current_reading = cleaned_data.get('current_reading')
 
@@ -875,11 +935,11 @@ class ProfileUpdateForm(forms.ModelForm):
                 consumer.full_name = profile.full_name
                 consumer.address = profile.address
                 consumer.contact_number = profile.contact
-                if profile.photo:
+                if 'photo' in self.changed_data:
                     consumer.photo = profile.photo
 
                 update_fields = ['full_name', 'address', 'contact_number']
-                if profile.photo:
+                if 'photo' in self.changed_data:
                     update_fields.append('photo')
                 consumer.save(update_fields=update_fields)
 

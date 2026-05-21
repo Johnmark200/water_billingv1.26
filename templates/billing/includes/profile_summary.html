@@ -1,12 +1,12 @@
 <div class="card profile-summary-card">
     <div class="profile-summary">
         <div class="profile-avatar">
-            {% if profile.photo %}
-                <img src="{{ profile.photo.url }}" alt="{{ profile.full_name }}">
-            {% elif consumer and consumer.photo %}
-                <img src="{{ consumer.photo.url }}" alt="{{ consumer.full_name }}">
+            {% if profile.avatar_url %}
+                <img src="{{ profile.avatar_url }}" alt="{{ profile.full_name }}">
+            {% elif consumer and consumer.avatar_url %}
+                <img src="{{ consumer.avatar_url }}" alt="{{ consumer.full_name }}">
             {% else %}
-                <span>{{ profile.full_name|default:request.user.username|slice:':1'|upper }}</span>
+                <span>{{ profile.avatar_initial|default:request.user.username|slice:':1'|upper }}</span>
             {% endif %}
         </div>
         <div class="profile-summary-copy">
@@ -18,6 +18,7 @@
             <p><strong>Address:</strong> {{ profile.address|default:'-' }}</p>
             {% if consumer %}
                 <p><strong>Consumer ID:</strong> {{ consumer.id|stringformat:'03d' }}</p>
+                <p><strong>Meter Number:</strong> {{ consumer.meter_number|default:'-' }}</p>
                 <p><strong>Status:</strong> {{ consumer.get_status_display }}</p>
             {% endif %}
         </div>

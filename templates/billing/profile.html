@@ -23,6 +23,40 @@
     </div>
 </section>
 
+{% if role == 'consumer' %}
+<section class="page-wrap">
+    <div class="table-card">
+        <h3>Recent Account Notifications</h3>
+        <p class="muted">Billing updates, reading confirmations, and overdue alerts posted to your account appear here.</p>
+        <div class="table-shell" data-stack-on-mobile="true">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Title</th>
+                        <th>Type</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in profile_notification_feed %}
+                        <tr>
+                            <td data-label="Title">
+                                <strong>{{ item.title }}</strong><br>
+                                <span class="muted">{{ item.message|truncatechars:160 }}</span>
+                            </td>
+                            <td data-label="Type">{{ item.get_notification_type_display }}</td>
+                            <td data-label="Date">{{ item.created_at|date:'Y-m-d H:i' }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="3" class="empty-state">No account notifications are available yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% endif %}
+
 {% if show_profile_transactions %}
 <section class="page-wrap grid-3">
     <div class="table-card">

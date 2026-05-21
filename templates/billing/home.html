@@ -8,8 +8,9 @@
         overflow: hidden;
         border-radius: 32px;
         background:
-            linear-gradient(180deg, rgba(6, 27, 36, 0.04), rgba(6, 27, 36, 0.08)),
-            url("{% static 'legacy_img/tabuan-logo.png' %}") center top / 360px auto repeat;
+            radial-gradient(circle at top right, rgba(14, 165, 233, 0.16), transparent 34%),
+            radial-gradient(circle at bottom left, rgba(15, 118, 110, 0.12), transparent 32%),
+            linear-gradient(180deg, #f8fcfd, #eef7f9 54%, #f9fbfc);
         box-shadow: 0 28px 64px rgba(24, 54, 66, 0.16);
     }
 
@@ -17,7 +18,9 @@
         content: "";
         position: absolute;
         inset: 0;
-        background: linear-gradient(120deg, rgba(244, 251, 253, 0.92) 0%, rgba(244, 251, 253, 0.82) 38%, rgba(244, 251, 253, 0.6) 100%);
+        background:
+            linear-gradient(120deg, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0.58) 42%, rgba(255, 255, 255, 0.35) 100%),
+            linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 30%);
         z-index: 0;
     }
 
@@ -34,7 +37,7 @@
         gap: 18px;
         padding: 18px 24px;
         border-bottom: 1px solid rgba(17, 94, 89, 0.12);
-        background: linear-gradient(90deg, rgba(15, 118, 110, 0.22), rgba(14, 165, 233, 0.14));
+        background: linear-gradient(90deg, rgba(15, 118, 110, 0.18), rgba(14, 165, 233, 0.12));
     }
 
     .landing-brand-logo {
@@ -54,7 +57,6 @@
         letter-spacing: 0.02em;
         text-transform: uppercase;
         color: #0c6aa6;
-        text-shadow: 1px 1px 0 rgba(255, 255, 255, 0.72);
     }
 
     .landing-brand-copy p {
@@ -124,32 +126,31 @@
     .landing-highlight-card {
         position: relative;
         overflow: hidden;
-        min-height: 360px;
+        min-height: 220px;
         border-radius: 24px;
+        padding: 20px;
+        border: 1px solid rgba(17, 94, 89, 0.1);
         box-shadow: 0 22px 44px rgba(24, 54, 66, 0.14);
+        display: flex;
+        align-items: flex-end;
     }
 
-    .landing-highlight-card img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        display: block;
+    .landing-highlight-card.leadership {
+        background: linear-gradient(145deg, rgba(15, 118, 110, 0.22), rgba(255, 255, 255, 0.92));
     }
 
-    .landing-highlight-card::after {
-        content: "";
-        position: absolute;
-        inset: 0;
-        background: linear-gradient(180deg, rgba(3, 20, 28, 0.04), rgba(3, 20, 28, 0.7));
+    .landing-highlight-card.operations {
+        background: linear-gradient(145deg, rgba(14, 165, 233, 0.18), rgba(255, 255, 255, 0.94));
+    }
+
+    .landing-highlight-card.service {
+        background: linear-gradient(145deg, rgba(245, 158, 11, 0.18), rgba(255, 255, 255, 0.94));
     }
 
     .landing-highlight-copy {
-        position: absolute;
-        left: 18px;
-        right: 18px;
-        bottom: 18px;
+        position: relative;
         z-index: 1;
-        color: #ffffff;
+        color: #163642;
     }
 
     .landing-highlight-copy h4 {
@@ -195,16 +196,13 @@
             padding: 24px 18px 32px;
         }
 
-        .landing-hero-grid {
-            grid-template-columns: 1fr;
-        }
-
+        .landing-hero-grid,
         .landing-highlight-grid {
             grid-template-columns: 1fr;
         }
 
         .landing-highlight-card {
-            min-height: 260px;
+            min-height: 200px;
         }
     }
 </style>
@@ -224,13 +222,13 @@
                 <div class="landing-hero-content">
                     <h1>Reliable Water Billing, Reading, and Collection Tracking</h1>
                     <p class="lead">
-                       The Tabuan Water Billing System is a role-based web platform that centralizes water billing operations for administrators, secretaries, treasurers, readers, and consumers. It manages core records such as consumer profiles, meter readings, billing statements, payments, notifications, audit logs, and meeting minutes in one system. Each user role is given access only to the tools relevant to their responsibilities, which helps keep the workflow organized and secure.
+                        The Tabuan Water Billing System is a role-based web platform that centralizes water billing operations for administrators, secretaries, treasurers, readers, and consumers. It manages core records such as consumer profiles, meter readings, billing statements, payments, notifications, audit logs, and meeting minutes in one system.
                     </p>
                     <p class="lead">
-                        Operationally, the system supports the full billing cycle from meter reading submission to billing generation, payment tracking, receipt handling, and reporting. Secretaries can prepare structured meeting minutes with revision tracking, approval locking, PDF export, and a clean toggle-based editing interface, while admins can monitor those minutes through both the admin dashboard and Django admin.
+                        Operationally, the system supports the full billing cycle from meter reading submission to billing generation, payment tracking, receipt handling, and reporting. Real-time dashboard summaries help staff monitor pending bills, overdue accounts, payments, and system activity while consumers get direct visibility into their balances and notifications.
                     </p>
                     <p class="lead">
-                        From a management and oversight perspective, the system is designed to improve accuracy, traceability, and coordination across office functions. Real-time dashboard summaries help staff monitor pending bills, overdue accounts, payments, and system activity, while built-in reporting and approval flows reduce manual tracking work across the association.
+                        The interface is organized by role so each user sees only the tools relevant to their work, improving accuracy, traceability, and coordination across the association.
                     </p>
                     {% if user.is_authenticated %}
                         <div class="toolbar" style="margin-top: 20px;">
@@ -246,28 +244,25 @@
                 <aside class="landing-highlight-panel">
                     <div class="landing-highlight-head">
                         <h3>Association Highlights</h3>
-                        <p>Three visual highlights on the right help present the association’s community, operations, and service identity directly on the home page.</p>
+                        <p>Three quick overview cards present the association&rsquo;s community, operations, and service identity without heavy image loading.</p>
                     </div>
                     <div class="landing-highlight-grid">
-                        <article class="landing-highlight-card">
-                            <img src="{% static 'legacy_img/oneteam.jpg' %}" alt="Association members gathered together">
+                        <article class="landing-highlight-card leadership">
                             <div class="landing-highlight-copy">
                                 <h4>Community Leadership</h4>
                                 <p>Showcases the people behind the association and the shared responsibility for service delivery.</p>
                             </div>
                         </article>
-                        <article class="landing-highlight-card">
-                            <img src="{% static 'legacy_img/team.jpg' %}" alt="Association team collaboration highlight">
+                        <article class="landing-highlight-card operations">
                             <div class="landing-highlight-copy">
                                 <h4>Coordinated Operations</h4>
                                 <p>Represents office coordination across billing, monitoring, reports, and consumer support.</p>
                             </div>
                         </article>
-                        <article class="landing-highlight-card">
-                            <img src="{% static 'legacy_img/water.png' %}" alt="Water service visual for the association">
+                        <article class="landing-highlight-card service">
                             <div class="landing-highlight-copy">
                                 <h4>Water Service Focus</h4>
-                                <p>Reinforces the association’s mission of reliable water access, billing transparency, and accountability.</p>
+                                <p>Reinforces the association&rsquo;s mission of reliable water access, billing transparency, and accountability.</p>
                             </div>
                         </article>
                     </div>
@@ -321,38 +316,27 @@
     <div class="features">
         <div class="feature-card">
             <h3>John Mark Omale</h3>
-            <p>Backend/Technical Lead
-               ensures seamless integration between the front-end and back-end, optimizing system performance and database efficiency to handle complex operations with ease. By focusing on robust architecture and clean code, we work tirelessly to deliver a reliable, high-performance platform that supports both user and business needs.
-            </p>
+            <p>Backend/Technical Lead ensures seamless integration between the front-end and back-end while optimizing system performance and database efficiency for day-to-day billing operations.</p>
         </div>
         <div class="feature-card">
             <h3>John Mark Joseph Nuique</h3>
-            <p>Front End Developer
-               specialize in utilizing modern technologies such as HTML, CSS, JavaScript, and frameworks like React, Angular, and Vue.js to build intuitive, fast, and accessible web applications. By collaborating closely with design teams, we ensure that each feature is not only functional but also aesthetically pleasing. With a passion for innovation, we are dedicated to creating dynamic, interactive interfaces that enhance user engagement and satisfaction.
-        </div>
-         <div class="feature-card">
-            <h3>Reynan Manilingan</h3>
-            <p>Front End Developer
-               specialize in utilizing modern technologies such as HTML, CSS, JavaScript, and frameworks like React, Angular, and Vue.js to build intuitive, fast, and accessible web applications. By collaborating closely with design teams, we ensure that each feature is not only functional but also aesthetically pleasing. With a passion for innovation, we are dedicated to creating dynamic, interactive interfaces that enhance user engagement and satisfaction.
-            </p>
+            <p>Front End Developer focused on clear, responsive interfaces that help staff and consumers complete billing tasks quickly and accurately.</p>
         </div>
         <div class="feature-card">
-            <h3>Jingky Sagang </h3>
-            <p>Project Managaer
-                work closely with cross-functional teams, from developers to designers, to define project objectives, prioritize tasks, and manage timelines. By leveraging Agile and Scrum methodologies, we foster a collaborative environment that drives continuous progress and adaptability. Our goal is to deliver high-quality products that meet the needs of our users, while maintaining clear communication, effective risk management, and strong stakeholder engagement throughout the project lifecycle.
-            </p>
+            <h3>Reynan Manilingan</h3>
+            <p>Front End Developer helping shape accessible page flows, interactive dashboards, and practical UI behavior across the system.</p>
         </div>
-          <div class="feature-card">
+        <div class="feature-card">
+            <h3>Jingky Sagang</h3>
+            <p>Project Manager coordinating scope, delivery, and cross-team communication so the system remains aligned with user and operational needs.</p>
+        </div>
+        <div class="feature-card">
             <h3>Angelito Feliciano</h3>
-            <p>QA/Documentation Lead
-               work closely with developers to perform thorough regression, performance, and security testing, all while maintaining a focus on delivering a seamless and bug-free user experience. We are committed to upholding the reliability and excellence of the system, ensuring that our users have a consistently positive experience.
-            </p>
+            <p>QA/Documentation Lead supporting test coverage, regression checks, and documentation quality for a more reliable release process.</p>
         </div>
-         <div class="feature-card">
+        <div class="feature-card">
             <h3>Nathaniel Jakosalem</h3>
-            <p>QA/Documentation Lead
-               work closely with developers to perform thorough regression, performance, and security testing, all while maintaining a focus on delivering a seamless and bug-free user experience. We are committed to upholding the reliability and excellence of the system, ensuring that our users have a consistently positive experience.
-            </p>
+            <p>QA/Documentation Lead focused on verification, issue tracking, and keeping system workflows understandable for future maintenance.</p>
         </div>
     </div>
 </section>

@@ -25,6 +25,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from .forms import (
     AdminPaymentForm,
+    AreaRateForm,
     BillingRecordForm,
     ConsumerForm,
     ConsumerPaymentForm,
@@ -44,6 +45,7 @@ from .forms import (
     TestSMSForm,
 )
 from .models import (
+    AreaRate,
     AuditLog,
     BillingRecord,
     Consumer,
@@ -76,6 +78,7 @@ from .services import (
     get_existing_billing_for_month,
     get_consumer_monthly_billings,
     get_delivery_configuration_summary,
+    get_effective_rate_assignment,
     get_payments_received_for_month,
     get_preferred_billing_records,
     get_next_payment_month,
@@ -442,30 +445,6 @@ def _has_unpaid_overdue_balance(billing):
     return resolve_billing_status(billing) == BillingRecord.Statuses.OVERDUE and billing.amount_due > 0
 
 
-def _build_meeting_minutes_admin_snapshot(limit=8):
-    minutes_records = list(
-        MeetingMinutes.objects.select_related('secretary', 'secretary__consumerprofile')
-        .prefetch_related('revisions__edited_by')
-        .order_by('-updated_at')[:limit]
-    )
-    today = timezone.localdate()
-    for item in minutes_records:
-        profile = getattr(item.secretary, 'consumerprofile', None)
-        item.secretary_name = profile.full_name if profile and profile.full_name else item.secretary.username
-        latest_revision = next(iter(item.revisions.all()), None)
-        item.latest_revision_summary = latest_revision.change_summary if latest_revision and latest_revision.change_summary else 'No revision summary yet.'
-
-    return {
-        'recent_meeting_minutes': minutes_records,
-        'meeting_minutes_summary': {
-            'total': MeetingMinutes.objects.count(),
-            'draft_count': MeetingMinutes.objects.filter(status=MeetingMinutes.Statuses.DRAFT).count(),
-            'approved_count': MeetingMinutes.objects.filter(status=MeetingMinutes.Statuses.APPROVED).count(),
-            'updated_today': MeetingMinutes.objects.filter(updated_at__date=today).count(),
-        },
-    }
-
-
 def _notification_destination(notification):
     if notification.channel == Notification.Channels.EMAIL:
         if notification.recipient_id and notification.recipient and notification.recipient.email:
@@ -678,7 +657,6 @@ def _build_admin_panel_context(selected_month=None, request=None):
         'delivery_config': get_delivery_configuration_summary(),
         'paymongo_configured': is_paymongo_configured(),
         'admin_monitoring_data': build_system_monitoring_data(selected_month=selected_month),
-        **_build_meeting_minutes_admin_snapshot(),
         **_build_admin_notification_log_context(request),
         **_build_admin_staff_account_context(request),
         'admin_panel_return_url': _build_admin_panel_return_url(request, selected_month),
@@ -1190,6 +1168,10 @@ def _build_profile_context(user):
     profile = get_user_profile(user, create=True)
     consumer = get_linked_consumer(user)
     role = get_user_role(user)
+    profile_notification_feed = Notification.objects.filter(
+        recipient=user,
+        channel=Notification.Channels.IN_APP,
+    )[:8]
     show_all_consumer_transactions = role in {
         ConsumerProfile.Roles.SECRETARY,
         ConsumerProfile.Roles.TREASURER,
@@ -1214,12 +1196,14 @@ def _build_profile_context(user):
         'meter_readings': meter_readings,
         'show_all_consumer_transactions': show_all_consumer_transactions,
         'show_profile_transactions': role != ConsumerProfile.Roles.READER,
+        'profile_notification_feed': profile_notification_feed,
     }
 
 
 def _build_reader_panel_context(request, form=None, edit_form=None):
     system_settings = SystemSettings.load()
     recent_readings = _scoped_reader_readings(request.user)[:20]
+    active_consumers = list(Consumer.objects.filter(status=Consumer.Statuses.ACTIVE).order_by('meter_number', 'full_name'))
     recent_billings = []
     seen_billing_ids = set()
     for reading in recent_readings:
@@ -1239,6 +1223,7 @@ def _build_reader_panel_context(request, form=None, edit_form=None):
         'reader_total_usage': sum((reading.usage_m3 for reading in recent_readings), Decimal('0')),
         'reader_latest_sync': recent_readings[0].updated_at if recent_readings else None,
         'reader_rate_per_m3': system_settings.rate_per_m3,
+        'reader_meter_options': active_consumers,
     }
 
 
@@ -1264,6 +1249,10 @@ def _build_consumer_panel_context(request, payment_form=None):
         Consumer.AccountStatuses.DELINQUENT,
         Consumer.AccountStatuses.FOR_DISCONNECTION,
     } if consumer else False
+    consumer_is_overdue = consumer.account_status in {
+        Consumer.AccountStatuses.DELINQUENT,
+        Consumer.AccountStatuses.FOR_DISCONNECTION,
+    } if consumer else False
     consumer_billing_status = consumer.get_account_status_display() if consumer else 'Active'
     balance_due_date = (
         current_billing.due_date
@@ -1274,6 +1263,7 @@ def _build_consumer_panel_context(request, payment_form=None):
     current_bill_penalty = current_billing.penalty_amount if current_billing else Decimal('0')
     current_billing_month = month_start(current_billing.billing_month) if current_billing else None
     latest_meter_reading = consumer.meter_readings.order_by('-reading_date', '-created_at').first() if consumer else None
+    consumer_rate_assignment = get_effective_rate_assignment(consumer, system_settings=system_settings) if consumer else None
     current_bill_arrears = sum(
         (
             billing.amount_due
@@ -1311,7 +1301,7 @@ def _build_consumer_panel_context(request, payment_form=None):
         'unpaid_billing_records': unpaid_billing_records,
         'unpaid_cycles_count': unpaid_cycles_count,
         'consumer_billing_status': consumer_billing_status,
-        'consumer_is_delinquent': consumer_is_delinquent,
+        'consumer_is_overdue': consumer_is_overdue,
         'consumer_balance_due_date': balance_due_date,
         'consumer_account_number': f'ACC-{consumer.id:05d}' if consumer else '',
         'consumer_current_bill_amount': current_bill_amount,
@@ -1324,6 +1314,7 @@ def _build_consumer_panel_context(request, payment_form=None):
         'consumer_paymongo_ready': paymongo_ready,
         'consumer_running_balance': consumer_running_balance,
         'consumer_warning_active': account_overview['warning_active'],
+        'consumer_is_delinquent': consumer_is_delinquent,
         'consumer_warning_issued_at': account_overview['warning_issued_at'],
         'consumer_scheduled_disconnection_date': account_overview['scheduled_disconnection_date'],
         'consumer_days_until_disconnection': account_overview['days_until_disconnection'],
@@ -1340,7 +1331,7 @@ def _build_consumer_panel_context(request, payment_form=None):
         'consumer_payment_update_count': notification_queryset.filter(notification_type=Notification.Types.PAYMENT).count(),
         'consumer_warning_alert_count': notification_queryset.filter(
             Q(title__icontains='warning') | Q(message__icontains='warning')
-        ).count() + (1 if account_overview['warning_active'] or consumer_is_delinquent else 0),
+        ).count() + (1 if account_overview['warning_active'] or consumer_is_overdue else 0),
         'consumer_current_usage_m3': (
             current_billing.usage_m3
             if current_billing
@@ -1348,6 +1339,7 @@ def _build_consumer_panel_context(request, payment_form=None):
         ),
         'consumer_monthly_consumption_m3': latest_meter_reading.usage_m3 if latest_meter_reading else Decimal('0'),
         'consumer_latest_meter_reading': latest_meter_reading,
+        'consumer_rate_assignment': consumer_rate_assignment,
     }
 
     if consumer and context['payment_form'] is None and paymongo_ready:
@@ -1531,7 +1523,6 @@ def _render_admin_live_payload(request, context):
         'monthly_billed': _format_money(context['monthly_billed']),
         'monthly_collected': _format_money(context['monthly_collected']),
         'monitoring_html': render_to_string('billing/includes/admin_monitoring_section.html', context, request=request),
-        'minutes_monitoring_html': render_to_string('billing/includes/admin_minutes_monitoring.html', context, request=request),
         'notification_log_html': render_to_string('billing/includes/admin_notification_log_section.html', context, request=request),
         'staff_account_html': render_to_string('billing/includes/admin_staff_account_section.html', context, request=request),
         'billing_rows_html': render_to_string('billing/includes/admin_billing_rows.html', context, request=request),
@@ -2108,15 +2099,20 @@ def submit_reader_reading(request):
 @role_required(ConsumerProfile.Roles.ADMIN, ConsumerProfile.Roles.READER)
 def reader_reading_context(request):
     consumer_id = request.GET.get('consumer')
+    meter_number = (request.GET.get('meter_number') or '').strip()
     reading_date_value = request.GET.get('reading_date')
     try:
         reading_date = datetime.strptime(reading_date_value, '%Y-%m-%d').date() if reading_date_value else timezone.localdate()
     except ValueError:
         reading_date = timezone.localdate()
 
-    consumer = get_object_or_404(Consumer, pk=consumer_id, status=Consumer.Statuses.ACTIVE)
+    if meter_number:
+        consumer = get_object_or_404(Consumer, meter_number__iexact=meter_number, status=Consumer.Statuses.ACTIVE)
+    else:
+        consumer = get_object_or_404(Consumer, pk=consumer_id, status=Consumer.Statuses.ACTIVE)
     details = get_previous_reading_details(consumer, reading_date)
     system_settings = SystemSettings.load()
+    rate_assignment = get_effective_rate_assignment(consumer, system_settings=system_settings)
     current_reading = (
         MeterReading.objects.filter(consumer=consumer, billing_month=month_start(reading_date))
         .order_by('-created_at')
@@ -2126,12 +2122,17 @@ def reader_reading_context(request):
     return JsonResponse(
         {
             'ok': True,
+            'consumer_name': consumer.full_name,
+            'meter_number': consumer.meter_number,
+            'account_number': f'ACC-{consumer.id:05d}',
+            'rate_label': rate_assignment['label'],
+            'rate_scope': consumer.rate_scope_label,
             'previous_reading': str(details['value']),
             'previous_month': details['month'].strftime('%B %Y') if details['month'] else '',
             'current_month': month_start(reading_date).strftime('%B %Y'),
             'current_reading': str(current_reading.current_reading) if current_reading else '',
             'notes': current_reading.notes if current_reading else '',
-            'rate_per_m3': str(system_settings.rate_per_m3),
+            'rate_per_m3': str(rate_assignment['rate']),
             'due_date': (reading_date + timedelta(days=system_settings.billing_due_days)).strftime('%B %d, %Y'),
         }
     )
@@ -2293,7 +2294,13 @@ def consumer_list(request):
     consumers = Consumer.objects.select_related('profile', 'profile__user').all()
     if query:
         consumers = consumers.filter(
-            Q(full_name__icontains=query) | Q(address__icontains=query) | Q(contact_number__icontains=query)
+            Q(full_name__icontains=query)
+            | Q(address__icontains=query)
+            | Q(contact_number__icontains=query)
+            | Q(meter_number__icontains=query)
+            | Q(barangay__icontains=query)
+            | Q(village__icontains=query)
+            | Q(household_code__icontains=query)
         )
     return render(request, 'billing/consumers.html', {'consumers': consumers, 'query': query, 'hide_header': True})
 
@@ -2318,8 +2325,15 @@ def add_consumer(request):
         else:
             consumer_form = ConsumerForm(request.POST, request.FILES)
             if consumer_form.is_valid():
-                consumer_form.save()
-                messages.success(request, 'Consumer record added successfully.')
+                consumer = consumer_form.save()
+                updated_billings = sync_existing_billings_with_settings(consumer=consumer)
+                messages.success(
+                    request,
+                    (
+                        f'Consumer record added successfully. Meter number: {consumer.meter_number}. '
+                        f'{updated_billings} billing record(s) were refreshed for the assigned rate scope.'
+                    ),
+                )
                 return redirect('consumers')
 
     return render(
@@ -2339,8 +2353,15 @@ def edit_consumer(request, consumer_id):
     if request.method == 'POST':
         form = ConsumerForm(request.POST, request.FILES, instance=consumer)
         if form.is_valid():
-            form.save()
-            messages.success(request, 'Consumer updated successfully.')
+            consumer = form.save()
+            updated_billings = sync_existing_billings_with_settings(consumer=consumer)
+            messages.success(
+                request,
+                (
+                    'Consumer updated successfully. '
+                    f'{updated_billings} billing record(s) were refreshed using the current area rate configuration.'
+                ),
+            )
             return redirect('consumers')
     else:
         form = ConsumerForm(instance=consumer)
@@ -2874,29 +2895,83 @@ def communications_view(request):
 @role_required(ConsumerProfile.Roles.ADMIN)
 def payment_settings_view(request):
     settings_obj = SystemSettings.load()
+    rate_instance = None
+    selected_rate_id = request.GET.get('rate') or request.POST.get('rate_id')
+    if selected_rate_id:
+        rate_instance = AreaRate.objects.filter(pk=selected_rate_id).first()
+
     if request.method == 'POST':
-        form = SystemSettingsForm(request.POST, instance=settings_obj)
-        if form.is_valid():
-            settings_obj = form.save()
+        action = request.POST.get('action', 'save_settings')
+        form = SystemSettingsForm(instance=settings_obj)
+        rate_form = AreaRateForm(instance=rate_instance)
+
+        if action == 'save_rate':
+            rate_form = AreaRateForm(request.POST, instance=rate_instance)
+            if rate_form.is_valid():
+                saved_rate = rate_form.save()
+                updated_billings = sync_existing_billings_with_settings(settings_obj)
+                log_audit_action(
+                    request.user,
+                    'Updated area rate configuration',
+                    target=str(saved_rate),
+                    details=f'Recalculated {updated_billings} billing record(s) after the area-rate change.',
+                )
+                messages.success(
+                    request,
+                    (
+                        f'Area pricing saved for {saved_rate.get_category_display()} "{saved_rate.location_name}". '
+                        f'{updated_billings} billing record(s) were recalculated.'
+                    ),
+                )
+                return redirect('payment_settings')
+        elif action == 'delete_rate' and rate_instance is not None:
+            target_label = str(rate_instance)
+            rate_instance.delete()
             updated_billings = sync_existing_billings_with_settings(settings_obj)
             log_audit_action(
                 request.user,
-                'Updated payment and notification settings',
-                target='SystemSettings',
-                details=f'Recalculated {updated_billings} billing record(s) after the settings change.',
+                'Deleted area rate configuration',
+                target=target_label,
+                details=f'Recalculated {updated_billings} billing record(s) after deleting the area rate.',
             )
             messages.success(
                 request,
-                (
-                    'Payment and notification settings updated successfully. '
-                    f'{updated_billings} billing record(s) were recalculated across all panels.'
-                ),
+                f'Area pricing entry removed. {updated_billings} billing record(s) were recalculated.',
             )
             return redirect('payment_settings')
+        else:
+            form = SystemSettingsForm(request.POST, instance=settings_obj)
+            if form.is_valid():
+                settings_obj = form.save()
+                updated_billings = sync_existing_billings_with_settings(settings_obj)
+                log_audit_action(
+                    request.user,
+                    'Updated payment and notification settings',
+                    target='SystemSettings',
+                    details=f'Recalculated {updated_billings} billing record(s) after the settings change.',
+                )
+                messages.success(
+                    request,
+                    (
+                        'Payment and notification settings updated successfully. '
+                        f'{updated_billings} billing record(s) were recalculated across all panels.'
+                    ),
+                )
+                return redirect('payment_settings')
     else:
         form = SystemSettingsForm(instance=settings_obj)
+        rate_form = AreaRateForm(instance=rate_instance)
 
-    return render(request, 'billing/payment_settings.html', {'form': form})
+    return render(
+        request,
+        'billing/payment_settings.html',
+        {
+            'form': form,
+            'rate_form': rate_form,
+            'rate_entries': AreaRate.objects.all(),
+            'editing_rate': rate_instance,
+        },
+    )
 
 
 @login_required

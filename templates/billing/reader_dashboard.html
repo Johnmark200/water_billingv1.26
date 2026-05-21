@@ -13,7 +13,7 @@
     .reader-panel-grid .card,
     .reader-panel-grid .form-card {
         min-height: 320px;
-        height: 320px;
+        height: 100%;
         overflow: hidden;
     }
 
@@ -112,19 +112,23 @@
         <h3>Previous and Current Reading Check</h3>
         <div class="reader-context-list">
             <p><strong>Selected Month:</strong> <span id="reading-context-month">-</span></p>
+            <p><strong>Consumer Account:</strong> <span id="reading-context-consumer">-</span></p>
+            <p><strong>Account Number:</strong> <span id="reading-context-account">-</span></p>
+            <p><strong>Meter Number:</strong> <span id="reading-context-meter">-</span></p>
             <p><strong>Previous Reading:</strong> <span id="reading-context-previous">0.00</span></p>
             <p><strong>Latest Submitted Reading:</strong> <span id="reading-context-current">-</span></p>
             <p><strong>Rate Per Cubic:</strong> PHP <span id="reading-context-rate">{{ reader_rate_per_m3|floatformat:2 }}</span></p>
+            <p><strong>Rate Assignment:</strong> <span id="reading-context-rate-scope">Default rate</span></p>
             <p><strong>Billable Usage:</strong> <span id="reading-context-usage">0.00</span> m3</p>
             <p><strong>Estimated Amount:</strong> PHP <span id="reading-context-amount">0.00</span></p>
-            <p class="muted">Pick a consumer and date before saving so you can review the last saved reading, but the current input is not blocked by the previous value.</p>
+            <p class="muted">Enter the assigned meter number and reading date to pull the linked consumer account automatically.</p>
             <p class="muted">The billable usage and amount update automatically as soon as the cubic reading is entered.</p>
         </div>
     </div>
     <div class="card">
         <h3>Live Update Status</h3>
         <p class="reader-status-note">Reading corrections are saved directly to the database.</p>
-        <p class="muted reader-status-note">The submitted readings list refreshes automatically, and linked billing records are updated as soon as the save completes.</p>
+        <p class="muted reader-status-note">The submitted readings list refreshes automatically, linked billing records are updated immediately, and the consumer account receives reading, billing, and overdue notifications in the portal.</p>
     </div>
 </section>
 
@@ -149,7 +153,7 @@
         <h2 class="page-title">Recent Submitted Readings</h2>
         <div class="table-shell table-shell-xl" data-stack-on-mobile="true">
             <table>
-                <thead><tr><th>Consumer</th><th>Month</th><th>Previous</th><th>Current</th><th>Usage</th><th>Date</th><th>Action</th></tr></thead>
+                <thead><tr><th>Consumer</th><th>Meter</th><th>Month</th><th>Previous</th><th>Current</th><th>Usage</th><th>Date</th><th>Action</th></tr></thead>
                 <tbody id="reader-reading-rows">
                     {% include 'billing/includes/reader_reading_rows.html' %}
                 </tbody>
@@ -164,7 +168,7 @@
         <p class="muted">These billing records are generated or updated from the latest submitted meter readings.</p>
         <div class="table-shell table-shell-xl" data-stack-on-mobile="true">
             <table>
-                <thead><tr><th>Consumer</th><th>Month</th><th>Previous</th><th>Current</th><th>Usage</th><th>Arrears</th><th>Current Bill</th><th>Outstanding</th><th>Status</th></tr></thead>
+                <thead><tr><th>Consumer</th><th>Meter</th><th>Month</th><th>Previous</th><th>Current</th><th>Usage</th><th>Arrears</th><th>Current Bill</th><th>Outstanding</th><th>Status</th></tr></thead>
                 <tbody id="reader-billing-rows">
                     {% include 'billing/includes/reader_billing_rows.html' %}
                 </tbody>
@@ -254,23 +258,27 @@
 
         function setReadingContext(payload) {
             document.getElementById('reading-context-month').textContent = payload.current_month || '-';
+            document.getElementById('reading-context-consumer').textContent = payload.consumer_name || '-';
+            document.getElementById('reading-context-account').textContent = payload.account_number || '-';
+            document.getElementById('reading-context-meter').textContent = payload.meter_number || '-';
             document.getElementById('reading-context-previous').textContent = payload.previous_reading || '0.00';
             document.getElementById('reading-context-current').textContent = payload.current_reading || '-';
             document.getElementById('reading-context-rate').textContent = payload.rate_per_m3 || '{{ reader_rate_per_m3|floatformat:2 }}';
+            document.getElementById('reading-context-rate-scope').textContent = payload.rate_scope || 'Default rate';
             updateReadingPreview();
         }
 
         async function loadReadingContext() {
-            const consumerField = document.getElementById('id_consumer');
+            const meterField = document.getElementById('id_meter_number');
             const dateField = document.getElementById('id_reading_date');
-            if (!consumerField || !dateField || !consumerField.value || !dateField.value) {
+            if (!meterField || !dateField || !meterField.value || !dateField.value) {
                 updateReadingPreview();
                 return;
             }
 
             try {
                 const url = new URL("{% url 'reader_reading_context' %}", window.location.origin);
-                url.searchParams.set('consumer', consumerField.value);
+                url.searchParams.set('meter_number', meterField.value);
                 url.searchParams.set('reading_date', dateField.value);
                 const response = await fetch(url, {
                     headers: {
@@ -289,12 +297,15 @@
             const form = readingFormContainer ? readingFormContainer.querySelector('.ajax-reader-form') : null;
             if (!form) return;
 
-            const consumerField = form.querySelector('#id_consumer');
+            const meterField = form.querySelector('#id_meter_number');
             const dateField = form.querySelector('#id_reading_date');
             const currentField = form.querySelector('#id_current_reading');
             const submitButton = form.querySelector('button[type="submit"], input[type="submit"]');
 
-            if (consumerField) consumerField.addEventListener('change', loadReadingContext);
+            if (meterField) {
+                meterField.addEventListener('change', loadReadingContext);
+                meterField.addEventListener('input', loadReadingContext);
+            }
             if (dateField) dateField.addEventListener('change', loadReadingContext);
             if (currentField) currentField.addEventListener('input', updateReadingPreview);
 

@@ -45,6 +45,7 @@ urlpatterns = [
     path('reports/', views.reports_view, name='reports'),
     path('reports/export/', views.reports_export_view, name='reports_export'),
     path('communications/', views.communications_view, name='communications'),
+    path('settings/', views.payment_settings_view, name='settings'),
     path('settings/payments/', views.payment_settings_view, name='payment_settings'),
     path('notifications/', views.notifications_view, name='notifications'),
     path('profile/', views.profile_view, name='profile'),

@@ -517,6 +517,7 @@
             width: 48px;
             height: 48px;
             border-radius: 999px;
+            overflow: hidden;
             display: inline-flex;
             align-items: center;
             justify-content: center;
@@ -526,6 +527,13 @@
             font-weight: 800;
             letter-spacing: 0.02em;
             text-transform: uppercase;
+        }
+
+        .sidebar-account-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
         }
 
         .sidebar-account-copy {
@@ -700,6 +708,9 @@
             border: 1px solid var(--panel-border);
             border-radius: 20px;
             box-shadow: var(--shadow);
+            min-width: 0;
+            height: 100%;
+            overflow: hidden;
         }
 
         .card,
@@ -714,6 +725,7 @@
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 18px;
+            align-items: stretch;
         }
 
         .mini-card h3 {
@@ -734,18 +746,21 @@
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 20px;
+            align-items: stretch;
         }
 
         .grid-3 {
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: 20px;
+            align-items: stretch;
         }
 
         .features {
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: 18px;
+            align-items: stretch;
         }
 
         .comparison-grid {
@@ -778,6 +793,7 @@
 
         .table-shell table {
             min-width: 100%;
+            table-layout: fixed;
         }
 
         .table-shell.table-shell-wide table {
@@ -799,6 +815,15 @@
             padding: 12px 10px;
             border-bottom: 1px solid var(--line);
             vertical-align: top;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+
+        .card *,
+        .form-card *,
+        .table-card *,
+        .mini-card * {
+            min-width: 0;
         }
 
         th {
@@ -1188,7 +1213,11 @@
                     <div class="sidebar-footer">
                         <div class="sidebar-account-card">
                             <div class="sidebar-account-avatar">
-                                {{ user.username|slice:":2"|upper }}
+                                {% if current_profile.avatar_url %}
+                                    <img src="{{ current_profile.avatar_url }}" alt="{{ current_profile.full_name|default:user.username }}">
+                                {% else %}
+                                    {{ current_profile.avatar_initial|default:user.username|slice:":2"|upper }}
+                                {% endif %}
                             </div>
                             <div class="sidebar-account-copy">
                                 <strong>{{ user.username }}</strong>
@@ -1333,4 +1362,3 @@
     {% block extra_js %}{% endblock %}
 </body>
 </html>
-

@@ -5,7 +5,7 @@
     <div class="table-card">
         <div class="toolbar" style="justify-content: space-between; margin-bottom: 18px;">
             <form method="get" class="toolbar">
-                <input type="text" name="q" value="{{ query }}" placeholder="Search consumer name, address, or contact">
+                <input type="text" name="q" value="{{ query }}" placeholder="Search name, meter number, address, or location">
                 <button type="submit" class="btn secondary">Search</button>
                 <a href="{% url 'add_consumer' %}" class="btn">Add Account</a>
             </form>
@@ -15,6 +15,7 @@
                 <tr>
                     <th>ID</th>
                     <th>Name</th>
+                    <th>Meter</th>
                     <th>Linked Account</th>
                     <th>Contact</th>
                     <th>Status</th>
@@ -27,7 +28,12 @@
                         <td>{{ consumer.id|stringformat:'03d' }}</td>
                         <td>
                             <strong>{{ consumer.full_name }}</strong><br>
-                            <span class="muted">{{ consumer.address }}</span>
+                            <span class="muted">{{ consumer.address }}</span><br>
+                            <span class="muted">{{ consumer.barangay|default:'-' }} | {{ consumer.village|default:'-' }} | {{ consumer.household_code|default:'-' }}</span>
+                        </td>
+                        <td>
+                            <strong>{{ consumer.meter_number }}</strong><br>
+                            <span class="muted">{{ consumer.rate_scope_label }}</span>
                         </td>
                         <td>
                             {% if consumer.profile %}
@@ -42,7 +48,7 @@
                         <td><a href="{% url 'edit_consumer' consumer.id %}" class="btn secondary">Edit</a></td>
                     </tr>
                 {% empty %}
-                    <tr><td colspan="6" class="empty-state">No consumer records matched your search.</td></tr>
+                    <tr><td colspan="7" class="empty-state">No consumer records matched your search.</td></tr>
                 {% endfor %}
             </tbody>
         </table>

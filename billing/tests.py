@@ -12,8 +12,8 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .forms import AdminPaymentForm, BillingRecordForm, ConsumerForm, ConsumerPaymentForm, MeterReadingForm, PortalAccountForm, SignUpForm
-from .models import BillingRecord, Consumer, ConsumerProfile, DisconnectionRecord, MeetingMinutes, MeetingMinutesRevision, MeterReading, Notification, Payment, PaymentArrangement, SystemSettings
-from .services import build_consumer_chart_data, build_consumer_payment_month_choices, create_payment_arrangement, get_consumer_outstanding_balance, handle_meter_reading_submission, rebuild_consumer_payment_allocations, refresh_consumer_account_status, send_test_sms
+from .models import AreaRate, BillingRecord, Consumer, ConsumerProfile, DisconnectionRecord, MeetingMinutes, MeetingMinutesRevision, MeterReading, Notification, Payment, PaymentArrangement, SystemSettings
+from .services import build_consumer_chart_data, build_consumer_payment_month_choices, create_payment_arrangement, get_consumer_outstanding_balance, get_effective_rate_per_m3, handle_meter_reading_submission, rebuild_consumer_payment_allocations, refresh_consumer_account_status, send_test_sms, sync_existing_billings_with_settings
 from .views import _build_soa_summary, _build_soa_transactions
 
 
@@ -79,6 +79,51 @@ class ConsumerFormTests(TestCase):
         self.assertEqual(self.linked_profile.full_name, 'Updated Consumer Name')
         self.assertEqual(self.linked_profile.address, 'Updated Address')
         self.assertEqual(self.linked_profile.contact, '+639181112222')
+
+
+class MeterNumberAndAreaRateTests(TestCase):
+    def test_consumer_receives_permanent_generated_meter_number(self):
+        consumer = Consumer.objects.create(full_name='Maria Dela Cruz', status=Consumer.Statuses.ACTIVE)
+
+        self.assertRegex(consumer.meter_number, r'^DELACRUZ-MTR-[A-Z0-9]{5}$')
+
+        original_meter = consumer.meter_number
+        consumer.full_name = 'Maria Santos'
+        consumer.save(update_fields=['full_name'])
+        consumer.refresh_from_db()
+
+        self.assertEqual(consumer.meter_number, original_meter)
+
+    def test_area_rate_resolution_and_sync_uses_most_specific_assignment(self):
+        consumer = Consumer.objects.create(
+            full_name='Rate Scoped Consumer',
+            status=Consumer.Statuses.ACTIVE,
+            barangay='Tabuan',
+            village='Purok 1',
+            household_code='Block 7',
+        )
+        billing = BillingRecord.objects.create(
+            consumer=consumer,
+            billing_month=date(2026, 4, 1),
+            previous_reading=Decimal('0'),
+            current_reading=Decimal('50'),
+            rate_per_m3=Decimal('20'),
+            amount_paid=Decimal('0'),
+            billing_date=date(2026, 4, 30),
+            due_date=date(2026, 5, 15),
+        )
+        AreaRate.objects.create(category=AreaRate.Categories.BARANGAY, location_name='Tabuan', rate_per_m3=Decimal('28'))
+        AreaRate.objects.create(category=AreaRate.Categories.VILLAGE, location_name='Purok 1', rate_per_m3=Decimal('31'))
+        AreaRate.objects.create(category=AreaRate.Categories.HOUSEHOLD, location_name='Block 7', rate_per_m3=Decimal('35'))
+
+        self.assertEqual(get_effective_rate_per_m3(consumer), Decimal('35'))
+
+        updated = sync_existing_billings_with_settings()
+        billing.refresh_from_db()
+
+        self.assertEqual(updated, 1)
+        self.assertEqual(billing.rate_per_m3, Decimal('35'))
+        self.assertEqual(billing.total_amount, Decimal('1750.00'))
 
 
 class PortalAccountFormTests(TestCase):
@@ -606,7 +651,7 @@ class MeterReadingFormTests(TestCase):
     def test_rejects_lower_than_previous_reading(self):
         form = MeterReadingForm(
             data={
-                'consumer': self.consumer.id,
+                'meter_number': self.consumer.meter_number,
                 'reading_date': '2026-04-30',
                 'current_reading': '90',
                 'notes': '',
@@ -619,7 +664,7 @@ class MeterReadingFormTests(TestCase):
     def test_allows_large_reading_jump(self):
         form = MeterReadingForm(
             data={
-                'consumer': self.consumer.id,
+                'meter_number': self.consumer.meter_number,
                 'reading_date': '2026-04-30',
                 'current_reading': '700',
                 'notes': '',
@@ -679,7 +724,7 @@ class ReaderMeterReadingSubmissionTests(TestCase):
     def test_submission_creates_pending_billing_with_generated_amount(self, mocked_notify_roles, mocked_notify_consumer):
         form = MeterReadingForm(
             data={
-                'consumer': self.consumer.id,
+                'meter_number': self.consumer.meter_number,
                 'reading_date': '2026-04-30',
                 'current_reading': '145',
                 'notes': 'April route',
@@ -703,7 +748,7 @@ class ReaderMeterReadingSubmissionTests(TestCase):
         self.assertEqual(billing.amount_paid, Decimal('0'))
         self.assertEqual(billing.status, BillingRecord.Statuses.PENDING)
         mocked_notify_roles.assert_called_once()
-        mocked_notify_consumer.assert_called_once()
+        self.assertEqual(mocked_notify_consumer.call_count, 2)
 
     @patch('billing.services.notify_consumer')
     @patch('billing.services.notify_roles')
@@ -718,7 +763,7 @@ class ReaderMeterReadingSubmissionTests(TestCase):
         )
         form = MeterReadingForm(
             data={
-                'consumer': self.consumer.id,
+                'meter_number': self.consumer.meter_number,
                 'reading_date': '2026-04-30',
                 'current_reading': '145',
                 'notes': 'Advance-paid month',
@@ -736,7 +781,7 @@ class ReaderMeterReadingSubmissionTests(TestCase):
         self.assertEqual(billing.status, BillingRecord.Statuses.PENDING)
         self.assertEqual(advance_payment.billing_id, billing.id)
         mocked_notify_roles.assert_called_once()
-        mocked_notify_consumer.assert_called_once()
+        self.assertEqual(mocked_notify_consumer.call_count, 2)
 
     @patch('billing.services.notify_consumer')
     @patch('billing.services.notify_roles')
@@ -754,7 +799,7 @@ class ReaderMeterReadingSubmissionTests(TestCase):
         )
         form = MeterReadingForm(
             data={
-                'consumer': self.consumer.id,
+                'meter_number': self.consumer.meter_number,
                 'reading_date': '2026-04-30',
                 'current_reading': '145',
                 'notes': 'Arrears month',
@@ -769,7 +814,7 @@ class ReaderMeterReadingSubmissionTests(TestCase):
         self.assertEqual(billing.total_amount, Decimal('900.00'))
         self.assertEqual(billing.statement_total_snapshot, Decimal('1400.00'))
         mocked_notify_roles.assert_called_once()
-        mocked_notify_consumer.assert_called_once()
+        self.assertEqual(mocked_notify_consumer.call_count, 2)
 
 
 class RunningBalanceAllocationTests(TestCase):
@@ -2432,7 +2477,7 @@ class ReaderPanelPreviewTests(TestCase):
         panel_response = self.client.get(reverse('reader_panel'))
         context_response = self.client.get(
             reverse('reader_reading_context'),
-            {'consumer': self.consumer.id, 'reading_date': '2026-04-30'},
+            {'meter_number': self.consumer.meter_number, 'reading_date': '2026-04-30'},
             HTTP_X_REQUESTED_WITH='XMLHttpRequest',
         )
 
@@ -2555,7 +2600,7 @@ class AdminPanelMonthFilterTests(TestCase):
         self.assertEqual(data_response.json()['monthly_collected'], '75.00')
         self.assertIn('Month Filter Consumer', data_response.json()['payment_rows_html'])
 
-    def test_admin_panel_displays_meeting_minutes_monitoring(self):
+    def test_admin_panel_excludes_meeting_minutes_monitoring_widget(self):
         self.client.force_login(self.admin_user)
 
         response = self.client.get(reverse('admin_panel'), {'month': '2026-05'})
@@ -2566,13 +2611,10 @@ class AdminPanelMonthFilterTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Meeting Minutes Oversight')
-        self.assertContains(response, 'Admin Oversight Minutes')
-        self.assertContains(response, 'Minutes Owner')
-        self.assertContains(response, 'Created oversight draft.')
+        self.assertNotContains(response, 'Meeting Minutes Oversight')
+        self.assertNotContains(response, 'Admin Oversight Minutes')
         self.assertEqual(data_response.status_code, 200)
-        self.assertIn('Meeting Minutes Oversight', data_response.json()['minutes_monitoring_html'])
-        self.assertIn('Admin Oversight Minutes', data_response.json()['minutes_monitoring_html'])
+        self.assertNotIn('minutes_monitoring_html', data_response.json())
 
     def test_admin_panel_displays_outbound_notification_logs(self):
         Notification.objects.create(
