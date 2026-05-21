@@ -58,7 +58,7 @@
                     <tr>
                         <th>Category</th>
                         <th>Location</th>
-                        <th>Rate per m3</th>
+                        <th>Rate per m³</th>
                         <th>Status</th>
                         <th>Updated</th>
                         <th>Actions</th>
@@ -69,7 +69,7 @@
                         <tr>
                             <td data-label="Category">{{ item.get_category_display }}</td>
                             <td data-label="Location">{{ item.location_name }}</td>
-                            <td data-label="Rate per m3">PHP {{ item.rate_per_m3|floatformat:2 }}</td>
+                            <td data-label="Rate per m³">PHP {{ item.rate_per_m3|floatformat:2 }}</td>
                             <td data-label="Status">{{ item.is_active|yesno:'Active,Inactive' }}</td>
                             <td data-label="Updated">{{ item.updated_at|date:'Y-m-d H:i' }}</td>
                             <td data-label="Actions">

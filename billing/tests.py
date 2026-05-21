@@ -84,8 +84,13 @@ class ConsumerFormTests(TestCase):
 class MeterNumberAndAreaRateTests(TestCase):
     def test_consumer_receives_permanent_generated_meter_number(self):
         consumer = Consumer.objects.create(full_name='Maria Dela Cruz', status=Consumer.Statuses.ACTIVE)
+        current_year = timezone.localdate().year
 
-        self.assertRegex(consumer.meter_number, r'^DELACRUZ-MTR-[A-Z0-9]{5}$')
+        self.assertRegex(consumer.meter_number, rf'^DELACRUZ-MTR-{current_year}\d{{6}}$')
+        self.assertEqual(consumer.meter_number, f'DELACRUZ-MTR-{current_year}000001')
+
+        next_consumer = Consumer.objects.create(full_name='Juan Santos', status=Consumer.Statuses.ACTIVE)
+        self.assertEqual(next_consumer.meter_number, f'SANTOS-MTR-{current_year}000002')
 
         original_meter = consumer.meter_number
         consumer.full_name = 'Maria Santos'

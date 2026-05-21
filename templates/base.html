@@ -563,12 +563,57 @@
         }
 
         .system-footer {
-            padding: 18px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            padding: 16px 24px;
             border-top: 1px solid var(--panel-border);
             background: var(--footer-bg);
             color: var(--muted);
-            text-align: center;
             font-size: 14px;
+        }
+
+        .system-footer-brand,
+        .system-footer-item,
+        .system-footer-version {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .system-footer-brand i,
+        .system-footer-item i,
+        .system-footer-version i {
+            color: #17a2c8;
+        }
+
+        .system-footer strong {
+            color: var(--brand);
+            font-weight: 700;
+        }
+
+        .system-footer-link {
+            color: inherit;
+        }
+
+        .system-footer-link:hover {
+            color: var(--brand);
+        }
+
+        .system-footer-separator {
+            color: rgba(92, 121, 133, 0.72);
+            font-size: 16px;
+            line-height: 1;
+        }
+
+        .system-footer-version {
+            padding: 6px 12px;
+            border-radius: 999px;
+            background: rgba(23, 162, 200, 0.12);
+            color: #17a2c8;
+            font-weight: 700;
         }
 
         .transaction-overlay {
@@ -1262,7 +1307,32 @@
         </div>
     </div>
 
-    <footer class="system-footer">System v1.26 | 2026 | Created by Omale J. Ohn</footer>
+    <footer class="system-footer">
+        <span class="system-footer-brand">
+            <i class="bi bi-code-slash" aria-hidden="true"></i>
+            <span>Developed by <strong>Omale J Ohn</strong></span>
+        </span>
+        <span class="system-footer-separator" aria-hidden="true">&bull;</span>
+        <span class="system-footer-item">
+            <i class="bi bi-globe2" aria-hidden="true"></i>
+            <span>Website: <a class="system-footer-link" href="https://johnmarkomale.pythonanywhere.com" target="_blank" rel="noopener noreferrer">johnmarkomale.pythonanywhere.com</a></span>
+        </span>
+        <span class="system-footer-separator" aria-hidden="true">&bull;</span>
+        <span class="system-footer-item">
+            <i class="bi bi-envelope-at" aria-hidden="true"></i>
+            <span>Contact: <a class="system-footer-link" href="mailto:Johnmarkomale200@gmail.com">Johnmarkomale200@gmail.com</a></span>
+        </span>
+        <span class="system-footer-separator" aria-hidden="true">&bull;</span>
+        <span class="system-footer-item">
+            <i class="bi bi-c-circle" aria-hidden="true"></i>
+            <span>&copy; 2026 All rights reserved</span>
+        </span>
+        <span class="system-footer-separator" aria-hidden="true">&bull;</span>
+        <span class="system-footer-version">
+            <i class="bi bi-bezier2" aria-hidden="true"></i>
+            <span>v1.26</span>
+        </span>
+    </footer>
 
     <script>
         (function () {

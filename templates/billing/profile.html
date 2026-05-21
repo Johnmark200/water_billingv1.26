@@ -126,7 +126,7 @@
                         {% if show_all_consumer_transactions %}<td>{{ reading.consumer.full_name }}</td>{% endif %}
                         <td>{{ reading.billing_month|date:'F Y' }}</td>
                         <td>{{ reading.current_reading }}</td>
-                        <td>{{ reading.usage_m3 }} m3</td>
+                        <td>{{ reading.usage_m3 }} m³</td>
                     </tr>
                 {% empty %}
                     <tr><td colspan="{% if show_all_consumer_transactions %}4{% else %}3{% endif %}" class="empty-state">No meter readings available.</td></tr>

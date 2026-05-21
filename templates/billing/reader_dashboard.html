@@ -92,14 +92,14 @@
         <div class="toolbar" style="justify-content: space-between; margin-bottom: 20px;">
             <div>
                 <h2 class="page-title">Reading Panel</h2>
-                <p class="muted">Use the previous reading as your baseline, then save the actual current meter reading. The reading cannot go lower than the previous record, and the minimum billable usage is 30 m3.</p>
+                <p class="muted">Use the previous reading as your baseline, then save the actual current meter reading. The reading cannot go lower than the previous record, and the minimum billable usage is 30 m³.</p>
             </div>
         </div>
     <div class="status-feedback" id="reader-live-feedback" hidden></div>
     <div class="stats-grid reader-stats-grid">
         <div class="mini-card"><h3>Submitted Readings</h3><p data-reader-total-readings>{{ reader_total_readings }}</p></div>
         <div class="mini-card"><h3>Linked Billings</h3><p data-reader-total-billings>{{ reader_total_billings }}</p></div>
-        <div class="mini-card"><h3>Total Usage</h3><p data-reader-total-usage>{{ reader_total_usage }} m3</p></div>
+        <div class="mini-card"><h3>Total Usage</h3><p data-reader-total-usage>{{ reader_total_usage }} m³</p></div>
         <div class="mini-card"><h3>Last Sync</h3><p data-reader-latest-sync style="font-size: 18px;">{{ reader_latest_sync|date:'Y-m-d H:i'|default:'-' }}</p></div>
     </div>
 </section>
@@ -119,7 +119,7 @@
             <p><strong>Latest Submitted Reading:</strong> <span id="reading-context-current">-</span></p>
             <p><strong>Rate Per Cubic:</strong> PHP <span id="reading-context-rate">{{ reader_rate_per_m3|floatformat:2 }}</span></p>
             <p><strong>Rate Assignment:</strong> <span id="reading-context-rate-scope">Default rate</span></p>
-            <p><strong>Billable Usage:</strong> <span id="reading-context-usage">0.00</span> m3</p>
+            <p><strong>Billable Usage:</strong> <span id="reading-context-usage">0.00</span> m³</p>
             <p><strong>Estimated Amount:</strong> PHP <span id="reading-context-amount">0.00</span></p>
             <p class="muted">Enter the assigned meter number and reading date to pull the linked consumer account automatically.</p>
             <p class="muted">The billable usage and amount update automatically as soon as the cubic reading is entered.</p>
@@ -342,7 +342,7 @@
                     const latestSync = document.querySelector('[data-reader-latest-sync]');
                     if (totalReadings) totalReadings.textContent = payload.total_readings;
                     if (totalBillings) totalBillings.textContent = payload.total_billings;
-                    if (totalUsage) totalUsage.textContent = `${payload.total_usage} m3`;
+                    if (totalUsage) totalUsage.textContent = `${payload.total_usage} m³`;
                     if (latestSync) latestSync.textContent = payload.latest_sync;
                     bindReadingForm();
                     bindEditTriggers();
@@ -436,7 +436,7 @@
                 const latestSync = document.querySelector('[data-reader-latest-sync]');
                 if (totalReadings) totalReadings.textContent = payload.total_readings;
                 if (totalBillings) totalBillings.textContent = payload.total_billings;
-                if (totalUsage) totalUsage.textContent = `${payload.total_usage} m3`;
+                if (totalUsage) totalUsage.textContent = `${payload.total_usage} m³`;
                 if (latestSync) latestSync.textContent = payload.latest_sync;
                 bindEditTriggers();
                 bindEditForm();
@@ -490,7 +490,7 @@
                 const latestSync = document.querySelector('[data-reader-latest-sync]');
                 if (totalReadings) totalReadings.textContent = payload.total_readings;
                 if (totalBillings) totalBillings.textContent = payload.total_billings;
-                if (totalUsage) totalUsage.textContent = `${payload.total_usage} m3`;
+                if (totalUsage) totalUsage.textContent = `${payload.total_usage} m³`;
                 if (latestSync) latestSync.textContent = payload.latest_sync;
                 bindEditTriggers();
             } catch (error) {

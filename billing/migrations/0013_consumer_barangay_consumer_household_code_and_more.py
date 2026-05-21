@@ -3,7 +3,7 @@
 import re
 
 from django.db import migrations, models
-from django.utils.crypto import get_random_string
+from django.utils import timezone
 
 
 def _meter_prefix(full_name):
@@ -22,18 +22,34 @@ def _meter_prefix(full_name):
     return normalized[:12] or 'CONSUMER'
 
 
+def _extract_meter_sequence(value, year):
+    match = re.search(rf'-MTR-{year}(\d{{6}})$', str(value or ''))
+    if not match:
+        return None
+    return int(match.group(1))
+
+
 def populate_meter_numbers(apps, schema_editor):
     Consumer = apps.get_model('billing', 'Consumer')
-    allowed = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+    year = timezone.localdate().year
+    max_sequence = 0
+
+    for existing_meter in Consumer.objects.filter(meter_number__contains=f'-MTR-{year}').values_list('meter_number', flat=True):
+        sequence = _extract_meter_sequence(existing_meter, year)
+        if sequence is not None:
+            max_sequence = max(max_sequence, sequence)
 
     for consumer in Consumer.objects.filter(meter_number=''):
         prefix = _meter_prefix(consumer.full_name)
+        next_sequence = max_sequence + 1
         while True:
-            candidate = f'{prefix}-MTR-{get_random_string(5, allowed)}'
+            candidate = f'{prefix}-MTR-{year}{next_sequence:06d}'
             if not Consumer.objects.exclude(pk=consumer.pk).filter(meter_number=candidate).exists():
                 consumer.meter_number = candidate
                 consumer.save(update_fields=['meter_number'])
+                max_sequence = next_sequence
                 break
+            next_sequence += 1
 
 
 class Migration(migrations.Migration):

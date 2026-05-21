@@ -7,7 +7,6 @@ from django.core.files.storage import default_storage
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Sum
-from django.utils.crypto import get_random_string
 from django.utils import timezone
 
 
@@ -54,6 +53,13 @@ def _meter_name_prefix(full_name):
         seed = 'CONSUMER'
     normalized = re.sub(r'[^A-Za-z0-9]', '', seed).upper()
     return normalized[:12] or 'CONSUMER'
+
+
+def _extract_meter_sequence(value, year):
+    match = re.search(rf'-MTR-{year}(\d{{6}})$', str(value or ''))
+    if not match:
+        return None
+    return int(match.group(1))
 
 
 class ConsumerProfile(models.Model):
@@ -167,18 +173,27 @@ class Consumer(models.Model):
 
     def _generate_meter_number(self):
         prefix = _meter_name_prefix(self.full_name)
-        allowed = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+        year = timezone.localdate().year
+        max_sequence = 0
+
+        for existing_meter in Consumer.objects.filter(meter_number__contains=f'-MTR-{year}').values_list('meter_number', flat=True):
+            sequence = _extract_meter_sequence(existing_meter, year)
+            if sequence is not None:
+                max_sequence = max(max_sequence, sequence)
+
+        next_sequence = max_sequence + 1
         while True:
-            candidate = f'{prefix}-MTR-{get_random_string(5, allowed)}'
+            candidate = f'{prefix}-MTR-{year}{next_sequence:06d}'
             if not Consumer.objects.exclude(pk=self.pk).filter(meter_number=candidate).exists():
                 return candidate
+            next_sequence += 1
 
     def __str__(self):
         return f'{self.id:03d} - {self.full_name}'
 
 
 class SystemSettings(models.Model):
-    rate_per_m3 = models.DecimalField(max_digits=10, decimal_places=2, default=20)
+    rate_per_m3 = models.DecimalField(max_digits=10, decimal_places=2, default=20, verbose_name='Rate per m³')
     billing_due_days = models.PositiveIntegerField(default=15)
     enable_cash_payments = models.BooleanField(default=True)
     enable_online_payments = models.BooleanField(default=True)
@@ -220,7 +235,7 @@ class AreaRate(models.Model):
 
     category = models.CharField(max_length=20, choices=Categories.choices)
     location_name = models.CharField(max_length=120)
-    rate_per_m3 = models.DecimalField(max_digits=10, decimal_places=2, default=20)
+    rate_per_m3 = models.DecimalField(max_digits=10, decimal_places=2, default=20, verbose_name='Rate per m³')
     is_active = models.BooleanField(default=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -250,8 +265,8 @@ class BillingRecord(models.Model):
     billing_month = models.DateField(help_text='Use the first day of the billing month.')
     previous_reading = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     current_reading = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    usage_m3 = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    rate_per_m3 = models.DecimalField(max_digits=10, decimal_places=2, default=20)
+    usage_m3 = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name='Usage (m³)')
+    rate_per_m3 = models.DecimalField(max_digits=10, decimal_places=2, default=20, verbose_name='Rate per m³')
     water_charge = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     service_charge = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     penalty_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
@@ -602,7 +617,7 @@ class MeterReading(models.Model):
     billing_month = models.DateField(editable=False)
     previous_reading = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     current_reading = models.DecimalField(max_digits=10, decimal_places=2)
-    usage_m3 = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    usage_m3 = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name='Usage (m³)')
     notes = models.TextField(blank=True)
     submitted_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

@@ -158,6 +158,8 @@ def _google_login_enabled():
 
 
 def _google_redirect_uri(request):
+    if getattr(settings, 'GOOGLE_OAUTH_REDIRECT_URI', ''):
+        return settings.GOOGLE_OAUTH_REDIRECT_URI
     return request.build_absolute_uri(settings.GOOGLE_OAUTH_REDIRECT_PATH)
 
 
@@ -740,7 +742,7 @@ def _build_soa_transactions(selected_month=None, consumer=None, start_date=None,
                 'reference': f'BILL-{bill.id:05d}',
                 'description': (
                     f'{bill.consumer.full_name} - Water billing for {bill.billing_month:%B %Y} | '
-                    f'Usage {bill.usage_m3} m3 | Due {bill.due_date:%b %d, %Y} | {bill.get_status_display()}'
+                    f'Usage {bill.usage_m3} m³ | Due {bill.due_date:%b %d, %Y} | {bill.get_status_display()}'
                 ),
                 'debit': bill.total_amount,
                 'credit': Decimal('0'),
@@ -1295,7 +1297,6 @@ def _build_consumer_panel_context(request, payment_form=None):
             else Payment.objects.none()
         ),
         'meter_readings': consumer.meter_readings.all()[:10] if consumer else MeterReading.objects.none(),
-        'notification_feed': notification_queryset[:10],
         'current_billing': current_billing,
         'previous_billing': previous_billing,
         'unpaid_billing_records': unpaid_billing_records,

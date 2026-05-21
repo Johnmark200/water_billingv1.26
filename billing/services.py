@@ -49,7 +49,7 @@ def get_effective_rate_assignment(consumer, system_settings=None):
         'rate': default_rate,
         'category': 'default',
         'location_name': 'Default rate',
-        'label': f'Default rate - PHP {default_rate:,.2f}/m3',
+        'label': f'Default rate - PHP {default_rate:,.2f}/m³',
     }
     if consumer is None:
         return default_assignment
@@ -76,7 +76,7 @@ def get_effective_rate_assignment(consumer, system_settings=None):
                 'rate': area_rate.rate_per_m3,
                 'category': area_rate.category,
                 'location_name': area_rate.location_name,
-                'label': f'{area_rate.get_category_display()}: {area_rate.location_name} - PHP {area_rate.rate_per_m3:,.2f}/m3',
+                'label': f'{area_rate.get_category_display()}: {area_rate.location_name} - PHP {area_rate.rate_per_m3:,.2f}/m³',
             }
 
     return default_assignment
@@ -2572,9 +2572,9 @@ def handle_meter_reading_submission(form, submitted_by):
         f'Dear {consumer.full_name}, your latest meter reading has been posted and your billing record has been updated.',
         [
             ('Billing Month', f'{reading.billing_month:%B %Y}'),
-            ('Previous Reading', f'{reading.previous_reading} m3'),
-            ('Current Reading', f'{reading.current_reading} m3'),
-            ('Usage', f'{reading.usage_m3} m3'),
+            ('Previous Reading', f'{reading.previous_reading} m³'),
+            ('Current Reading', f'{reading.current_reading} m³'),
+            ('Usage', f'{reading.usage_m3} m³'),
             ('Current Bill', f'PHP {billing.current_bill_amount}'),
             ('Previous Arrears', f'PHP {billing.previous_arrears}'),
             ('Total Outstanding', f'PHP {billing.statement_total_snapshot}'),
@@ -2624,10 +2624,10 @@ def send_billing_due_notification(billing, system_settings=None):
         f'Dear {billing.consumer.full_name}, your water bill for {billing.billing_month:%B %Y} is now available.',
         [
             ('Billing Month', f'{billing.billing_month:%B %Y}'),
-            ('Previous Reading', f'{billing.previous_reading} m3'),
-            ('Current Reading', f'{billing.current_reading} m3'),
-            ('Consumption', f'{billing.usage_m3} m3'),
-            ('Rate', f'PHP {billing.rate_per_m3} per m3'),
+            ('Previous Reading', f'{billing.previous_reading} m³'),
+            ('Current Reading', f'{billing.current_reading} m³'),
+            ('Consumption', f'{billing.usage_m3} m³'),
+            ('Rate', f'PHP {billing.rate_per_m3} per m³'),
             ('Current Bill', f'PHP {billing.current_bill_amount}'),
             ('Previous Arrears', f'PHP {billing.previous_arrears}'),
             ('Service Charges', f'PHP {billing.service_charge}'),

@@ -32,7 +32,7 @@
     <p>
         <label for="{{ form.current_reading.id_for_label }}">Current reading</label>
         {{ form.current_reading }}
-        <span class="muted">Enter the actual current meter reading only. It cannot be lower than the previous reading, and billing uses a minimum of 30 m3.</span>
+        <span class="muted">Enter the actual current meter reading only. It cannot be lower than the previous reading, and billing uses a minimum of 30 m³.</span>
         {% for error in form.current_reading.errors %}
             <span class="field-error">{{ error }}</span>
         {% endfor %}

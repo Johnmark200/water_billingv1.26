@@ -114,48 +114,29 @@
             </div>
         </div>
 
-        <div class="consumer-unpaid-card">
-            <h3>Recent Notifications</h3>
-            <p class="muted">Reading confirmations, bill notices, and overdue alerts are posted here as soon as they are generated.</p>
-            <div class="consumer-unpaid-list">
-                {% for item in notification_feed|slice:':5' %}
-                    <div class="consumer-unpaid-item">
-                        <span>{{ item.title }}</span>
-                        <strong>{{ item.created_at|date:'M d, Y h:i A' }}</strong>
-                        <div class="consumer-unpaid-status">{{ item.message|truncatechars:150 }}</div>
-                    </div>
-                {% empty %}
-                    <div class="consumer-unpaid-item">
-                        <span>Notifications</span>
-                        <strong>No recent alerts</strong>
-                        <div class="consumer-unpaid-status">New billing and payment updates will appear here automatically.</div>
-                    </div>
-                {% endfor %}
-            </div>
-        </div>
+    </div>
 
-        <div class="consumer-warning-card">
-            <span class="status-chip" style="background: rgba(220, 38, 38, 0.14); color: #991b1b;">Warning Notice</span>
-            <h3>Warning Notice</h3>
-            <p><strong>Delinquent Account</strong></p>
-            <p>Your account has reached {{ unpaid_cycles_count }} unpaid billing cycles.</p>
-            <p><strong>Delinquent Status:</strong> {% if consumer_is_delinquent %}Delinquent{% else %}Normal{% endif %}</p>
-            <p>
-                <strong>Disconnection Warning:</strong>
-                {% if consumer_warning_active or consumer_is_delinquent %}
-                    Active{% if consumer_scheduled_disconnection_date %} until {{ consumer_scheduled_disconnection_date|date:'F d, Y' }}{% endif %}
-                {% else %}
-                    No current warning
-                {% endif %}
-            </p>
-            <p>
-                <strong>Countdown Before Disconnection:</strong>
-                {% if consumer_countdown_active and consumer_days_until_disconnection is not None %}
-                    {{ consumer_days_until_disconnection }} day{{ consumer_days_until_disconnection|pluralize }} remaining
-                {% else %}
-                    No countdown in progress
-                {% endif %}
-            </p>
-        </div>
+    <div class="consumer-warning-card">
+        <span class="status-chip" style="background: rgba(220, 38, 38, 0.14); color: #991b1b;">Warning Notice</span>
+        <h3>Warning Notice</h3>
+        <p><strong>Delinquent Account</strong></p>
+        <p>Your account has reached {{ unpaid_cycles_count }} unpaid billing cycles.</p>
+        <p><strong>Delinquent Status:</strong> {% if consumer_is_delinquent %}Delinquent{% else %}Normal{% endif %}</p>
+        <p>
+            <strong>Disconnection Warning:</strong>
+            {% if consumer_warning_active or consumer_is_delinquent %}
+                Active{% if consumer_scheduled_disconnection_date %} until {{ consumer_scheduled_disconnection_date|date:'F d, Y' }}{% endif %}
+            {% else %}
+                No current warning
+            {% endif %}
+        </p>
+        <p>
+            <strong>Countdown Before Disconnection:</strong>
+            {% if consumer_countdown_active and consumer_days_until_disconnection is not None %}
+                {{ consumer_days_until_disconnection }} day{{ consumer_days_until_disconnection|pluralize }} remaining
+            {% else %}
+                No countdown in progress
+            {% endif %}
+        </p>
     </div>
 </div>

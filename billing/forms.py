@@ -346,9 +346,9 @@ class ConsumerForm(forms.ModelForm):
         self.fields['profile'].label = 'Linked account profile'
         self.fields['profile'].help_text = 'Optional. Link this consumer to an existing system account profile.'
         self.fields['meter_number'].required = False
-        self.fields['meter_number'].help_text = 'Generated automatically and stays permanent for the consumer account.'
+        self.fields['meter_number'].help_text = 'Generated automatically as LASTNAME-MTR-YYYY###### and stays permanent for the consumer account.'
         self.fields['meter_number'].widget.attrs['readonly'] = 'readonly'
-        self.fields['meter_number'].widget.attrs['placeholder'] = 'Generated after saving'
+        self.fields['meter_number'].widget.attrs['placeholder'] = 'Generated after saving as LASTNAME-MTR-YYYY######'
         self.fields['linked_account_role'].label = 'Linked account role'
         if self.instance.pk and self.instance.profile_id:
             self.fields['linked_account_role'].initial = self.instance.profile.role
@@ -436,7 +436,7 @@ class BillingRecordForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields['consumer'].queryset = Consumer.objects.order_by('full_name')
         self.fields['current_reading'].help_text = (
-            f'Enter the actual current meter reading. Minimum billable usage is {MINIMUM_BILLABLE_USAGE_M3} m3.'
+            f'Enter the actual current meter reading. Minimum billable usage is {MINIMUM_BILLABLE_USAGE_M3} m³.'
         )
 
     def clean(self):
@@ -859,7 +859,7 @@ class MeterReadingForm(forms.ModelForm):
             }
         )
         self.fields['current_reading'].help_text = (
-            f'Enter the actual current meter reading. Minimum billable usage is {MINIMUM_BILLABLE_USAGE_M3} m3.'
+            f'Enter the actual current meter reading. Minimum billable usage is {MINIMUM_BILLABLE_USAGE_M3} m³.'
         )
 
     def clean_meter_number(self):

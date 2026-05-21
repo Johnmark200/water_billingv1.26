@@ -56,7 +56,7 @@
     </div>
     <div class="card">
         <h3>Total Usage</h3>
-        <p>{{ total_usage }} m3</p>
+        <p>{{ total_usage }} m³</p>
     </div>
     <div class="card">
         <h3>Month</h3>
@@ -92,7 +92,7 @@
                     <tr>
                         <td>{{ reading.consumer.full_name }}</td>
                         <td>{{ reading.current_reading }}</td>
-                        <td>{{ reading.usage_m3 }} m3</td>
+                        <td>{{ reading.usage_m3 }} m³</td>
                         <td>{{ reading.submitted_by.username|default:'System' }}</td>
                     </tr>
                 {% empty %}
