@@ -114,6 +114,7 @@
             <p><strong>Selected Month:</strong> <span id="reading-context-month">-</span></p>
             <p><strong>Consumer Account:</strong> <span id="reading-context-consumer">-</span></p>
             <p><strong>Account Number:</strong> <span id="reading-context-account">-</span></p>
+            <p><strong>Registered Connection:</strong> <span id="reading-context-connection">-</span></p>
             <p><strong>Meter Number:</strong> <span id="reading-context-meter">-</span></p>
             <p><strong>Previous Reading:</strong> <span id="reading-context-previous">0.00</span></p>
             <p><strong>Latest Submitted Reading:</strong> <span id="reading-context-current">-</span></p>
@@ -168,7 +169,7 @@
         <p class="muted">These billing records are generated or updated from the latest submitted meter readings.</p>
         <div class="table-shell table-shell-xl" data-stack-on-mobile="true">
             <table>
-                <thead><tr><th>Consumer</th><th>Meter</th><th>Month</th><th>Previous</th><th>Current</th><th>Usage</th><th>Arrears</th><th>Current Bill</th><th>Outstanding</th><th>Status</th></tr></thead>
+                <thead><tr><th>Consumer</th><th>Meter</th><th>Month</th><th>Previous</th><th>Current</th><th>Usage</th><th>Arrears</th><th>Current Bill</th><th>Outstanding</th><th>Due Date</th><th>Status</th></tr></thead>
                 <tbody id="reader-billing-rows">
                     {% include 'billing/includes/reader_billing_rows.html' %}
                 </tbody>
@@ -256,15 +257,42 @@
             amountDisplay.textContent = formatDecimal(usage * rate);
         }
 
+        function setReaderAccountFields(payload) {
+            const consumerIdField = document.getElementById('id_consumer_id');
+            const consumerAccountField = document.getElementById('id_consumer_account');
+            const registeredConnectionField = document.getElementById('id_registered_connection');
+
+            if (consumerIdField) consumerIdField.value = payload.consumer_id || '';
+            if (consumerAccountField) consumerAccountField.value = payload.account_number || '';
+            if (registeredConnectionField) registeredConnectionField.value = payload.registered_connection || '';
+        }
+
+        function clearReadingContext() {
+            setReadingContext({
+                current_month: '-',
+                consumer_name: '-',
+                account_number: '-',
+                registered_connection: '-',
+                meter_number: '-',
+                previous_reading: '0.00',
+                current_reading: '-',
+                rate_per_m3: '{{ reader_rate_per_m3|floatformat:2 }}',
+                rate_scope: 'Default rate'
+            });
+            setReaderAccountFields({ consumer_id: '', account_number: '', registered_connection: '' });
+        }
+
         function setReadingContext(payload) {
             document.getElementById('reading-context-month').textContent = payload.current_month || '-';
             document.getElementById('reading-context-consumer').textContent = payload.consumer_name || '-';
             document.getElementById('reading-context-account').textContent = payload.account_number || '-';
+            document.getElementById('reading-context-connection').textContent = payload.registered_connection || '-';
             document.getElementById('reading-context-meter').textContent = payload.meter_number || '-';
             document.getElementById('reading-context-previous').textContent = payload.previous_reading || '0.00';
             document.getElementById('reading-context-current').textContent = payload.current_reading || '-';
             document.getElementById('reading-context-rate').textContent = payload.rate_per_m3 || '{{ reader_rate_per_m3|floatformat:2 }}';
             document.getElementById('reading-context-rate-scope').textContent = payload.rate_scope || 'Default rate';
+            setReaderAccountFields(payload);
             updateReadingPreview();
         }
 
@@ -272,7 +300,7 @@
             const meterField = document.getElementById('id_meter_number');
             const dateField = document.getElementById('id_reading_date');
             if (!meterField || !dateField || !meterField.value || !dateField.value) {
-                updateReadingPreview();
+                clearReadingContext();
                 return;
             }
 

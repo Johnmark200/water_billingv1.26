@@ -2549,17 +2549,18 @@ def handle_meter_reading_submission(form, submitted_by):
     reading_date = form.cleaned_data['reading_date']
     billing_month = reading_date.replace(day=1)
     previous_reading = get_previous_reading_for_month(consumer, billing_month)
+    existing_reading = MeterReading.objects.filter(consumer=consumer, billing_month=billing_month).first()
+    if existing_reading is not None:
+        raise ValidationError('A meter reading for this billing cycle already exists. Use the edit action to correct the submitted reading.')
 
-    reading, _ = MeterReading.objects.update_or_create(
+    reading = MeterReading.objects.create(
         consumer=consumer,
         billing_month=billing_month,
-        defaults={
-            'reading_date': reading_date,
-            'previous_reading': previous_reading,
-            'current_reading': form.cleaned_data['current_reading'],
-            'notes': form.cleaned_data.get('notes', ''),
-            'submitted_by': submitted_by,
-        },
+        reading_date=reading_date,
+        previous_reading=previous_reading,
+        current_reading=form.cleaned_data['current_reading'],
+        notes=form.cleaned_data.get('notes', ''),
+        submitted_by=submitted_by,
     )
     billing = create_or_update_billing_from_reading(reading, system_settings)
 

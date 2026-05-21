@@ -1,5 +1,6 @@
 <form method="post" action="{% url 'submit_reader_reading' %}" class="ajax-reader-form">
     {% csrf_token %}
+    {{ form.consumer_id }}
 
     {% if form.non_field_errors %}
         <div class="status-feedback error">
@@ -26,6 +27,22 @@
         <label for="{{ form.reading_date.id_for_label }}">Reading date</label>
         {{ form.reading_date }}
         {% for error in form.reading_date.errors %}
+            <span class="field-error">{{ error }}</span>
+        {% endfor %}
+    </p>
+    <p>
+        <label for="{{ form.consumer_account.id_for_label }}">Consumer account</label>
+        {{ form.consumer_account }}
+        <span class="muted">This account is matched from the entered meter number and must stay aligned before submission.</span>
+        {% for error in form.consumer_account.errors %}
+            <span class="field-error">{{ error }}</span>
+        {% endfor %}
+    </p>
+    <p>
+        <label for="{{ form.registered_connection.id_for_label }}">Registered connection</label>
+        {{ form.registered_connection }}
+        <span class="muted">Confirm the linked consumer name and connection details before saving the reading.</span>
+        {% for error in form.registered_connection.errors %}
             <span class="field-error">{{ error }}</span>
         {% endfor %}
     </p>

@@ -846,6 +846,45 @@ class ReaderMeterReadingSubmissionTests(TestCase):
         mocked_notify_roles.assert_called_once()
         self.assertEqual(mocked_notify_consumer.call_count, 2)
 
+    def test_submission_rejects_duplicate_billing_cycle_reading(self):
+        form = MeterReadingForm(
+            data={
+                'meter_number': self.consumer.meter_number,
+                'reading_date': '2026-03-30',
+                'current_reading': '130',
+                'notes': 'Duplicate cycle attempt',
+            }
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn(
+            'A meter reading for this billing cycle already exists. Use the edit action to correct the submitted reading.',
+            form.non_field_errors(),
+        )
+
+    def test_submission_rejects_meter_and_consumer_account_mismatch(self):
+        other_consumer = Consumer.objects.create(
+            full_name='Other Consumer',
+            status=Consumer.Statuses.ACTIVE,
+        )
+        form = MeterReadingForm(
+            data={
+                'meter_number': self.consumer.meter_number,
+                'consumer_id': str(other_consumer.id),
+                'consumer_account': f'ACC-{other_consumer.id:05d}',
+                'registered_connection': other_consumer.full_name,
+                'reading_date': '2026-04-30',
+                'current_reading': '145',
+                'notes': 'Mismatch attempt',
+            }
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn(
+            'The selected consumer account does not match the entered meter number.',
+            form.errors['consumer_account'],
+        )
+
 
 class RunningBalanceAllocationTests(TestCase):
     def setUp(self):
@@ -1794,9 +1833,10 @@ class DashboardPanelRegressionTests(TestCase):
 
         response = self.client.get(reverse('consumer_panel'))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Current Balance Card')
-        self.assertContains(response, 'Notifications Card')
-        self.assertContains(response, 'Consumption Information')
+        self.assertContains(response, 'Billing Summary')
+        self.assertContains(response, 'Outstanding Balance')
+        self.assertContains(response, 'Consumption')
+        self.assertContains(response, 'Billing Alerts')
         self.assertNotContains(response, 'Performance Trend')
         self.assertNotContains(response, 'Submit Payment')
 
@@ -1868,8 +1908,8 @@ class AuthAndBrandingRegressionTests(TestCase):
         response = self.client.post(reverse('logout'))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'You Have Been Logged Out')
-        self.assertContains(response, 'Session complete.')
+        self.assertContains(response, 'You are now logged out')
+        self.assertContains(response, 'Signed out successfully.')
         self.assertContains(response, 'Go to Login')
 
     def test_account_center_shows_reading_meter_history(self):
@@ -2248,6 +2288,8 @@ class ConsumerDashboardMonitoringTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('Continue Checkout', response.json()['payment_rows_html'])
         self.assertNotIn('pi_completed', response.json()['payment_rows_html'])
+        self.assertIn('Outstanding Balance', response.json()['comparison_html'])
+        self.assertIn('Payment Status', response.json()['comparison_html'])
 
     def test_consumer_dashboard_shows_balance_overview_cards(self):
         self.client.force_login(self.user)
@@ -2255,9 +2297,12 @@ class ConsumerDashboardMonitoringTests(TestCase):
         response = self.client.get(reverse('consumer_panel'))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Current Balance Card')
-        self.assertContains(response, 'Billing Status')
-        self.assertContains(response, 'Unpaid Bills Card')
+        self.assertContains(response, 'Billing Summary')
+        self.assertContains(response, 'Outstanding Balance')
+        self.assertContains(response, 'Current Bill')
+        self.assertContains(response, 'Total Amount to Pay')
+        self.assertContains(response, 'Consumption (m³)')
+        self.assertContains(response, 'Payment Status')
 
 
 class ConsumerDashboardDelinquentWarningTests(TestCase):
@@ -2423,7 +2468,10 @@ class StaffPaymongoCheckoutTests(TestCase):
             'redirect_url': 'https://checkout.paymongo.com/staff-session',
         }
 
-        with patch('billing.views.create_paymongo_ewallet_payment', return_value=fake_checkout):
+        with patch('billing.views.is_paymongo_configured', return_value=True), patch(
+            'billing.views.create_paymongo_ewallet_payment',
+            return_value=fake_checkout,
+        ):
             response = self.client.post(
                 reverse('payments'),
                 data={
@@ -2514,7 +2562,11 @@ class ReaderPanelPreviewTests(TestCase):
         self.assertEqual(panel_response.status_code, 200)
         self.assertContains(panel_response, 'Estimated Amount')
         self.assertContains(panel_response, 'Billable Usage')
+        self.assertContains(panel_response, 'Consumer account')
+        self.assertContains(panel_response, 'Registered connection')
         self.assertEqual(context_response.status_code, 200)
+        self.assertEqual(context_response.json()['consumer_id'], self.consumer.id)
+        self.assertIn('Preview Consumer', context_response.json()['registered_connection'])
         self.assertEqual(Decimal(context_response.json()['previous_reading']), Decimal('100'))
         self.assertEqual(Decimal(context_response.json()['rate_per_m3']), Decimal('27.50'))
 

@@ -74,6 +74,14 @@
         letter-spacing: -0.03em;
     }
 
+    .consumer-status-chips {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
     .consumer-balance-meta {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -210,6 +218,10 @@
             min-height: auto;
             padding: 26px 24px;
         }
+
+        .consumer-status-chips {
+            justify-content: flex-start;
+        }
     }
 
     @media (max-width: 640px) {
@@ -226,46 +238,6 @@
 <section class="page-wrap" id="consumer-dashboard">
     {% include 'billing/includes/consumer_billing_comparison.html' %}
 </section>
-
-<section class="page-wrap" id="consumer-water-consumption">
-    <div class="consumer-consumption-card">
-        <div class="toolbar" style="justify-content: space-between; margin-bottom: 16px;">
-            <div>
-                <h3>Consumption Information</h3>
-                <p class="muted">Current usage, monthly consumption, and the latest meter reading details are grouped here for quick review.</p>
-            </div>
-            {% if consumer_latest_meter_reading %}
-                <span class="status-chip">{{ consumer_latest_meter_reading.billing_month|date:'F Y' }}</span>
-            {% endif %}
-        </div>
-        <div class="consumer-consumption-grid">
-            <div class="consumer-consumption-item">
-                <span>Current Cubic Meter Usage</span>
-                <strong>{{ consumer_current_usage_m3 }} m³</strong>
-            </div>
-            <div class="consumer-consumption-item">
-                <span>Monthly Water Consumption</span>
-                <strong>{{ consumer_monthly_consumption_m3 }} m³</strong>
-            </div>
-            <div class="consumer-consumption-item">
-                <span>Previous Reading</span>
-                <strong>{% if consumer_latest_meter_reading %}{{ consumer_latest_meter_reading.previous_reading }}{% else %}0{% endif %}</strong>
-            </div>
-            <div class="consumer-consumption-item">
-                <span>Current Reading</span>
-                <strong>{% if consumer_latest_meter_reading %}{{ consumer_latest_meter_reading.current_reading }}{% else %}0{% endif %}</strong>
-            </div>
-            <div class="consumer-consumption-item">
-                <span>Reading Date</span>
-                <strong>{% if consumer_latest_meter_reading %}{{ consumer_latest_meter_reading.reading_date|date:'F d, Y' }}{% else %}No reading available{% endif %}</strong>
-            </div>
-            <div class="consumer-consumption-item">
-                <span>Meter Reading Details</span>
-                <strong>{% if consumer_latest_meter_reading %}{{ consumer_latest_meter_reading.billing_month|date:'F Y' }} billing cycle{% else %}Waiting for first reading{% endif %}</strong>
-            </div>
-        </div>
-    </div>
-</section>
 {% else %}
 <section class="page-wrap">
     <div class="card">
@@ -274,4 +246,32 @@
     </div>
 </section>
 {% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    (function () {
+        const dashboardContainer = document.getElementById('consumer-dashboard');
+        if (!dashboardContainer) return;
+
+        async function refreshConsumerDashboard() {
+            try {
+                const response = await fetch("{% url 'consumer_panel_data' %}", {
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+                if (!response.ok) return;
+                const payload = await response.json();
+                if (payload.comparison_html) {
+                    dashboardContainer.innerHTML = payload.comparison_html;
+                }
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        setInterval(refreshConsumerDashboard, 15000);
+    })();
+</script>
 {% endblock %}

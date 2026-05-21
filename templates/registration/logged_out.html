@@ -1,22 +1,22 @@
 {% extends 'registration/auth_layout.html' %}
 {% block title %}Logged Out{% endblock %}
 {% block auth_kicker %}Session Closed{% endblock %}
-{% block auth_heading %}You Have Been Logged Out{% endblock %}
-{% block auth_subtitle %}Your session ended cleanly. Sign back in whenever you need to continue working with the Tabuan Water Billing System.{% endblock %}
+{% block auth_heading %}You are now logged out{% endblock %}
+{% block auth_subtitle %}Your session ended successfully. Sign in again anytime to continue using the Tabuan Water Billing System.{% endblock %}
 {% block auth_visual_tag %}Signed Out{% endblock %}
 {% block auth_visual_actions %}
     <a href="{% url 'home' %}" class="auth-visual-link">Home</a>
     <a href="{% url 'login' %}" class="auth-visual-link is-active">Log In</a>
 {% endblock %}
 {% block auth_visual_story_label %}Protected Access{% endblock %}
-{% block auth_visual_title %}Session complete.{% endblock %}
-{% block auth_visual_copy %}Access to admin, reader, secretary, treasurer, and consumer panels stays locked until the next authenticated login is completed.{% endblock %}
+{% block auth_visual_title %}Signed out successfully.{% endblock %}
+{% block auth_visual_copy %}Access to the admin, reader, secretary, treasurer, and consumer panels remains locked until you sign in again.{% endblock %}
 {% block auth_visual_footer_copy %}Access closes after logout{% endblock %}
 {% block auth_brand_badge %}Signed Out{% endblock %}
 
 {% block auth_body %}
 <div class="auth-status-card">
-    Your account session has been closed. No billing, receipt, payment, or meter-reading actions can be performed until you log in again.
+    Your account session has been closed. Billing, receipt, payment, and meter-reading actions are unavailable until you log in again.
 </div>
 <div class="auth-actions">
     <a href="{% url 'login' %}" class="btn auth-primary">Go to Login</a>

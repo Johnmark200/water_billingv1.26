@@ -13,6 +13,7 @@ from django.contrib.auth import get_user_model, login, logout, update_session_au
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView
 from django.core.cache import cache
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Q, Sum
 from django.http import HttpResponse, JsonResponse
@@ -1211,7 +1212,7 @@ def _build_reader_panel_context(request, form=None, edit_form=None):
     for reading in recent_readings:
         billing = get_existing_billing_for_month(reading.consumer, reading.billing_month)
         if billing and billing.id not in seen_billing_ids:
-            recent_billings.append(billing)
+            recent_billings.append(apply_panel_billing_status(billing))
             seen_billing_ids.add(billing.id)
 
     return {
@@ -1231,6 +1232,7 @@ def _build_reader_panel_context(request, form=None, edit_form=None):
 
 def _build_consumer_panel_context(request, payment_form=None):
     consumer = get_linked_consumer(request.user)
+    today = timezone.localdate()
     system_settings = SystemSettings.load()
     if consumer:
         refresh_consumer_account_status(consumer, send_notifications=False)
@@ -1240,10 +1242,16 @@ def _build_consumer_panel_context(request, payment_form=None):
         channel=Notification.Channels.IN_APP,
     )
     current_billing, previous_billing = get_consumer_billing_comparison(consumer)
+    if current_billing:
+        current_billing = apply_panel_billing_status(current_billing)
+    if previous_billing:
+        previous_billing = apply_panel_billing_status(previous_billing)
     paymongo_ready = system_settings.enable_online_payments and is_paymongo_configured()
     billing_records = get_consumer_monthly_billings(consumer, limit=10) if consumer else []
+    billing_records = [apply_panel_billing_status(billing) for billing in billing_records]
     account_overview = build_consumer_account_overview(consumer) if consumer else build_consumer_account_overview(None)
     unpaid_billing_records = account_overview['unpaid_billings']
+    unpaid_billing_records = [apply_panel_billing_status(billing) for billing in unpaid_billing_records]
     consumer_running_balance = account_overview['outstanding_balance']
     unpaid_cycles_count = account_overview['unpaid_cycles_count']
     has_partial_balance = account_overview['has_partial_balance']
@@ -1251,10 +1259,10 @@ def _build_consumer_panel_context(request, payment_form=None):
         Consumer.AccountStatuses.DELINQUENT,
         Consumer.AccountStatuses.FOR_DISCONNECTION,
     } if consumer else False
-    consumer_is_overdue = consumer.account_status in {
-        Consumer.AccountStatuses.DELINQUENT,
-        Consumer.AccountStatuses.FOR_DISCONNECTION,
-    } if consumer else False
+    consumer_is_overdue = any(
+        getattr(billing, 'panel_status', resolve_billing_status(billing)) == BillingRecord.Statuses.OVERDUE
+        for billing in unpaid_billing_records
+    ) if consumer else False
     consumer_billing_status = consumer.get_account_status_display() if consumer else 'Active'
     balance_due_date = (
         current_billing.due_date
@@ -1262,6 +1270,7 @@ def _build_consumer_panel_context(request, payment_form=None):
         else (unpaid_billing_records[0].due_date if unpaid_billing_records else (current_billing.due_date if current_billing else None))
     )
     current_bill_amount = current_billing.total_amount if current_billing else Decimal('0')
+    current_bill_amount_due = current_billing.amount_due if current_billing else Decimal('0')
     current_bill_penalty = current_billing.penalty_amount if current_billing else Decimal('0')
     current_billing_month = month_start(current_billing.billing_month) if current_billing else None
     latest_meter_reading = consumer.meter_readings.order_by('-reading_date', '-created_at').first() if consumer else None
@@ -1275,6 +1284,39 @@ def _build_consumer_panel_context(request, payment_form=None):
         Decimal('0'),
     )
     current_bill_total = consumer_running_balance
+    current_bill_status_label = (
+        current_billing.panel_status_label
+        if current_billing and getattr(current_billing, 'panel_status_label', '')
+        else ('Fully Paid' if consumer_running_balance <= 0 else 'Pending')
+    )
+    current_billing_period_label = current_billing.billing_month.strftime('%B %Y') if current_billing else (
+        latest_meter_reading.billing_month.strftime('%B %Y') if latest_meter_reading else 'No billing cycle yet'
+    )
+    due_in_days = (balance_due_date - today).days if balance_due_date else None
+    consumer_due_soon = (
+        consumer_running_balance > 0
+        and due_in_days is not None
+        and 0 <= due_in_days <= 5
+        and not consumer_is_overdue
+    )
+    consumer_has_unpaid_balance = consumer_running_balance > 0
+    consumer_is_fully_paid = consumer_running_balance <= 0 and not unpaid_billing_records
+    consumer_latest_due_or_overdue_label = 'Overdue' if consumer_is_overdue else ('Due Soon' if consumer_due_soon else current_bill_status_label)
+    latest_consumption_m3 = (
+        current_billing.usage_m3
+        if current_billing
+        else (latest_meter_reading.usage_m3 if latest_meter_reading else Decimal('0'))
+    )
+    latest_previous_reading = (
+        current_billing.previous_reading
+        if current_billing
+        else (latest_meter_reading.previous_reading if latest_meter_reading else Decimal('0'))
+    )
+    latest_current_reading = (
+        current_billing.current_reading
+        if current_billing
+        else (latest_meter_reading.current_reading if latest_meter_reading else Decimal('0'))
+    )
 
     context = {
         **_build_profile_context(request.user),
@@ -1304,11 +1346,20 @@ def _build_consumer_panel_context(request, payment_form=None):
         'consumer_billing_status': consumer_billing_status,
         'consumer_is_overdue': consumer_is_overdue,
         'consumer_balance_due_date': balance_due_date,
+        'consumer_due_in_days': due_in_days,
+        'consumer_due_soon': consumer_due_soon,
         'consumer_account_number': f'ACC-{consumer.id:05d}' if consumer else '',
         'consumer_current_bill_amount': current_bill_amount,
+        'consumer_current_bill_amount_due': current_bill_amount_due,
         'consumer_current_bill_penalty': current_bill_penalty,
         'consumer_previous_arrears': current_bill_arrears,
         'consumer_running_total_balance': current_bill_total,
+        'consumer_total_amount_to_pay': consumer_running_balance,
+        'consumer_has_unpaid_balance': consumer_has_unpaid_balance,
+        'consumer_is_fully_paid': consumer_is_fully_paid,
+        'consumer_current_bill_status': current_bill_status_label,
+        'consumer_current_bill_status_badge': consumer_latest_due_or_overdue_label,
+        'consumer_current_billing_period': current_billing_period_label,
         'next_payment_month': get_next_payment_month(consumer) if consumer else None,
         'system_settings': system_settings,
         'consumer_chart_data': build_consumer_chart_data(consumer),
@@ -1334,11 +1385,11 @@ def _build_consumer_panel_context(request, payment_form=None):
             Q(title__icontains='warning') | Q(message__icontains='warning')
         ).count() + (1 if account_overview['warning_active'] or consumer_is_overdue else 0),
         'consumer_current_usage_m3': (
-            current_billing.usage_m3
-            if current_billing
-            else (latest_meter_reading.usage_m3 if latest_meter_reading else Decimal('0'))
+            latest_consumption_m3
         ),
-        'consumer_monthly_consumption_m3': latest_meter_reading.usage_m3 if latest_meter_reading else Decimal('0'),
+        'consumer_monthly_consumption_m3': latest_consumption_m3,
+        'consumer_latest_previous_reading': latest_previous_reading,
+        'consumer_latest_current_reading': latest_current_reading,
         'consumer_latest_meter_reading': latest_meter_reading,
         'consumer_rate_assignment': consumer_rate_assignment,
     }
@@ -1955,15 +2006,19 @@ def reader_panel(request):
     if request.method == 'POST':
         form = MeterReadingForm(request.POST)
         if form.is_valid():
-            reading, billing = handle_meter_reading_submission(form, request.user)
-            messages.success(
-                request,
-                (
-                    f'Meter reading saved for {reading.consumer.full_name}. '
-                    f'Billing for {billing.billing_month:%B %Y} is PHP {billing.total_amount} due on {billing.due_date:%B %d, %Y}.'
-                ),
-            )
-            return redirect('reader_panel')
+            try:
+                reading, billing = handle_meter_reading_submission(form, request.user)
+            except ValidationError as exc:
+                form.add_error(None, exc.message if hasattr(exc, 'message') else str(exc))
+            else:
+                messages.success(
+                    request,
+                    (
+                        f'Meter reading saved for {reading.consumer.full_name}. '
+                        f'Billing for {billing.billing_month:%B %Y} is PHP {billing.total_amount} due on {billing.due_date:%B %d, %Y}.'
+                    ),
+                )
+                return redirect('reader_panel')
 
         context = _build_reader_panel_context(request, form=form)
         context['hide_header'] = True
@@ -2067,21 +2122,25 @@ def update_profile_view(request):
 def submit_reader_reading(request):
     form = MeterReadingForm(request.POST)
     if form.is_valid():
-        reading, billing = handle_meter_reading_submission(form, request.user)
-        context = _build_reader_panel_context(request)
-        payload = _render_reader_live_payload(
-            request,
-            context,
-            message=(
-                f'Meter reading saved for {reading.consumer.full_name}. '
-                f'Billing for {billing.billing_month:%B %Y} is PHP {billing.total_amount} due on {billing.due_date:%B %d, %Y}.'
-            ),
-        )
-        payload['reading_id'] = reading.id
-        if _is_ajax(request):
-            return JsonResponse(payload)
-        messages.success(request, payload['message'])
-        return redirect('reader_panel')
+        try:
+            reading, billing = handle_meter_reading_submission(form, request.user)
+        except ValidationError as exc:
+            form.add_error(None, exc.message if hasattr(exc, 'message') else str(exc))
+        else:
+            context = _build_reader_panel_context(request)
+            payload = _render_reader_live_payload(
+                request,
+                context,
+                message=(
+                    f'Meter reading saved for {reading.consumer.full_name}. '
+                    f'Billing for {billing.billing_month:%B %Y} is PHP {billing.total_amount} due on {billing.due_date:%B %d, %Y}.'
+                ),
+            )
+            payload['reading_id'] = reading.id
+            if _is_ajax(request):
+                return JsonResponse(payload)
+            messages.success(request, payload['message'])
+            return redirect('reader_panel')
 
     if _is_ajax(request):
         context = _build_reader_panel_context(request, form=form)
@@ -2123,9 +2182,11 @@ def reader_reading_context(request):
     return JsonResponse(
         {
             'ok': True,
+            'consumer_id': consumer.id,
             'consumer_name': consumer.full_name,
             'meter_number': consumer.meter_number,
             'account_number': f'ACC-{consumer.id:05d}',
+            'registered_connection': f'{consumer.full_name} | {consumer.address or "No address on file"}',
             'rate_label': rate_assignment['label'],
             'rate_scope': consumer.rate_scope_label,
             'previous_reading': str(details['value']),

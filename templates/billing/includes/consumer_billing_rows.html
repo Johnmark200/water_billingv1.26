@@ -9,7 +9,7 @@
         <td data-label="Outstanding">&#8369;{{ bill.statement_total_snapshot }}</td>
         <td data-label="Paid">&#8369;{{ bill.amount_paid }}</td>
         <td data-label="Due Date">{{ bill.due_date|date:'Y-m-d' }}</td>
-        <td data-label="Status">{{ bill.get_status_display }}</td>
+        <td data-label="Status">{{ bill.panel_status_label|default:bill.get_status_display }}</td>
     </tr>
 {% empty %}
     <tr><td colspan="10" class="empty-state">No billing records available.</td></tr>

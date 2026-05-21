@@ -840,10 +840,13 @@ class AreaRateForm(forms.ModelForm):
 
 class MeterReadingForm(forms.ModelForm):
     meter_number = forms.CharField(max_length=32)
+    consumer_id = forms.IntegerField(required=False, widget=forms.HiddenInput())
+    consumer_account = forms.CharField(required=False)
+    registered_connection = forms.CharField(required=False)
 
     class Meta:
         model = MeterReading
-        fields = ['meter_number', 'reading_date', 'current_reading', 'notes']
+        fields = ['meter_number', 'consumer_id', 'consumer_account', 'registered_connection', 'reading_date', 'current_reading', 'notes']
         widgets = {
             'reading_date': forms.DateInput(attrs={'type': 'date'}),
             'notes': forms.Textarea(attrs={'rows': 3}),
@@ -862,6 +865,19 @@ class MeterReadingForm(forms.ModelForm):
             f'Enter the actual current meter reading. Minimum billable usage is {MINIMUM_BILLABLE_USAGE_M3} m³.'
         )
 
+        self.fields['consumer_account'].widget.attrs.update(
+            {
+                'placeholder': 'Auto-filled from the meter number lookup',
+                'readonly': 'readonly',
+            }
+        )
+        self.fields['registered_connection'].widget.attrs.update(
+            {
+                'placeholder': 'Auto-filled linked consumer account',
+                'readonly': 'readonly',
+            }
+        )
+
     def clean_meter_number(self):
         return self.cleaned_data.get('meter_number', '').strip().upper()
 
@@ -874,6 +890,8 @@ class MeterReadingForm(forms.ModelForm):
     def clean(self):
         cleaned_data = super().clean()
         meter_number = cleaned_data.get('meter_number')
+        provided_consumer_id = cleaned_data.get('consumer_id')
+        provided_account = (cleaned_data.get('consumer_account') or '').strip().upper()
         consumer = getattr(self.instance, 'consumer', None)
         if meter_number:
             consumer = Consumer.objects.filter(
@@ -884,14 +902,26 @@ class MeterReadingForm(forms.ModelForm):
                 self.add_error('meter_number', 'No active consumer account is linked to that meter number.')
             else:
                 cleaned_data['consumer'] = consumer
+                expected_account = f'ACC-{consumer.id:05d}'
+                if provided_consumer_id and consumer.id != provided_consumer_id:
+                    self.add_error('consumer_account', 'The selected consumer account does not match the entered meter number.')
+                if provided_account and provided_account != expected_account:
+                    self.add_error('consumer_account', 'The linked consumer account reference does not match the entered meter number.')
         reading_date = cleaned_data.get('reading_date') or getattr(self.instance, 'reading_date', None)
         current_reading = cleaned_data.get('current_reading')
 
         if consumer and reading_date and current_reading is not None:
-            previous_reading = get_previous_reading_for_month(consumer, reading_date.replace(day=1))
+            target_month = reading_date.replace(day=1)
+            previous_reading = get_previous_reading_for_month(consumer, target_month)
             cleaned_data['previous_reading_snapshot'] = previous_reading
             if current_reading < previous_reading:
                 self.add_error('current_reading', 'Current reading cannot be lower than the previous reading.')
+            existing_reading = MeterReading.objects.filter(consumer=consumer, billing_month=target_month).exclude(pk=self.instance.pk).first()
+            if existing_reading is not None:
+                self.add_error(
+                    None,
+                    'A meter reading for this billing cycle already exists. Use the edit action to correct the submitted reading.',
+                )
 
         return cleaned_data
 
