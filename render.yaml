@@ -2,6 +2,10 @@ services:
   - type: web
     name: water-billing-v126
     env: python
+    disk:
+      name: media
+      mountPath: /var/data/media
+      sizeGB: 1
     buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput
     startCommand: python -m gunicorn waterbilling_project.wsgi:application --bind 0.0.0.0:$PORT
     envVars:
@@ -9,3 +13,5 @@ services:
         generateValue: true
       - key: DEBUG
         value: false
+      - key: MEDIA_ROOT
+        value: /var/data/media

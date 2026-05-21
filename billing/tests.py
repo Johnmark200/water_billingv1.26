@@ -1,9 +1,11 @@
 import socket
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 from datetime import date, timedelta
 from decimal import Decimal
 from urllib.error import URLError
 
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.contrib.admin.sites import site
 from django.core.management import call_command
@@ -43,6 +45,29 @@ class SignUpFormTests(TestCase):
 
         self.assertFalse(form.is_valid())
         self.assertIn('Your username cannot be used as your password.', form.errors['password1'])
+
+
+class MediaServingRegressionTests(TestCase):
+    def test_media_url_is_served_even_when_debug_is_false(self):
+        media_dir = Path(settings.MEDIA_ROOT) / 'test-media'
+        media_dir.mkdir(parents=True, exist_ok=True)
+        sample_file = media_dir / 'profile-preview.txt'
+
+        try:
+            sample_file.write_text('profile image placeholder', encoding='utf-8')
+            with override_settings(DEBUG=False):
+                response = self.client.get(f'{settings.MEDIA_URL}test-media/profile-preview.txt')
+
+            self.assertEqual(response.status_code, 200)
+            self.assertContains(response, 'profile image placeholder')
+        finally:
+            if sample_file.exists():
+                sample_file.unlink()
+            if media_dir.exists():
+                try:
+                    media_dir.rmdir()
+                except OSError:
+                    pass
 
 
 class ConsumerFormTests(TestCase):
