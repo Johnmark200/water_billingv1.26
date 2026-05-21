@@ -1,11 +1,18 @@
 {% extends 'registration/auth_layout.html' %}
 {% block title %}Create Consumer Account{% endblock %}
-{% block auth_shell_class %}auth-cover-shell{% endblock %}
 {% block auth_kicker %}Consumer Signup{% endblock %}
-{% block auth_heading %}Create Consumer Account{% endblock %}
-{% block auth_subtitle %}Register a consumer portal account for billing access, receipts, statements of account, and meter-reading history.{% endblock %}
-{% block auth_visual_title %}Tabuan Waterbilling.{% endblock %}
-{% block auth_visual_copy %}Create a consumer account with direct access to billing records, receipts, statements of account, and reading meter history.{% endblock %}
+{% block auth_heading %}Create Account{% endblock %}
+{% block auth_subtitle %}Register a consumer portal account for billing access, receipts, statements of account, notifications, and meter-reading history.{% endblock %}
+{% block auth_visual_tag %}New Account{% endblock %}
+{% block auth_visual_actions %}
+    <a href="{% url 'signup' %}" class="auth-visual-link is-active">Sign Up</a>
+    <a href="{% url 'login' %}" class="auth-visual-link">Log In</a>
+{% endblock %}
+{% block auth_visual_story_label %}Consumer Portal{% endblock %}
+{% block auth_visual_title %}Open your billing account online.{% endblock %}
+{% block auth_visual_copy %}Create one consumer login for statements, receipts, billing notices, and account updates without waiting for manual office follow-up.{% endblock %}
+{% block auth_visual_footer_copy %}Statements, receipts, and notifications{% endblock %}
+{% block auth_brand_badge %}Registration{% endblock %}
 
 {% block auth_body %}
 {% if form.non_field_errors %}
@@ -22,7 +29,7 @@
     <div class="auth-grid">
         <div class="auth-field">
             <label for="id_username">Username</label>
-            <input type="text" name="username" id="id_username" maxlength="150" required value="{{ form.username.value|default:'' }}" autocomplete="username">
+            <input type="text" name="username" id="id_username" maxlength="150" required value="{{ form.username.value|default:'' }}" autocomplete="username" placeholder="Choose a username">
             {% for error in form.username.errors %}
                 <span class="field-error">{{ error }}</span>
             {% endfor %}
@@ -30,7 +37,7 @@
 
         <div class="auth-field">
             <label for="id_full_name">Full Name</label>
-            <input type="text" name="full_name" id="id_full_name" maxlength="255" required value="{{ form.full_name.value|default:'' }}" autocomplete="name">
+            <input type="text" name="full_name" id="id_full_name" maxlength="255" required value="{{ form.full_name.value|default:'' }}" autocomplete="name" placeholder="Enter your full name">
             {% for error in form.full_name.errors %}
                 <span class="field-error">{{ error }}</span>
             {% endfor %}
@@ -40,7 +47,7 @@
     <div class="auth-grid">
         <div class="auth-field">
             <label for="id_email">Email</label>
-            <input type="email" name="email" id="id_email" value="{{ form.email.value|default:'' }}" autocomplete="email">
+            <input type="email" name="email" id="id_email" value="{{ form.email.value|default:'' }}" autocomplete="email" placeholder="Enter your email address">
             <span class="auth-help">Used for billing notices, payment updates, and account communication.</span>
             {% for error in form.email.errors %}
                 <span class="field-error">{{ error }}</span>
@@ -59,7 +66,7 @@
 
     <div class="auth-field">
         <label for="id_address">Address</label>
-        <textarea name="address" id="id_address" autocomplete="street-address">{{ form.address.value|default:'' }}</textarea>
+        <textarea name="address" id="id_address" autocomplete="street-address" placeholder="Enter your full address">{{ form.address.value|default:'' }}</textarea>
         {% for error in form.address.errors %}
             <span class="field-error">{{ error }}</span>
         {% endfor %}
@@ -68,7 +75,7 @@
     <div class="auth-grid">
         <div class="auth-field">
             <label for="id_password1">Password</label>
-            <input type="password" name="password1" id="id_password1" required autocomplete="new-password">
+            <input type="password" name="password1" id="id_password1" required autocomplete="new-password" placeholder="Create a password">
             <span class="auth-help">Use at least 8 characters with uppercase, lowercase, number, and special character.</span>
             <span class="field-error" id="password-live-error" hidden></span>
             {% for error in form.password1.errors %}
@@ -78,7 +85,7 @@
 
         <div class="auth-field">
             <label for="id_password2">Confirm Password</label>
-            <input type="password" name="password2" id="id_password2" required autocomplete="new-password">
+            <input type="password" name="password2" id="id_password2" required autocomplete="new-password" placeholder="Confirm your password">
             <span class="auth-help">The confirmation password must exactly match the first field.</span>
             <span class="field-error" id="password-match-error" hidden></span>
             {% for error in form.password2.errors %}
@@ -91,6 +98,7 @@
         <button type="submit" class="btn auth-primary">Create Account</button>
         <a href="{% url 'login' %}" class="btn secondary">Back to Login</a>
     </div>
+    <p class="auth-switch-copy">Already registered? <a href="{% url 'login' %}" class="auth-secondary-link">Log In</a></p>
 </form>
 {% endblock %}
 

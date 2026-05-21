@@ -1819,8 +1819,8 @@ class AuthAndBrandingRegressionTests(TestCase):
         response = self.client.get(reverse('login'))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Welcome Back')
-        self.assertContains(response, 'Continue to System')
+        self.assertContains(response, 'Hi There')
+        self.assertContains(response, 'Log In')
         self.assertContains(response, 'Tabuan Water Billing logo')
 
     def test_signup_page_uses_tabuan_logo_visual_panel(self):
@@ -1844,7 +1844,7 @@ class AuthAndBrandingRegressionTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'You Have Been Logged Out')
-        self.assertContains(response, 'Tabuan Waterbilling.')
+        self.assertContains(response, 'Session complete.')
         self.assertContains(response, 'Go to Login')
 
     def test_account_center_shows_reading_meter_history(self):

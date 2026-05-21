@@ -1,11 +1,19 @@
 {% extends 'registration/auth_layout.html' %}
 {% block title %}Login{% endblock %}
-{% block auth_shell_class %}auth-cover-shell{% endblock %}
-{% block auth_kicker %}Portal Login{% endblock %}
-{% block auth_heading %}Welcome Back{% endblock %}
-{% block auth_subtitle %}Use your assigned account to open the correct panel for billing, readings, reports, and consumer access.{% endblock %}
-{% block auth_visual_title %}Tabuan Waterbilling.{% endblock %}
-{% block auth_visual_copy %}Live billing records, meter readings, and consumer activity stay synchronized across the system panels.{% endblock %}
+{% block auth_kicker %}Staff and Consumer Login{% endblock %}
+{% block auth_heading %}Hi There{% endblock %}
+{% block auth_subtitle %}Use your assigned account to open billing, reports, readings, payments, and consumer access from one secure portal.{% endblock %}
+{% block auth_visual_tag %}Secure Session{% endblock %}
+{% block auth_visual_actions %}
+    <a href="{% url 'signup' %}" class="auth-visual-link">Sign Up</a>
+    <a href="{% url 'login' %}" class="auth-visual-link is-active">Log In</a>
+{% endblock %}
+{% block auth_visual_story_label %}Unified Billing{% endblock %}
+{% block auth_visual_title %}Ready to manage water accounts?{% endblock %}
+{% block auth_visual_copy %}Track consumer records, receipts, meter readings, and account activity with the same live system data used by staff and registered consumers.{% endblock %}
+{% block auth_visual_footer_copy %}Billing records and account access{% endblock %}
+{% block auth_brand_badge %}English{% endblock %}
+{% block auth_card_class %}has-logo-watermark{% endblock %}
 
 {% block auth_body %}
 <form method="post" class="auth-form" novalidate>
@@ -20,7 +28,7 @@
 
     <div class="auth-field">
         <label for="id_username">Username</label>
-        <input type="text" name="username" id="id_username" value="{{ form.username.value|default:'' }}" autocomplete="username" required>
+        <input type="text" name="username" id="id_username" value="{{ form.username.value|default:'' }}" autocomplete="username" placeholder="Enter your username" required>
         {% if form.username.errors %}
             <ul class="auth-inline-errors">
                 {% for error in form.username.errors %}
@@ -31,8 +39,11 @@
     </div>
 
     <div class="auth-field">
-        <label for="id_password">Password</label>
-        <input type="password" name="password" id="id_password" autocomplete="current-password" required>
+        <div class="auth-field-header">
+            <label for="id_password">Password</label>
+            <a href="{% url 'password_reset' %}" class="auth-inline-link">Forgot Password?</a>
+        </div>
+        <input type="password" name="password" id="id_password" autocomplete="current-password" placeholder="Enter your password" required>
         {% if form.password.errors %}
             <ul class="auth-inline-errors">
                 {% for error in form.password.errors %}
@@ -43,20 +54,18 @@
     </div>
 
     <p class="auth-help">Only registered staff and linked consumer accounts can sign in.</p>
-    <p class="auth-help"><a href="{% url 'password_reset' %}" class="auth-secondary-link">Forgot Password?</a></p>
+
+    {% if google_login_enabled %}
+        <div class="auth-divider">Or</div>
+        <a href="{% url 'google_login_start' %}" class="auth-google-button">
+            <span class="auth-google-icon">G</span>
+            <span>Continue with Google</span>
+        </a>
+    {% endif %}
 
     <div class="auth-actions">
-        <button type="submit" class="btn auth-primary">Continue to System</button>
-        <a href="{% url 'signup' %}" class="auth-secondary-link">Create Consumer Account</a>
+        <button type="submit" class="btn auth-primary">Log In</button>
     </div>
+    <p class="auth-switch-copy">Don't have a consumer account? <a href="{% url 'signup' %}" class="auth-secondary-link">Sign Up</a></p>
 </form>
-
-{% if google_login_enabled %}
-    <div class="auth-form" style="margin-top: 18px;">
-        <p class="auth-help">Consumer accounts can also continue with a Google account. The Gmail profile name and email will be used for the consumer account details.</p>
-        <div class="auth-actions">
-            <a href="{% url 'google_login_start' %}" class="btn secondary">Sign in with Google</a>
-        </div>
-    </div>
-{% endif %}
 {% endblock %}
