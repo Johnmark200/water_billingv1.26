@@ -205,7 +205,8 @@
                         <p><strong>Payment Date:</strong> {{ payment.payment_date|date:'m/d/Y' }}</p>
                         <p><strong>Covered Month:</strong> {{ covered_month|date:'F Y'|default:'-' }}</p>
                         <p><strong>Payment Option:</strong> {{ payment.get_payment_option_display }}</p>
-                        <p><strong>Status:</strong> {{ payment.get_status_display }}</p>
+                        <p><strong>Transaction Status:</strong> {{ payment.get_status_display }}</p>
+                        <p><strong>Billing Status:</strong> {{ billing_status }}</p>
                     </div>
                     <div class="receipt-title">RECEIPT</div>
                 </div>
@@ -216,26 +217,45 @@
                     <tr>
                         <th>No</th>
                         <th>Description</th>
-                        <th>Method</th>
-                        <th>Reference</th>
-                        <th>Amount</th>
+                        <th>Month</th>
+                        <th>Status</th>
+                        <th>Applied</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr>
-                        <td>1</td>
-                        <td>Water billing payment{% if covered_month %} for {{ covered_month|date:'F Y' }}{% endif %}</td>
-                        <td>{{ payment.display_payment_method }}</td>
-                        <td>{% if payment.payment_method == 'cash' %}-{% else %}{{ reference_number }}{% endif %}</td>
-                        <td>&#8369;{{ payment.amount_paid }}</td>
-                    </tr>
+                    {% for allocation in allocations %}
+                        <tr>
+                            <td>{{ forloop.counter }}</td>
+                            <td>Applied to water billing balance</td>
+                            <td>{{ allocation.billing.billing_month|date:'F Y' }}</td>
+                            <td>{{ allocation.billing.get_status_display }}</td>
+                            <td>&#8369;{{ allocation.amount_applied }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td>1</td>
+                            <td>Water billing payment{% if covered_month %} for {{ covered_month|date:'F Y' }}{% endif %}</td>
+                            <td>{{ covered_month|date:'F Y'|default:'-' }}</td>
+                            <td>{{ billing_status }}</td>
+                            <td>&#8369;{{ payment.amount_paid }}</td>
+                        </tr>
+                    {% endfor %}
                     {% if payment.discount_amount %}
                         <tr>
-                            <td>2</td>
+                            <td>{% if allocations %}{{ allocations|length|add:1 }}{% else %}2{% endif %}</td>
                             <td>Discount applied</td>
                             <td>-</td>
                             <td>-</td>
                             <td>&#8369;{{ payment.discount_amount }}</td>
+                        </tr>
+                    {% endif %}
+                    {% if unapplied_amount %}
+                        <tr>
+                            <td>{% if allocations %}{{ allocations|length|add:2 }}{% else %}3{% endif %}</td>
+                            <td>Unapplied advance credit</td>
+                            <td>{{ covered_month|date:'F Y'|default:'Future billing' }}</td>
+                            <td>Held as credit</td>
+                            <td>&#8369;{{ unapplied_amount }}</td>
                         </tr>
                     {% endif %}
                 </tbody>
@@ -245,6 +265,40 @@
                 <span>Total</span>
                 <span>&#8369;{{ payment.amount_paid }}</span>
             </div>
+
+            {% if warning_active %}
+                <div style="margin-top: 26px; border: 2px solid #dc2626; padding: 20px; background: #fff7f7;">
+                    <div style="font-size: 24px; font-weight: 800; color: #991b1b;">&#9888; WARNING NOTICE</div>
+                    <p style="margin: 12px 0 0;">Your account has reached <strong>{{ warning_unpaid_cycles_count }} unpaid billing cycles</strong>.</p>
+                    <p style="margin: 8px 0 0;">Your water service is scheduled for possible disconnection within 15 days if payment is not settled.</p>
+                    {% if scheduled_disconnection_date %}
+                        <p style="margin: 8px 0 0;">Scheduled disconnection review date: <strong>{{ scheduled_disconnection_date|date:'F d, Y' }}</strong></p>
+                    {% endif %}
+                    <p style="margin: 8px 0 0;">Please contact the water office immediately.</p>
+                </div>
+            {% endif %}
+
+            {% if billing %}
+                <div style="margin-top: 30px;">
+                    <h3>Billing Breakdown</h3>
+                    <div class="comparison-grid">
+                        <div class="comparison-card">
+                            <p><strong>Previous Arrears:</strong> PHP {{ billing.previous_arrears }}</p>
+                            <p><strong>Current Bill:</strong> PHP {{ billing.total_amount }}</p>
+                            <p><strong>Water Charge:</strong> PHP {{ billing.water_charge }}</p>
+                            <p><strong>Service Charges:</strong> PHP {{ billing.service_charge }}</p>
+                            <p><strong>Penalties:</strong> PHP {{ billing.penalty_amount }}</p>
+                        </div>
+                        <div class="comparison-card comparison-card-secondary">
+                            <p><strong>Total Outstanding Before Payment:</strong> PHP {{ outstanding_before_payment }}</p>
+                            <p><strong>Payment Applied:</strong> PHP {{ allocated_total }}</p>
+                            <p><strong>Remaining Outstanding:</strong> PHP {{ outstanding_after_payment }}</p>
+                            <p><strong>Account Status:</strong> {{ account_status }}</p>
+                            <p><strong>Reference:</strong> {% if payment.payment_method == 'cash' %}-{% else %}{{ reference_number }}{% endif %}</p>
+                        </div>
+                    </div>
+                </div>
+            {% endif %}
 
             <div style="margin-top: 30px;">
                 <h3>Terms & Conditions</h3>

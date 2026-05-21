@@ -76,3 +76,53 @@
         </div>
     </div>
 </section>
+
+<section class="page-wrap">
+    <div class="admin-monitor-card admin-monitor-card-wide">
+        <div class="admin-monitor-head">
+            <div>
+                <h3>Disconnection Monitoring List</h3>
+                <p>Consumers who reached the warning or disconnection threshold.</p>
+            </div>
+            <span class="admin-monitor-chip">{{ disconnection_monitoring_list|length }} monitored</span>
+        </div>
+        <div class="table-shell table-shell-wide" data-stack-on-mobile="true">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Consumer</th>
+                        <th>Account</th>
+                        <th>Outstanding Balance</th>
+                        <th>Unpaid Months</th>
+                        <th>Last Payment</th>
+                        <th>Disconnection Date</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for consumer in disconnection_monitoring_list %}
+                        <tr>
+                            <td data-label="Consumer">{{ consumer.full_name }}</td>
+                            <td data-label="Account">ACC-{{ consumer.id|stringformat:"05d" }}</td>
+                            <td data-label="Outstanding Balance">PHP {{ consumer.monitoring_overview.outstanding_balance }}</td>
+                            <td data-label="Unpaid Months">{{ consumer.monitoring_overview.unpaid_cycles_count }}</td>
+                            <td data-label="Last Payment">{% if consumer.monitoring_overview.last_payment %}{{ consumer.monitoring_overview.last_payment.payment_date|date:'F d, Y' }}{% else %}No recorded payment{% endif %}</td>
+                            <td data-label="Disconnection Date">{% if consumer.disconnection_scheduled_for %}{{ consumer.disconnection_scheduled_for|date:'F d, Y' }}{% else %}-{% endif %}</td>
+                            <td data-label="Status">{{ consumer.get_account_status_display }}</td>
+                            <td data-label="Action">
+                                <form method="post" action="{% url 'update_consumer_account_status' consumer.id %}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="account_status" value="disconnected">
+                                    <button type="submit" class="btn secondary">Mark Disconnected</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="8" class="empty-state">No consumers are currently on the disconnection monitoring list.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>

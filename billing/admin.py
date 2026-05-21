@@ -1,6 +1,20 @@
 from django.contrib import admin
 
-from .models import AuditLog, BillingRecord, Consumer, ConsumerProfile, MeetingMinutes, MeetingMinutesRevision, MeterReading, Notification, Payment, SMSBlast, SystemSettings
+from .models import (
+    AuditLog,
+    BillingRecord,
+    Consumer,
+    ConsumerProfile,
+    DisconnectionRecord,
+    MeetingMinutes,
+    MeetingMinutesRevision,
+    MeterReading,
+    Notification,
+    Payment,
+    PaymentArrangement,
+    SMSBlast,
+    SystemSettings,
+)
 from .services import send_payment_notification
 
 
@@ -12,9 +26,9 @@ class ConsumerProfileAdmin(admin.ModelAdmin):
 
 @admin.register(Consumer)
 class ConsumerAdmin(admin.ModelAdmin):
-    list_display = ('id', 'full_name', 'contact_number', 'status', 'created_at')
+    list_display = ('id', 'full_name', 'contact_number', 'status', 'account_status', 'created_at')
     search_fields = ('full_name', 'address', 'contact_number')
-    list_filter = ('status',)
+    list_filter = ('status', 'account_status')
 
 
 @admin.register(BillingRecord)
@@ -26,9 +40,9 @@ class BillingRecordAdmin(admin.ModelAdmin):
 
 @admin.register(Payment)
 class PaymentAdmin(admin.ModelAdmin):
-    list_display = ('id', 'consumer', 'payment_method', 'amount_paid', 'payment_date', 'status', 'gateway_status')
+    list_display = ('id', 'consumer', 'payment_method', 'settlement_scope', 'amount_paid', 'payment_date', 'status', 'gateway_status')
     search_fields = ('consumer__full_name', 'reference_number', 'gateway_reference', 'gateway_payment_id')
-    list_filter = ('status', 'payment_method', 'gateway')
+    list_filter = ('status', 'payment_method', 'gateway', 'settlement_scope')
     list_editable = ('status',)
 
     def save_model(self, request, obj, form, change):
@@ -50,6 +64,20 @@ class NotificationAdmin(admin.ModelAdmin):
     list_display = ('id', 'title', 'channel', 'notification_type', 'consumer', 'recipient', 'status', 'created_at')
     search_fields = ('title', 'message', 'consumer__full_name', 'recipient__username')
     list_filter = ('channel', 'notification_type', 'status', 'is_read')
+
+
+@admin.register(PaymentArrangement)
+class PaymentArrangementAdmin(admin.ModelAdmin):
+    list_display = ('id', 'consumer', 'arrangement_type', 'status', 'requested_amount', 'approved_by', 'approved_at', 'created_at')
+    search_fields = ('consumer__full_name', 'notes', 'requested_by__username', 'approved_by__username')
+    list_filter = ('status', 'arrangement_type', 'approved_at')
+
+
+@admin.register(DisconnectionRecord)
+class DisconnectionRecordAdmin(admin.ModelAdmin):
+    list_display = ('id', 'consumer', 'status', 'outstanding_balance', 'unpaid_months_count', 'scheduled_disconnection_date', 'confirmed_at')
+    search_fields = ('consumer__full_name', 'notes')
+    list_filter = ('status', 'scheduled_disconnection_date', 'confirmed_at')
 
 
 @admin.register(SMSBlast)

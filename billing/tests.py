@@ -6,13 +6,14 @@ from urllib.error import URLError
 
 from django.contrib.auth.models import User
 from django.contrib.admin.sites import site
+from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
 from .forms import AdminPaymentForm, BillingRecordForm, ConsumerForm, ConsumerPaymentForm, MeterReadingForm, PortalAccountForm, SignUpForm
-from .models import BillingRecord, Consumer, ConsumerProfile, MeetingMinutes, MeetingMinutesRevision, MeterReading, Notification, Payment, SystemSettings
-from .services import build_consumer_chart_data, build_consumer_payment_month_choices, send_test_sms
+from .models import BillingRecord, Consumer, ConsumerProfile, DisconnectionRecord, MeetingMinutes, MeetingMinutesRevision, MeterReading, Notification, Payment, PaymentArrangement, SystemSettings
+from .services import build_consumer_chart_data, build_consumer_payment_month_choices, create_payment_arrangement, get_consumer_outstanding_balance, handle_meter_reading_submission, rebuild_consumer_payment_allocations, refresh_consumer_account_status, send_test_sms
 from .views import _build_soa_summary, _build_soa_transactions
 
 
@@ -343,6 +344,245 @@ class ConsumerPaymongoFormTests(TestCase):
         self.assertEqual(payment.display_payment_method, 'GCash')
 
 
+class BulkSelectivePaymentFormTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='cashier-bulk', password='StrongPass1!')
+        ConsumerProfile.objects.create(
+            user=self.user,
+            full_name='Cashier Bulk',
+            role=ConsumerProfile.Roles.TREASURER,
+        )
+        self.consumer = Consumer.objects.create(
+            full_name='Bulk Consumer',
+            status=Consumer.Statuses.ACTIVE,
+        )
+        self.march = BillingRecord.objects.create(
+            consumer=self.consumer,
+            billing_month=date(2026, 3, 1),
+            previous_reading=Decimal('0'),
+            current_reading=Decimal('10'),
+            rate_per_m3=Decimal('20'),
+            service_charge=Decimal('0'),
+            amount_paid=Decimal('0'),
+            billing_date=date(2026, 3, 1),
+            due_date=date(2026, 3, 15),
+        )
+        self.april = BillingRecord.objects.create(
+            consumer=self.consumer,
+            billing_month=date(2026, 4, 1),
+            previous_reading=Decimal('10'),
+            current_reading=Decimal('20'),
+            rate_per_m3=Decimal('20'),
+            service_charge=Decimal('100'),
+            amount_paid=Decimal('0'),
+            billing_date=date(2026, 4, 1),
+            due_date=date(2026, 4, 15),
+        )
+        self.may = BillingRecord.objects.create(
+            consumer=self.consumer,
+            billing_month=date(2026, 5, 1),
+            previous_reading=Decimal('20'),
+            current_reading=Decimal('30'),
+            rate_per_m3=Decimal('20'),
+            service_charge=Decimal('200'),
+            amount_paid=Decimal('0'),
+            billing_date=date(2026, 5, 1),
+            due_date=date(2026, 5, 15),
+        )
+
+    def test_admin_full_bulk_payment_uses_total_outstanding_balance(self):
+        form = AdminPaymentForm(
+            data={
+                'consumer': self.consumer.id,
+                'billing': self.may.id,
+                'payment_method': Payment.Methods.CASH,
+                'payment_option': Payment.PaymentOptions.FULL,
+                'amount_paid': '0',
+                'discount_amount': '0',
+                'payment_date': '2026-05-20',
+                'status': Payment.Statuses.COMPLETED,
+                'reference_number': '',
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data['settlement_scope'], Payment.SettlementScopes.BULK)
+        self.assertEqual(form.cleaned_data['amount_paid'], Decimal('2100.00'))
+
+    def test_admin_selective_payment_uses_selected_months_only(self):
+        form = AdminPaymentForm(
+            data={
+                'consumer': self.consumer.id,
+                'billing': self.april.id,
+                'selected_billings': [str(self.march.id), str(self.april.id)],
+                'payment_method': Payment.Methods.CASH,
+                'payment_option': Payment.PaymentOptions.PARTIAL,
+                'amount_paid': '0',
+                'discount_amount': '0',
+                'payment_date': '2026-05-20',
+                'status': Payment.Statuses.COMPLETED,
+                'reference_number': '',
+                'arrangement_note': 'Approved selective settlement.',
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data['settlement_scope'], Payment.SettlementScopes.SELECTIVE)
+        self.assertEqual(form.cleaned_data['amount_paid'], Decimal('1300.00'))
+
+
+class SelectiveArrangementWorkflowTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='arrangement-consumer', password='StrongPass1!')
+        self.profile = ConsumerProfile.objects.create(
+            user=self.user,
+            full_name='Arrangement Consumer',
+            role=ConsumerProfile.Roles.CONSUMER,
+        )
+        self.consumer = Consumer.objects.create(
+            profile=self.profile,
+            full_name='Arrangement Consumer',
+            status=Consumer.Statuses.ACTIVE,
+        )
+        self.march = BillingRecord.objects.create(
+            consumer=self.consumer,
+            billing_month=date(2026, 3, 1),
+            previous_reading=Decimal('0'),
+            current_reading=Decimal('10'),
+            rate_per_m3=Decimal('20'),
+            amount_paid=Decimal('0'),
+            billing_date=date(2026, 3, 1),
+            due_date=date(2026, 3, 15),
+        )
+        self.april = BillingRecord.objects.create(
+            consumer=self.consumer,
+            billing_month=date(2026, 4, 1),
+            previous_reading=Decimal('10'),
+            current_reading=Decimal('20'),
+            rate_per_m3=Decimal('20'),
+            service_charge=Decimal('100'),
+            amount_paid=Decimal('0'),
+            billing_date=date(2026, 4, 1),
+            due_date=date(2026, 4, 15),
+        )
+        self.may = BillingRecord.objects.create(
+            consumer=self.consumer,
+            billing_month=date(2026, 5, 1),
+            previous_reading=Decimal('20'),
+            current_reading=Decimal('30'),
+            rate_per_m3=Decimal('20'),
+            service_charge=Decimal('200'),
+            amount_paid=Decimal('0'),
+            billing_date=date(2026, 5, 1),
+            due_date=date(2026, 5, 15),
+        )
+
+    @patch('billing.views.is_paymongo_configured', return_value=True)
+    def test_consumer_partial_request_creates_pending_arrangement(self, mocked_paymongo_ready):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse('consumer_panel'),
+            data={
+                'covered_month': '2026-05',
+                'payment_option': Payment.PaymentOptions.PARTIAL,
+                'selected_billings': [str(self.march.id), str(self.april.id)],
+                'amount_paid': '0',
+                'arrangement_note': 'Request to settle two months first.',
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Payment.objects.count(), 0)
+        arrangement = PaymentArrangement.objects.get()
+        self.assertEqual(arrangement.status, PaymentArrangement.Statuses.PENDING)
+        self.assertEqual(arrangement.requested_amount, Decimal('1300.00'))
+
+    def test_selective_arrangement_allocation_only_applies_to_selected_months(self):
+        payment = Payment.objects.create(
+            consumer=self.consumer,
+            billing=self.may,
+            covered_month=date(2026, 5, 1),
+            payment_method=Payment.Methods.CASH,
+            payment_option=Payment.PaymentOptions.PARTIAL,
+            settlement_scope=Payment.SettlementScopes.SELECTIVE,
+            amount_paid=Decimal('1500.00'),
+            payment_date=date(2026, 5, 20),
+            status=Payment.Statuses.COMPLETED,
+        )
+        arrangement = create_payment_arrangement(
+            self.consumer,
+            [self.april, self.may],
+            requested_by=self.user,
+            requested_amount=payment.amount_paid,
+            outstanding_balance=get_consumer_outstanding_balance(self.consumer),
+            notes='Approved selective payment.',
+            status=PaymentArrangement.Statuses.COMPLETED,
+            approved_by=self.user,
+            payment=payment,
+        )
+
+        rebuild_consumer_payment_allocations(self.consumer)
+        self.march.refresh_from_db()
+        self.april.refresh_from_db()
+        self.may.refresh_from_db()
+        arrangement.refresh_from_db()
+
+        self.assertEqual(self.march.amount_paid, Decimal('0'))
+        self.assertEqual(self.april.amount_paid, self.april.total_amount)
+        self.assertEqual(self.may.amount_paid, self.may.total_amount)
+        self.assertEqual(arrangement.payment_id, payment.id)
+
+
+class DisconnectionMonitoringWorkflowTests(TestCase):
+    def setUp(self):
+        self.admin_user = User.objects.create_user(username='disco-admin', password='StrongPass1!')
+        ConsumerProfile.objects.create(
+            user=self.admin_user,
+            full_name='Disconnection Admin',
+            role=ConsumerProfile.Roles.ADMIN,
+        )
+        self.consumer = Consumer.objects.create(
+            full_name='For Monitoring',
+            status=Consumer.Statuses.ACTIVE,
+        )
+        for month in (3, 4, 5):
+            BillingRecord.objects.create(
+                consumer=self.consumer,
+                billing_month=date(2026, month, 1),
+                previous_reading=Decimal('0'),
+                current_reading=Decimal('10'),
+                rate_per_m3=Decimal('20'),
+                amount_paid=Decimal('0'),
+                billing_date=date(2026, month, 1),
+                due_date=date(2026, month, 15),
+            )
+
+    def test_refresh_moves_overdue_account_to_for_disconnection(self):
+        self.consumer.warning_issued_at = timezone.now() - timedelta(days=16)
+        self.consumer.disconnection_scheduled_for = timezone.localdate() - timedelta(days=1)
+        self.consumer.save(update_fields=['warning_issued_at', 'disconnection_scheduled_for'])
+
+        refresh_consumer_account_status(self.consumer)
+        self.consumer.refresh_from_db()
+
+        self.assertEqual(self.consumer.account_status, Consumer.AccountStatuses.FOR_DISCONNECTION)
+        self.assertTrue(
+            DisconnectionRecord.objects.filter(
+                consumer=self.consumer,
+                status=DisconnectionRecord.Statuses.FOR_DISCONNECTION,
+            ).exists()
+        )
+
+    def test_monitor_overdue_accounts_command_updates_consumer_statuses(self):
+        call_command('monitor_overdue_accounts')
+        self.consumer.refresh_from_db()
+
+        self.assertEqual(self.consumer.account_status, Consumer.AccountStatuses.DELINQUENT)
+        self.assertIsNotNone(self.consumer.warning_issued_at)
+
+
 class MeterReadingFormTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username='reader1', password='StrongPass1!')
@@ -409,6 +649,192 @@ class MeterReadingFormTests(TestCase):
         self.assertEqual(reading.usage_m3, Decimal('30'))
         self.assertEqual(billing.usage_m3, Decimal('30'))
         self.assertEqual(billing.total_amount, Decimal('600'))
+
+
+class ReaderMeterReadingSubmissionTests(TestCase):
+    def setUp(self):
+        self.reader_user = User.objects.create_user(username='reader-submit', password='StrongPass1!')
+        ConsumerProfile.objects.create(
+            user=self.reader_user,
+            full_name='Reader Submit',
+            role=ConsumerProfile.Roles.READER,
+        )
+        self.consumer = Consumer.objects.create(
+            full_name='Submission Consumer',
+            status=Consumer.Statuses.ACTIVE,
+        )
+        MeterReading.objects.create(
+            consumer=self.consumer,
+            reading_date=date(2026, 3, 31),
+            previous_reading=Decimal('0'),
+            current_reading=Decimal('100'),
+        )
+        settings_obj = SystemSettings.load()
+        settings_obj.rate_per_m3 = Decimal('20.00')
+        settings_obj.billing_due_days = 15
+        settings_obj.save()
+
+    @patch('billing.services.notify_consumer')
+    @patch('billing.services.notify_roles')
+    def test_submission_creates_pending_billing_with_generated_amount(self, mocked_notify_roles, mocked_notify_consumer):
+        form = MeterReadingForm(
+            data={
+                'consumer': self.consumer.id,
+                'reading_date': '2026-04-30',
+                'current_reading': '145',
+                'notes': 'April route',
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+
+        reading, billing = handle_meter_reading_submission(form, self.reader_user)
+
+        self.assertEqual(reading.consumer, self.consumer)
+        self.assertEqual(reading.previous_reading, Decimal('100'))
+        self.assertEqual(reading.current_reading, Decimal('145'))
+        self.assertEqual(reading.usage_m3, Decimal('45'))
+        self.assertEqual(billing.consumer, self.consumer)
+        self.assertEqual(billing.billing_month, date(2026, 4, 1))
+        self.assertEqual(billing.usage_m3, Decimal('45'))
+        self.assertEqual(billing.total_amount, Decimal('900.00'))
+        self.assertEqual(billing.previous_arrears, Decimal('0'))
+        self.assertEqual(billing.statement_total_snapshot, Decimal('900.00'))
+        self.assertEqual(billing.amount_paid, Decimal('0'))
+        self.assertEqual(billing.status, BillingRecord.Statuses.PENDING)
+        mocked_notify_roles.assert_called_once()
+        mocked_notify_consumer.assert_called_once()
+
+    @patch('billing.services.notify_consumer')
+    @patch('billing.services.notify_roles')
+    def test_submission_attaches_existing_payment_but_keeps_billing_pending(self, mocked_notify_roles, mocked_notify_consumer):
+        Payment.objects.create(
+            consumer=self.consumer,
+            covered_month=date(2026, 4, 1),
+            payment_method=Payment.Methods.CASH,
+            amount_paid=Decimal('900.00'),
+            payment_date=date(2026, 4, 5),
+            status=Payment.Statuses.COMPLETED,
+        )
+        form = MeterReadingForm(
+            data={
+                'consumer': self.consumer.id,
+                'reading_date': '2026-04-30',
+                'current_reading': '145',
+                'notes': 'Advance-paid month',
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+
+        reading, billing = handle_meter_reading_submission(form, self.reader_user)
+        advance_payment = Payment.objects.get(consumer=self.consumer, covered_month=date(2026, 4, 1))
+
+        self.assertEqual(reading.usage_m3, Decimal('45'))
+        self.assertEqual(billing.total_amount, Decimal('900.00'))
+        self.assertEqual(billing.amount_paid, Decimal('900.00'))
+        self.assertEqual(billing.status, BillingRecord.Statuses.PENDING)
+        self.assertEqual(advance_payment.billing_id, billing.id)
+        mocked_notify_roles.assert_called_once()
+        mocked_notify_consumer.assert_called_once()
+
+    @patch('billing.services.notify_consumer')
+    @patch('billing.services.notify_roles')
+    def test_submission_carries_previous_arrears_into_billing_snapshot(self, mocked_notify_roles, mocked_notify_consumer):
+        BillingRecord.objects.create(
+            consumer=self.consumer,
+            billing_month=date(2026, 3, 1),
+            previous_reading=Decimal('0'),
+            current_reading=Decimal('30'),
+            rate_per_m3=Decimal('10'),
+            service_charge=Decimal('200'),
+            amount_paid=Decimal('0'),
+            billing_date=date(2026, 3, 1),
+            due_date=date(2026, 3, 15),
+        )
+        form = MeterReadingForm(
+            data={
+                'consumer': self.consumer.id,
+                'reading_date': '2026-04-30',
+                'current_reading': '145',
+                'notes': 'Arrears month',
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+
+        _, billing = handle_meter_reading_submission(form, self.reader_user)
+
+        self.assertEqual(billing.previous_arrears, Decimal('500.00'))
+        self.assertEqual(billing.total_amount, Decimal('900.00'))
+        self.assertEqual(billing.statement_total_snapshot, Decimal('1400.00'))
+        mocked_notify_roles.assert_called_once()
+        mocked_notify_consumer.assert_called_once()
+
+
+class RunningBalanceAllocationTests(TestCase):
+    def setUp(self):
+        self.consumer = Consumer.objects.create(
+            full_name='Allocation Consumer',
+            status=Consumer.Statuses.ACTIVE,
+        )
+        self.first_bill = BillingRecord.objects.create(
+            consumer=self.consumer,
+            billing_month=date(2026, 1, 1),
+            previous_reading=Decimal('0'),
+            current_reading=Decimal('30'),
+            rate_per_m3=Decimal('10'),
+            service_charge=Decimal('200'),
+            amount_paid=Decimal('0'),
+            billing_date=date(2026, 1, 1),
+            due_date=date(2026, 1, 15),
+        )
+        self.second_bill = BillingRecord.objects.create(
+            consumer=self.consumer,
+            billing_month=date(2026, 2, 1),
+            previous_reading=Decimal('30'),
+            current_reading=Decimal('60'),
+            rate_per_m3=Decimal('10'),
+            service_charge=Decimal('300'),
+            amount_paid=Decimal('0'),
+            billing_date=date(2026, 2, 1),
+            due_date=date(2026, 2, 15),
+        )
+        self.third_bill = BillingRecord.objects.create(
+            consumer=self.consumer,
+            billing_month=date(2026, 3, 1),
+            previous_reading=Decimal('60'),
+            current_reading=Decimal('90'),
+            rate_per_m3=Decimal('10'),
+            service_charge=Decimal('400'),
+            amount_paid=Decimal('0'),
+            billing_date=date(2026, 3, 1),
+            due_date=date(2026, 3, 15),
+        )
+
+    def test_completed_payment_is_applied_to_oldest_unpaid_balances_first(self):
+        payment = Payment.objects.create(
+            consumer=self.consumer,
+            billing=self.third_bill,
+            covered_month=date(2026, 3, 1),
+            payment_method=Payment.Methods.CASH,
+            amount_paid=Decimal('650'),
+            payment_date=date(2026, 3, 20),
+            status=Payment.Statuses.COMPLETED,
+        )
+
+        self.first_bill.refresh_from_db()
+        self.second_bill.refresh_from_db()
+        self.third_bill.refresh_from_db()
+
+        self.assertEqual(self.first_bill.amount_paid, Decimal('500.00'))
+        self.assertEqual(self.first_bill.status, BillingRecord.Statuses.PAID)
+        self.assertEqual(self.second_bill.amount_paid, Decimal('150.00'))
+        self.assertEqual(self.second_bill.status, BillingRecord.Statuses.PARTIALLY_PAID)
+        self.assertEqual(self.third_bill.amount_paid, Decimal('0'))
+        self.assertEqual(self.third_bill.status, BillingRecord.Statuses.PENDING)
+        self.assertEqual(payment.allocations.count(), 2)
+        self.assertEqual(get_consumer_outstanding_balance(self.consumer), Decimal('1150.00'))
 
 
 class BillingRecordFormTests(TestCase):
@@ -968,7 +1394,7 @@ class ReportIntegrityTests(TestCase):
             previous_reading=Decimal('0'),
             current_reading=Decimal('0'),
             rate_per_m3=Decimal('20'),
-            amount_paid=Decimal('400'),
+            amount_paid=Decimal('600'),
             billing_date=date(2026, 4, 1),
             due_date=date(2026, 4, 15),
         )
@@ -1138,7 +1564,7 @@ class ReportIntegrityTests(TestCase):
         self.assertEqual(summary['pending_payments_count'], 1)
         self.assertEqual(summary['pending_payments_total'], Decimal('75'))
         self.assertEqual(summary['overdue_accounts_count'], 1)
-        self.assertEqual(summary['overdue_accounts_total'], Decimal('100'))
+        self.assertEqual(summary['overdue_accounts_total'], Decimal('500'))
         self.assertEqual(summary['cash_payments_count'], 1)
         self.assertEqual(summary['cash_payments_total'], Decimal('50'))
         self.assertEqual(summary['online_payments_count'], 1)
@@ -1607,6 +2033,62 @@ class ReceiptActionRegressionTests(TestCase):
         self.assertContains(response, 'Print Receipt')
         self.assertContains(response, "shouldPrintOnLoad = true")
 
+    def test_receipt_displays_arrears_and_outstanding_breakdown(self):
+        self.billing.previous_arrears = Decimal('300')
+        self.billing.service_charge = Decimal('50')
+        self.billing.penalty_amount = Decimal('25')
+        self.billing.save()
+        self.payment.amount_paid = Decimal('240')
+        self.payment.save()
+
+        self.client.force_login(self.user)
+        response = self.client.get(reverse('payment_receipt', args=[self.payment.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Previous Arrears')
+        self.assertContains(response, 'Current Bill')
+        self.assertContains(response, 'Total Outstanding Before Payment')
+        self.assertContains(response, 'Remaining Outstanding')
+
+    def test_receipt_shows_warning_notice_for_three_unpaid_cycles(self):
+        BillingRecord.objects.create(
+            consumer=self.consumer,
+            billing_month=date(2026, 3, 1),
+            previous_reading=Decimal('0'),
+            current_reading=Decimal('10'),
+            rate_per_m3=Decimal('20'),
+            amount_paid=Decimal('0'),
+            billing_date=date(2026, 3, 1),
+            due_date=date(2026, 3, 15),
+        )
+        BillingRecord.objects.create(
+            consumer=self.consumer,
+            billing_month=date(2026, 5, 1),
+            previous_reading=Decimal('10'),
+            current_reading=Decimal('20'),
+            rate_per_m3=Decimal('20'),
+            amount_paid=Decimal('0'),
+            billing_date=date(2026, 5, 1),
+            due_date=date(2026, 5, 15),
+        )
+        BillingRecord.objects.create(
+            consumer=self.consumer,
+            billing_month=date(2026, 6, 1),
+            previous_reading=Decimal('20'),
+            current_reading=Decimal('30'),
+            rate_per_m3=Decimal('20'),
+            amount_paid=Decimal('0'),
+            billing_date=date(2026, 6, 1),
+            due_date=date(2026, 6, 15),
+        )
+
+        self.client.force_login(self.user)
+        response = self.client.get(reverse('payment_receipt', args=[self.payment.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'WARNING NOTICE')
+        self.assertContains(response, 'possible disconnection within 15 days')
+
 
 class ConsumerDashboardMonitoringTests(TestCase):
     def setUp(self):
@@ -1687,6 +2169,75 @@ class ConsumerDashboardMonitoringTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('Continue Checkout', response.json()['payment_rows_html'])
         self.assertNotIn('pi_completed', response.json()['payment_rows_html'])
+
+    def test_consumer_dashboard_shows_balance_overview_cards(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('consumer_panel'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Current Balance Card')
+        self.assertContains(response, 'Account Number')
+        self.assertContains(response, 'Billing Status')
+        self.assertContains(response, 'Unpaid Billing Months')
+
+
+class ConsumerDashboardDelinquentWarningTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='delinquent-consumer', password='StrongPass1!')
+        profile = ConsumerProfile.objects.create(
+            user=self.user,
+            full_name='Delinquent Consumer',
+            role=ConsumerProfile.Roles.CONSUMER,
+        )
+        self.consumer = Consumer.objects.create(
+            profile=profile,
+            full_name='Delinquent Consumer',
+            status=Consumer.Statuses.ACTIVE,
+        )
+        BillingRecord.objects.create(
+            consumer=self.consumer,
+            billing_month=date(2026, 3, 1),
+            previous_reading=Decimal('0'),
+            current_reading=Decimal('10'),
+            rate_per_m3=Decimal('20'),
+            amount_paid=Decimal('0'),
+            billing_date=date(2026, 3, 1),
+            due_date=date(2026, 3, 15),
+        )
+        BillingRecord.objects.create(
+            consumer=self.consumer,
+            billing_month=date(2026, 4, 1),
+            previous_reading=Decimal('10'),
+            current_reading=Decimal('20'),
+            rate_per_m3=Decimal('20'),
+            amount_paid=Decimal('0'),
+            billing_date=date(2026, 4, 1),
+            due_date=date(2026, 4, 15),
+        )
+        BillingRecord.objects.create(
+            consumer=self.consumer,
+            billing_month=date(2026, 5, 1),
+            previous_reading=Decimal('20'),
+            current_reading=Decimal('30'),
+            rate_per_m3=Decimal('20'),
+            amount_paid=Decimal('0'),
+            billing_date=date(2026, 5, 1),
+            due_date=date(2026, 5, 15),
+        )
+
+    def test_consumer_dashboard_shows_warning_after_three_unpaid_cycles(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('consumer_panel'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Warning Notice')
+        self.assertContains(response, 'Delinquent Account')
+        self.assertContains(response, '3 unpaid billing cycles')
+        self.assertContains(response, 'March 2026')
+        self.assertContains(response, 'April 2026')
+        self.assertContains(response, 'May 2026')
 
 
 class PaymentCheckoutGuideTests(TestCase):

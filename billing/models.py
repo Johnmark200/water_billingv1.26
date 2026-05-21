@@ -54,6 +54,14 @@ class Consumer(models.Model):
         ACTIVE = 'active', 'Active'
         INACTIVE = 'inactive', 'Inactive'
 
+    class AccountStatuses(models.TextChoices):
+        ACTIVE = 'active', 'Active'
+        PENDING = 'pending', 'Pending'
+        PARTIALLY_PAID = 'partially_paid', 'Partially Paid'
+        DELINQUENT = 'delinquent', 'Delinquent'
+        FOR_DISCONNECTION = 'for_disconnection', 'For Disconnection'
+        DISCONNECTED = 'disconnected', 'Disconnected'
+
     profile = models.OneToOneField(
         ConsumerProfile,
         on_delete=models.SET_NULL,
@@ -65,6 +73,14 @@ class Consumer(models.Model):
     address = models.TextField(blank=True)
     contact_number = models.CharField(max_length=50, blank=True)
     status = models.CharField(max_length=20, choices=Statuses.choices, default=Statuses.ACTIVE)
+    account_status = models.CharField(
+        max_length=30,
+        choices=AccountStatuses.choices,
+        default=AccountStatuses.ACTIVE,
+    )
+    warning_issued_at = models.DateTimeField(null=True, blank=True)
+    disconnection_scheduled_for = models.DateField(null=True, blank=True)
+    last_payment_activity_at = models.DateTimeField(null=True, blank=True)
     photo = models.ImageField(upload_to='consumers/', blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -116,6 +132,7 @@ class SystemSettings(models.Model):
 class BillingRecord(models.Model):
     class Statuses(models.TextChoices):
         PENDING = 'pending', 'Pending'
+        PARTIALLY_PAID = 'partially_paid', 'Partially Paid'
         PAID = 'paid', 'Paid'
         OVERDUE = 'overdue', 'Overdue'
 
@@ -125,7 +142,12 @@ class BillingRecord(models.Model):
     current_reading = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     usage_m3 = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     rate_per_m3 = models.DecimalField(max_digits=10, decimal_places=2, default=20)
+    water_charge = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    service_charge = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    penalty_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    previous_arrears = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    running_balance_snapshot = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     amount_paid = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     status = models.CharField(max_length=20, choices=Statuses.choices, default=Statuses.PENDING)
     billing_date = models.DateField()
@@ -140,11 +162,29 @@ class BillingRecord(models.Model):
         due = (self.total_amount or Decimal('0')) - (self.amount_paid or Decimal('0'))
         return due if due > 0 else Decimal('0')
 
+    @property
+    def current_bill_amount(self):
+        return self.total_amount or Decimal('0')
+
+    @property
+    def statement_total_snapshot(self):
+        return self.running_balance_snapshot or ((self.previous_arrears or Decimal('0')) + (self.total_amount or Decimal('0')))
+
     def save(self, *args, **kwargs):
         update_fields = kwargs.get('update_fields')
         tracked_update_fields = set(update_fields) if update_fields is not None else None
         should_recalculate_totals = tracked_update_fields is None or bool(
-            tracked_update_fields.intersection({'billing_month', 'previous_reading', 'current_reading', 'rate_per_m3'})
+            tracked_update_fields.intersection(
+                {
+                    'billing_month',
+                    'previous_reading',
+                    'current_reading',
+                    'rate_per_m3',
+                    'service_charge',
+                    'penalty_amount',
+                    'previous_arrears',
+                }
+            )
         )
 
         if self.billing_month:
@@ -154,15 +194,16 @@ class BillingRecord(models.Model):
 
         if should_recalculate_totals:
             self.usage_m3 = calculate_usage_m3(self.previous_reading, self.current_reading)
-            self.total_amount = self.usage_m3 * (self.rate_per_m3 or Decimal('0'))
+            self.water_charge = self.usage_m3 * (self.rate_per_m3 or Decimal('0'))
+            self.total_amount = self.water_charge + (self.service_charge or Decimal('0')) + (self.penalty_amount or Decimal('0'))
+            self.running_balance_snapshot = (self.previous_arrears or Decimal('0')) + (self.total_amount or Decimal('0'))
             if tracked_update_fields is not None:
-                tracked_update_fields.update({'usage_m3', 'total_amount'})
+                tracked_update_fields.update({'usage_m3', 'water_charge', 'total_amount', 'running_balance_snapshot'})
 
-        today = timezone.localdate()
         if self.total_amount > 0 and self.amount_paid >= self.total_amount:
             self.status = self.Statuses.PAID
-        elif self.amount_due > 0 and self.due_date and self.due_date < today:
-            self.status = self.Statuses.OVERDUE
+        elif self.amount_paid > 0:
+            self.status = self.Statuses.PARTIALLY_PAID
         else:
             self.status = self.Statuses.PENDING
         if tracked_update_fields is not None:
@@ -192,6 +233,10 @@ class Payment(models.Model):
         FULL = 'full', 'Full Payment'
         PARTIAL = 'partial', 'Partial Payment'
 
+    class SettlementScopes(models.TextChoices):
+        BULK = 'bulk', 'Bulk Settlement'
+        SELECTIVE = 'selective', 'Selective Settlement'
+
     ONLINE_CHANNEL_VALUES = (
         Methods.GCASH,
         Methods.PAYMAYA,
@@ -202,11 +247,25 @@ class Payment(models.Model):
     billing = models.ForeignKey(BillingRecord, on_delete=models.SET_NULL, null=True, blank=True, related_name='payments')
     payment_method = models.CharField(max_length=20, choices=Methods.choices, default=Methods.CASH)
     payment_option = models.CharField(max_length=20, choices=PaymentOptions.choices, default=PaymentOptions.FULL)
+    settlement_scope = models.CharField(
+        max_length=20,
+        choices=SettlementScopes.choices,
+        default=SettlementScopes.BULK,
+    )
     amount_paid = models.DecimalField(max_digits=10, decimal_places=2)
     discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     payment_date = models.DateField()
     covered_month = models.DateField(null=True, blank=True, help_text='Use the first day of the covered month.')
     status = models.CharField(max_length=20, choices=Statuses.choices, default=Statuses.COMPLETED)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='approved_water_payments',
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    arrangement_note = models.TextField(blank=True)
     reference_number = models.CharField(max_length=100, blank=True)
     gateway = models.CharField(max_length=30, blank=True)
     gateway_reference = models.CharField(max_length=120, blank=True)
@@ -222,6 +281,17 @@ class Payment(models.Model):
     @property
     def amount_credited(self):
         return (self.amount_paid or Decimal('0')) + (self.discount_amount or Decimal('0'))
+
+    @property
+    def allocated_amount(self):
+        if not self.pk:
+            return Decimal('0')
+        return self.allocations.aggregate(total=Sum('amount_applied'))['total'] or Decimal('0')
+
+    @property
+    def unapplied_amount(self):
+        remaining = self.amount_credited - self.allocated_amount
+        return remaining if remaining > 0 else Decimal('0')
 
     @classmethod
     def normalize_online_channel(cls, value):
@@ -287,24 +357,132 @@ class Payment(models.Model):
         return None
 
     def save(self, *args, **kwargs):
+        rebalance_consumer = kwargs.pop('rebalance_consumer', True)
         if self.billing_id and self.covered_month is None and self.billing and self.billing.billing_month:
             self.covered_month = self.billing.billing_month.replace(day=1)
         if self.covered_month:
             self.covered_month = self.covered_month.replace(day=1)
         super().save(*args, **kwargs)
-        if self.billing:
-            paid_total = sum(
-                payment.amount_credited
-                for payment in self.billing.payments.filter(status=self.Statuses.COMPLETED).only(
-                    'amount_paid',
-                    'discount_amount',
-                )
-            )
-            self.billing.amount_paid = paid_total
-            self.billing.save(update_fields=['amount_paid', 'status'])
+        if rebalance_consumer and self.consumer_id:
+            from .services import rebuild_consumer_payment_allocations
+
+            rebuild_consumer_payment_allocations(self.consumer)
 
     def __str__(self):
         return f'{self.consumer.full_name} - {self.amount_paid}'
+
+
+class PaymentAllocation(models.Model):
+    payment = models.ForeignKey(Payment, on_delete=models.CASCADE, related_name='allocations')
+    billing = models.ForeignKey(BillingRecord, on_delete=models.CASCADE, related_name='payment_allocations')
+    amount_applied = models.DecimalField(max_digits=10, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['billing__billing_month', 'created_at', 'id']
+        constraints = [
+            models.UniqueConstraint(fields=['payment', 'billing'], name='unique_payment_billing_allocation'),
+        ]
+
+    def __str__(self):
+        return f'{self.payment_id} -> {self.billing_id}: {self.amount_applied}'
+
+
+class PaymentArrangement(models.Model):
+    class ArrangementTypes(models.TextChoices):
+        SELECTIVE = 'selective', 'Selective Monthly Settlement'
+        PAYMENT_PLAN = 'payment_plan', 'Payment Arrangement'
+
+    class Statuses(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        APPROVED = 'approved', 'Approved'
+        COMPLETED = 'completed', 'Completed'
+        REJECTED = 'rejected', 'Rejected'
+        CANCELLED = 'cancelled', 'Cancelled'
+
+    consumer = models.ForeignKey(Consumer, on_delete=models.CASCADE, related_name='payment_arrangements')
+    payment = models.OneToOneField(
+        Payment,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='arrangement',
+    )
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='requested_payment_arrangements',
+    )
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='approved_payment_arrangements',
+    )
+    arrangement_type = models.CharField(
+        max_length=20,
+        choices=ArrangementTypes.choices,
+        default=ArrangementTypes.SELECTIVE,
+    )
+    status = models.CharField(max_length=20, choices=Statuses.choices, default=Statuses.PENDING)
+    selected_billings = models.JSONField(default=list, blank=True)
+    requested_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    outstanding_balance_snapshot = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    remaining_balance_snapshot = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    notes = models.TextField(blank=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'Arrangement #{self.id} - {self.consumer.full_name}'
+
+
+class DisconnectionRecord(models.Model):
+    class Statuses(models.TextChoices):
+        MONITORING = 'monitoring', 'Monitoring'
+        FOR_DISCONNECTION = 'for_disconnection', 'For Disconnection'
+        DISCONNECTED = 'disconnected', 'Disconnected'
+        CANCELLED = 'cancelled', 'Cancelled'
+
+    consumer = models.ForeignKey(Consumer, on_delete=models.CASCADE, related_name='disconnection_records')
+    arrangement = models.ForeignKey(
+        PaymentArrangement,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='disconnection_records',
+    )
+    status = models.CharField(max_length=30, choices=Statuses.choices, default=Statuses.MONITORING)
+    outstanding_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    unpaid_months_count = models.PositiveIntegerField(default=0)
+    warning_sent_at = models.DateTimeField(null=True, blank=True)
+    scheduled_disconnection_date = models.DateField(null=True, blank=True)
+    last_payment_date = models.DateField(null=True, blank=True)
+    escalated_at = models.DateTimeField(null=True, blank=True)
+    confirmed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='confirmed_disconnection_records',
+    )
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'Disconnection #{self.id} - {self.consumer.full_name}'
 
 
 class MeterReading(models.Model):

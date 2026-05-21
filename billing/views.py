@@ -43,18 +43,36 @@ from .forms import (
     TestEmailForm,
     TestSMSForm,
 )
-from .models import AuditLog, BillingRecord, Consumer, ConsumerProfile, MeetingMinutes, MeterReading, Notification, Payment, SMSBlast, SystemSettings
+from .models import (
+    AuditLog,
+    BillingRecord,
+    Consumer,
+    ConsumerProfile,
+    DisconnectionRecord,
+    MeetingMinutes,
+    MeterReading,
+    Notification,
+    Payment,
+    PaymentArrangement,
+    SMSBlast,
+    SystemSettings,
+)
 from .permissions import PAYMENT_MANAGER_ROLES, role_required, ensure_user_profile, get_dashboard_url_for_user, get_linked_consumer, get_user_profile, get_user_role
 from .services import (
     apply_panel_billing_status,
+    build_consumer_account_overview,
     build_reporting_month_choices,
     build_settlement_snapshot,
     build_system_monitoring_data,
     build_consumer_chart_data,
+    build_unpaid_billing_choices,
+    create_payment_arrangement,
     create_or_update_billing_from_reading,
     create_paymongo_ewallet_payment,
     extract_paymongo_transaction_details,
     get_consumer_billing_comparison,
+    get_consumer_last_completed_payment,
+    get_consumer_outstanding_balance,
     get_existing_billing_for_month,
     get_consumer_monthly_billings,
     get_delivery_configuration_summary,
@@ -62,12 +80,17 @@ from .services import (
     get_preferred_billing_records,
     get_next_payment_month,
     get_previous_reading_details,
+    get_selected_billings_for_consumer,
+    get_statement_total_for_billing,
     get_statement_payment_records,
+    get_unpaid_billing_records,
     handle_meter_reading_submission,
     is_paymongo_configured,
     log_audit_action,
     month_start,
     paymongo_intent_is_paid,
+    rebuild_consumer_payment_allocations,
+    refresh_consumer_account_status,
     retrieve_paymongo_payment_intent,
     notify_roles,
     resolve_billing_status,
@@ -347,6 +370,7 @@ def _delivery_status_label(notification, enabled):
 
 def _payment_status_payload(payment, previous_status, notification_results, system_settings):
     billing = payment.billing
+    outstanding_balance = get_consumer_outstanding_balance(payment.consumer)
     current_month = timezone.localdate().replace(day=1)
     monthly_collected = Payment.objects.filter(
         status=Payment.Statuses.COMPLETED,
@@ -364,7 +388,7 @@ def _payment_status_payload(payment, previous_status, notification_results, syst
         'previous_status': previous_status,
         'billing_status_display': billing.get_status_display() if billing else '-',
         'billing_amount_paid': _format_money(billing.amount_paid) if billing else '-',
-        'billing_amount_due': _format_money(billing.amount_due) if billing else '-',
+        'billing_amount_due': _format_money(outstanding_balance),
         'pending_payments': Payment.objects.filter(status=Payment.Statuses.PENDING).count(),
         'monthly_collected': _format_money(monthly_collected),
         'email_notification_status': email_status,
@@ -611,6 +635,9 @@ def _build_admin_panel_return_url(request, selected_month):
 
 def _build_admin_panel_context(selected_month=None, request=None):
     selected_month = month_start(selected_month) or timezone.localdate().replace(day=1)
+    consumers = list(Consumer.objects.select_related('profile', 'profile__user').all())
+    for consumer in consumers:
+        refresh_consumer_account_status(consumer, send_notifications=False)
     current_month_billings = get_preferred_billing_records(
         BillingRecord.objects.filter(**month_filter_kwargs('billing_month', selected_month))
     )
@@ -620,6 +647,16 @@ def _build_admin_panel_context(selected_month=None, request=None):
         (payment.amount_paid for payment in monthly_payments if payment.status == Payment.Statuses.COMPLETED),
         Decimal('0'),
     )
+    disconnection_monitoring_list = list(
+        Consumer.objects.filter(
+            account_status__in=[
+                Consumer.AccountStatuses.DELINQUENT,
+                Consumer.AccountStatuses.FOR_DISCONNECTION,
+            ]
+        ).order_by('disconnection_scheduled_for', 'full_name')
+    )
+    for consumer in disconnection_monitoring_list:
+        consumer.monitoring_overview = build_consumer_account_overview(consumer)
 
     return {
         'system_settings': SystemSettings.load(),
@@ -627,10 +664,12 @@ def _build_admin_panel_context(selected_month=None, request=None):
         'active_connections': Consumer.objects.filter(status=Consumer.Statuses.ACTIVE).count(),
         'pending_payments': Payment.objects.filter(status=Payment.Statuses.PENDING).count(),
         'overdue_bills': sum(1 for bill in all_billings if _has_unpaid_overdue_balance(bill)),
+        'pending_arrangements': PaymentArrangement.objects.filter(status=PaymentArrangement.Statuses.PENDING).count(),
         'monthly_billed': sum((bill.total_amount for bill in current_month_billings), Decimal('0')),
         'monthly_collected': monthly_collected,
         'recent_bills': current_month_billings[:8],
         'recent_payments': monthly_payments[:8],
+        'disconnection_monitoring_list': disconnection_monitoring_list[:12],
         'recent_readings': MeterReading.objects.filter(
             **month_filter_kwargs('billing_month', selected_month)
         ).select_related('consumer', 'submitted_by')[:8],
@@ -736,7 +775,6 @@ def _build_soa_transactions(selected_month=None, consumer=None, start_date=None,
         covered_month = payment.display_covered_month
         covered_label = covered_month.strftime('%B %Y') if covered_month else 'the selected billing month'
         payment_amount = payment.amount_credited if is_completed else Decimal('0')
-        is_cash_payment = payment.payment_method == Payment.Methods.CASH
         transactions.append(
             {
                 'date': payment.payment_date,
@@ -745,8 +783,8 @@ def _build_soa_transactions(selected_month=None, consumer=None, start_date=None,
                     f'{payment.consumer.full_name} - {payment.display_payment_method} payment '
                     f'for {covered_label} ({payment.get_status_display()})'
                 ),
-                'debit': payment_amount if is_cash_payment else Decimal('0'),
-                'credit': payment_amount if not is_cash_payment else Decimal('0'),
+                'debit': Decimal('0'),
+                'credit': payment_amount,
                 'balance_effect': Decimal('0') - payment_amount,
                 'source': payment,
             }
@@ -1108,13 +1146,28 @@ def _store_paymongo_gateway_result(payment, payment_intent):
 
 def _build_receipt_context(payment):
     covered_month = payment.display_covered_month
+    allocations = list(payment.allocations.select_related('billing').order_by('billing__billing_month', 'id'))
+    receipt_billing = payment.billing or (allocations[-1].billing if allocations else None)
+    outstanding_after_payment = get_consumer_outstanding_balance(payment.consumer)
+    allocated_total = sum((allocation.amount_applied for allocation in allocations), Decimal('0'))
+    account_overview = build_consumer_account_overview(payment.consumer, refresh_status=True)
     return {
         'payment': payment,
         'consumer': payment.consumer,
-        'billing': payment.billing,
+        'billing': receipt_billing,
         'covered_month': covered_month,
         'receipt_number': f'REC-{payment.id:06d}',
         'reference_number': payment.display_reference_number,
+        'allocations': allocations,
+        'allocated_total': allocated_total,
+        'unapplied_amount': payment.unapplied_amount,
+        'outstanding_before_payment': outstanding_after_payment + allocated_total,
+        'outstanding_after_payment': outstanding_after_payment,
+        'billing_status': receipt_billing.get_status_display() if receipt_billing else 'Pending',
+        'warning_active': account_overview['warning_active'],
+        'warning_unpaid_cycles_count': account_overview['unpaid_cycles_count'],
+        'scheduled_disconnection_date': account_overview['scheduled_disconnection_date'],
+        'account_status': payment.consumer.get_account_status_display(),
         'system_name': 'Tabuan Water Billing System',
         'system_version': 'v1.26',
         'system_year': '2026',
@@ -1192,14 +1245,45 @@ def _build_reader_panel_context(request, form=None, edit_form=None):
 def _build_consumer_panel_context(request, payment_form=None):
     consumer = get_linked_consumer(request.user)
     system_settings = SystemSettings.load()
+    if consumer:
+        refresh_consumer_account_status(consumer, send_notifications=False)
+        consumer.refresh_from_db()
     current_billing, previous_billing = get_consumer_billing_comparison(consumer)
     paymongo_ready = system_settings.enable_online_payments and is_paymongo_configured()
+    billing_records = get_consumer_monthly_billings(consumer, limit=10) if consumer else []
+    account_overview = build_consumer_account_overview(consumer) if consumer else build_consumer_account_overview(None)
+    unpaid_billing_records = account_overview['unpaid_billings']
+    consumer_running_balance = account_overview['outstanding_balance']
+    unpaid_cycles_count = account_overview['unpaid_cycles_count']
+    has_partial_balance = account_overview['has_partial_balance']
+    consumer_is_delinquent = consumer.account_status in {
+        Consumer.AccountStatuses.DELINQUENT,
+        Consumer.AccountStatuses.FOR_DISCONNECTION,
+    } if consumer else False
+    consumer_billing_status = consumer.get_account_status_display() if consumer else 'Active'
+    balance_due_date = (
+        current_billing.due_date
+        if current_billing and current_billing.amount_due > 0
+        else (unpaid_billing_records[0].due_date if unpaid_billing_records else (current_billing.due_date if current_billing else None))
+    )
+    current_bill_amount = current_billing.total_amount if current_billing else Decimal('0')
+    current_bill_penalty = current_billing.penalty_amount if current_billing else Decimal('0')
+    current_billing_month = month_start(current_billing.billing_month) if current_billing else None
+    current_bill_arrears = sum(
+        (
+            billing.amount_due
+            for billing in unpaid_billing_records
+            if current_billing_month is None or (month_start(billing.billing_month) and month_start(billing.billing_month) < current_billing_month)
+        ),
+        Decimal('0'),
+    )
+    current_bill_total = consumer_running_balance
 
     context = {
         **_build_profile_context(request.user),
         'consumer': consumer,
         'payment_form': payment_form,
-        'billing_records': get_consumer_monthly_billings(consumer, limit=10) if consumer else [],
+        'billing_records': billing_records,
         'payments': (
             consumer.payments.exclude(status=Payment.Statuses.COMPLETED).select_related('billing')[:10]
             if consumer
@@ -1217,19 +1301,46 @@ def _build_consumer_panel_context(request, payment_form=None):
         )[:10],
         'current_billing': current_billing,
         'previous_billing': previous_billing,
+        'unpaid_billing_records': unpaid_billing_records,
+        'unpaid_cycles_count': unpaid_cycles_count,
+        'consumer_billing_status': consumer_billing_status,
+        'consumer_is_delinquent': consumer_is_delinquent,
+        'consumer_balance_due_date': balance_due_date,
+        'consumer_account_number': f'ACC-{consumer.id:05d}' if consumer else '',
+        'consumer_current_bill_amount': current_bill_amount,
+        'consumer_current_bill_penalty': current_bill_penalty,
+        'consumer_previous_arrears': current_bill_arrears,
+        'consumer_running_total_balance': current_bill_total,
         'next_payment_month': get_next_payment_month(consumer) if consumer else None,
         'system_settings': system_settings,
         'consumer_chart_data': build_consumer_chart_data(consumer),
         'consumer_paymongo_ready': paymongo_ready,
+        'consumer_running_balance': consumer_running_balance,
+        'consumer_warning_active': account_overview['warning_active'],
+        'consumer_warning_issued_at': account_overview['warning_issued_at'],
+        'consumer_scheduled_disconnection_date': account_overview['scheduled_disconnection_date'],
+        'consumer_days_until_disconnection': account_overview['days_until_disconnection'],
+        'consumer_countdown_active': account_overview['countdown_active'],
+        'consumer_latest_arrangement': account_overview['latest_arrangement'],
+        'consumer_approved_arrangement': account_overview['approved_arrangement'],
+        'consumer_disconnection_monitoring_record': account_overview['monitoring_record'],
+        'approved_arrangement_billing_ids': [
+            str(item.get('billing_id'))
+            for item in ((account_overview['approved_arrangement'].selected_billings) if account_overview['approved_arrangement'] else [])
+            if item.get('billing_id')
+        ],
     }
 
     if consumer and context['payment_form'] is None and paymongo_ready:
         context['payment_form'] = ConsumerPaymentForm(consumer=consumer, system_settings=system_settings)
     context['billing_balance_data'] = [
         {
+            'id': billing.id,
             'month': billing.billing_month.strftime('%Y-%m'),
             'balance': str(billing.amount_due),
+            'statement_balance': str(get_consumer_outstanding_balance(consumer)) if consumer else '0',
             'total': str(billing.total_amount),
+            'label': billing.billing_month.strftime('%B %Y'),
         }
         for billing in get_consumer_monthly_billings(consumer) if consumer
     ]
@@ -1347,6 +1458,7 @@ def _render_consumer_live_payload(request, context, message=''):
         'billing_rows_html': render_to_string('billing/includes/consumer_billing_rows.html', context, request=request),
         'reading_rows_html': render_to_string('billing/includes/consumer_reading_rows.html', context, request=request),
         'payment_rows_html': render_to_string('billing/includes/consumer_payment_rows.html', context, request=request),
+        'billing_balance_data': context['billing_balance_data'],
     }
 
 
@@ -1791,6 +1903,23 @@ def consumer_panel(request):
                 return redirect('consumer_panel')
             payment_form = ConsumerPaymentForm(request.POST, consumer=consumer, system_settings=system_settings)
             if payment_form.is_valid():
+                if payment_form.arrangement_request_required:
+                    arrangement = payment_form.save_arrangement_request(request.user)
+                    notify_roles(
+                        {ConsumerProfile.Roles.ADMIN, ConsumerProfile.Roles.TREASURER},
+                        'Selective payment arrangement request',
+                        (
+                            f'{consumer.full_name} requested approval to settle selected billing months only. '
+                            f'Arrangement #{arrangement.id} totals PHP {arrangement.requested_amount}.'
+                        ),
+                        Notification.Types.PAYMENT,
+                        consumer=consumer,
+                    )
+                    messages.success(
+                        request,
+                        'Selective payment request submitted. Wait for admin or cashier approval before paying selected months.',
+                    )
+                    return redirect('consumer_panel')
                 payment = payment_form.save()
                 try:
                     ewallet_payment = create_paymongo_ewallet_payment(
@@ -2222,6 +2351,30 @@ def payments_list(request):
         form = AdminPaymentForm(request.POST)
         if form.is_valid():
             payment = form.save(commit=False)
+            payment.approved_by = request.user
+            payment.approved_at = timezone.now()
+            payment.save(rebalance_consumer=False)
+
+            arrangement = None
+            if form.cleaned_data.get('settlement_scope') == Payment.SettlementScopes.SELECTIVE:
+                arrangement_status = (
+                    PaymentArrangement.Statuses.COMPLETED
+                    if payment.status == Payment.Statuses.COMPLETED
+                    else PaymentArrangement.Statuses.APPROVED
+                )
+                arrangement = create_payment_arrangement(
+                    payment.consumer,
+                    form.cleaned_data.get('selected_billing_records') or [],
+                    requested_by=request.user,
+                    requested_amount=payment.amount_paid,
+                    outstanding_balance=get_consumer_outstanding_balance(payment.consumer),
+                    notes=form.cleaned_data.get('arrangement_note', ''),
+                    status=arrangement_status,
+                    approved_by=request.user,
+                    payment=payment,
+                )
+
+            rebuild_consumer_payment_allocations(payment.consumer)
             if payment.payment_method == Payment.Methods.ONLINE:
                 if not is_paymongo_configured():
                     messages.error(request, 'PayMongo is not configured. Configure the payment gateway before starting online checkout.')
@@ -2250,7 +2403,8 @@ def payments_list(request):
                     target=payment.consumer.full_name,
                     details=(
                         f'Payment #{payment.id} for PHP {payment.amount_paid} started via '
-                        f'{payment.display_payment_method}. Reference {payment.display_reference_number}.'
+                        f'{payment.display_payment_method}. Reference {payment.display_reference_number}. '
+                        f'Settlement scope: {payment.get_settlement_scope_display()}.'
                     ),
                 )
                 messages.success(
@@ -2268,7 +2422,12 @@ def payments_list(request):
                 request.user,
                 'Recorded payment',
                 target=payment.consumer.full_name,
-                details=f'Payment #{payment.id} for PHP {payment.amount_paid} marked {payment.get_status_display()}.',
+                details=(
+                    f'Payment #{payment.id} for PHP {payment.amount_paid} marked {payment.get_status_display()}. '
+                    f'Settlement scope: {payment.get_settlement_scope_display()}. '
+                    f'Arrangement #{arrangement.id}.' if arrangement else
+                    f'Payment #{payment.id} for PHP {payment.amount_paid} marked {payment.get_status_display()}.'
+                ),
             )
             messages.success(request, 'Payment saved successfully and the consumer was notified.')
             return redirect('payments')
@@ -2291,12 +2450,15 @@ def payments_list(request):
         {
             'id': billing.id,
             'consumer_id': billing.consumer_id,
-            'balance': str(billing.amount_due),
+            'balance': str(get_consumer_outstanding_balance(billing.consumer)),
+            'amount_due': str(billing.amount_due),
             'total': str(billing.total_amount),
             'month': billing.billing_month.strftime('%B %Y'),
+            'month_value': billing.billing_month.strftime('%Y-%m'),
         }
         for billing in billing_records
     ]
+    pending_arrangements = PaymentArrangement.objects.filter(status=PaymentArrangement.Statuses.PENDING).select_related('consumer', 'requested_by')[:10]
     return render(
         request,
         'billing/payments.html',
@@ -2308,6 +2470,7 @@ def payments_list(request):
             'payment_status_choices': Payment.Statuses.choices,
             'billing_balance_data': billing_balance_data,
             'selected_consumer': selected_consumer,
+            'pending_arrangements': pending_arrangements,
         },
     )
 
@@ -2352,6 +2515,97 @@ def notify_payment_status(request, payment_id):
     send_payment_notification(payment)
     messages.success(request, f'Payment status notification sent for {payment.consumer.full_name}.')
     return redirect('payments')
+
+
+@role_required(ConsumerProfile.Roles.ADMIN, ConsumerProfile.Roles.TREASURER)
+@require_POST
+def update_payment_arrangement_status_view(request, arrangement_id):
+    arrangement = get_object_or_404(PaymentArrangement.objects.select_related('consumer', 'requested_by'), pk=arrangement_id)
+    new_status = request.POST.get('status', '').strip().lower()
+    if new_status not in {
+        PaymentArrangement.Statuses.APPROVED,
+        PaymentArrangement.Statuses.REJECTED,
+        PaymentArrangement.Statuses.CANCELLED,
+    }:
+        messages.error(request, 'Invalid arrangement status.')
+        return redirect('payments')
+
+    arrangement.status = new_status
+    arrangement.approved_by = request.user if new_status == PaymentArrangement.Statuses.APPROVED else arrangement.approved_by
+    arrangement.approved_at = timezone.now() if new_status == PaymentArrangement.Statuses.APPROVED else arrangement.approved_at
+    arrangement.save(update_fields=['status', 'approved_by', 'approved_at', 'updated_at'])
+    refresh_consumer_account_status(arrangement.consumer)
+
+    notify_roles(
+        {ConsumerProfile.Roles.ADMIN, ConsumerProfile.Roles.TREASURER},
+        'Payment arrangement status updated',
+        (
+            f'{request.user.username} marked arrangement #{arrangement.id} for '
+            f'{arrangement.consumer.full_name} as {arrangement.get_status_display()}.'
+        ),
+        Notification.Types.PAYMENT,
+        consumer=arrangement.consumer,
+    )
+    if arrangement.consumer.portal_user:
+        Notification.objects.create(
+            recipient=arrangement.consumer.portal_user,
+            consumer=arrangement.consumer,
+            channel=Notification.Channels.IN_APP,
+            notification_type=Notification.Types.PAYMENT,
+            title='Payment arrangement update',
+            message=(
+                f'Your selective payment request for PHP {arrangement.requested_amount} is now '
+                f'{arrangement.get_status_display().lower()}.'
+            ),
+            status=Notification.Statuses.SENT,
+        )
+
+    messages.success(
+        request,
+        f'Arrangement #{arrangement.id} updated to {arrangement.get_status_display()}.',
+    )
+    return redirect('payments')
+
+
+@role_required(ConsumerProfile.Roles.ADMIN)
+@require_POST
+def update_consumer_account_status_view(request, consumer_id):
+    consumer = get_object_or_404(Consumer, pk=consumer_id)
+    requested_status = request.POST.get('account_status', '').strip().lower()
+    last_payment = get_consumer_last_completed_payment(consumer)
+    if requested_status not in {
+        Consumer.AccountStatuses.ACTIVE,
+        Consumer.AccountStatuses.DISCONNECTED,
+    }:
+        messages.error(request, 'Invalid consumer account status.')
+        return redirect('admin_panel')
+
+    if requested_status == Consumer.AccountStatuses.DISCONNECTED:
+        consumer.account_status = Consumer.AccountStatuses.DISCONNECTED
+        consumer.status = Consumer.Statuses.INACTIVE
+        consumer.save(update_fields=['account_status', 'status'])
+        DisconnectionRecord.objects.create(
+            consumer=consumer,
+            status=DisconnectionRecord.Statuses.DISCONNECTED,
+            outstanding_balance=get_consumer_outstanding_balance(consumer),
+            unpaid_months_count=len(get_unpaid_billing_records(consumer)),
+            warning_sent_at=consumer.warning_issued_at,
+            scheduled_disconnection_date=consumer.disconnection_scheduled_for,
+            last_payment_date=last_payment.payment_date if last_payment else None,
+            confirmed_by=request.user,
+            confirmed_at=timezone.now(),
+            notes='Service disconnection confirmed by admin.',
+        )
+        messages.success(request, f'{consumer.full_name} was marked as disconnected.')
+    else:
+        consumer.status = Consumer.Statuses.ACTIVE
+        consumer.account_status = Consumer.AccountStatuses.ACTIVE
+        consumer.warning_issued_at = None
+        consumer.disconnection_scheduled_for = None
+        consumer.save(update_fields=['status', 'account_status', 'warning_issued_at', 'disconnection_scheduled_for'])
+        messages.success(request, f'{consumer.full_name} was restored to active status.')
+
+    return redirect('admin_panel')
 
 
 @role_required(ConsumerProfile.Roles.ADMIN)

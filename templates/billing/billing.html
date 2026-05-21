@@ -31,7 +31,11 @@
                     <th>Previous</th>
                     <th>Current</th>
                     <th>Usage</th>
-                    <th>Total</th>
+                    <th>Arrears</th>
+                    <th>Current Bill</th>
+                    <th>Service</th>
+                    <th>Penalty</th>
+                    <th>Outstanding</th>
                     <th>Paid</th>
                     <th>Due</th>
                     <th>Status</th>
@@ -45,13 +49,17 @@
                         <td>{{ bill.previous_reading }}</td>
                         <td>{{ bill.current_reading }}</td>
                         <td>{{ bill.usage_m3 }}</td>
+                        <td>&#8369;{{ bill.previous_arrears }}</td>
                         <td>&#8369;{{ bill.total_amount }}</td>
+                        <td>&#8369;{{ bill.service_charge }}</td>
+                        <td>&#8369;{{ bill.penalty_amount }}</td>
+                        <td>&#8369;{{ bill.statement_total_snapshot }}</td>
                         <td>&#8369;{{ bill.amount_paid }}</td>
                         <td>{{ bill.due_date }}</td>
                         <td>{{ bill.get_status_display }}</td>
                     </tr>
                 {% empty %}
-                    <tr><td colspan="9" class="empty-state">No billing records found.</td></tr>
+                    <tr><td colspan="13" class="empty-state">No billing records found.</td></tr>
                 {% endfor %}
             </tbody>
         </table>

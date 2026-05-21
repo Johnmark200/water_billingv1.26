@@ -5,9 +5,11 @@
         <td data-label="Previous">{{ bill.previous_reading }}</td>
         <td data-label="Current">{{ bill.current_reading }}</td>
         <td data-label="Usage">{{ bill.usage_m3 }} m3</td>
-        <td data-label="Total">&#8369;{{ bill.total_amount }}</td>
+        <td data-label="Arrears">&#8369;{{ bill.previous_arrears }}</td>
+        <td data-label="Current Bill">&#8369;{{ bill.total_amount }}</td>
+        <td data-label="Outstanding">&#8369;{{ bill.statement_total_snapshot }}</td>
         <td data-label="Status">{{ bill.get_status_display }}</td>
     </tr>
 {% empty %}
-    <tr><td colspan="7" class="empty-state">No linked billing records are available yet.</td></tr>
+    <tr><td colspan="9" class="empty-state">No linked billing records are available yet.</td></tr>
 {% endfor %}

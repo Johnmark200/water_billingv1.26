@@ -223,7 +223,7 @@
 
     .consumer-performance-footer {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(5, minmax(0, 1fr));
         gap: 16px;
         padding: 0 22px 20px;
     }
@@ -264,6 +264,147 @@
             grid-template-columns: 1fr;
         }
     }
+
+    .consumer-balance-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.9fr);
+        gap: 18px;
+        align-items: start;
+    }
+
+    .consumer-balance-stack,
+    .consumer-balance-side {
+        display: grid;
+        gap: 18px;
+    }
+
+    .consumer-balance-card {
+        padding: 22px 24px;
+        border-radius: 22px;
+        border: 1px solid var(--consumer-chart-border);
+        background:
+            radial-gradient(circle at top right, rgba(62, 160, 255, 0.18), transparent 36%),
+            linear-gradient(135deg, rgba(15, 118, 110, 0.08), rgba(255, 144, 95, 0.1)),
+            var(--consumer-chart-card);
+        box-shadow: var(--consumer-chart-shadow);
+    }
+
+    .consumer-balance-card h3,
+    .consumer-breakdown-card h3,
+    .consumer-unpaid-card h3,
+    .consumer-warning-card h3 {
+        margin-top: 0;
+        margin-bottom: 8px;
+    }
+
+    .consumer-balance-amount {
+        margin: 12px 0 16px;
+        font-size: clamp(32px, 4vw, 42px);
+        font-weight: 800;
+        color: var(--brand-dark);
+        letter-spacing: -0.03em;
+    }
+
+    .consumer-balance-meta {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 16px;
+    }
+
+    .consumer-balance-meta div,
+    .consumer-unpaid-item,
+    .consumer-breakdown-row {
+        padding: 12px 14px;
+        border-radius: 14px;
+        background: color-mix(in srgb, var(--consumer-chart-card) 84%, var(--bg));
+        border: 1px solid var(--line);
+    }
+
+    .consumer-balance-meta span,
+    .consumer-unpaid-item span,
+    .consumer-breakdown-row span {
+        display: block;
+        color: var(--consumer-chart-muted);
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+    }
+
+    .consumer-balance-meta strong,
+    .consumer-unpaid-item strong,
+    .consumer-breakdown-row strong {
+        display: block;
+        margin-top: 6px;
+        font-size: 16px;
+        color: var(--consumer-chart-ink);
+    }
+
+    .consumer-breakdown-card,
+    .consumer-unpaid-card,
+    .consumer-warning-card {
+        padding: 22px 24px;
+        border-radius: 22px;
+        background: var(--consumer-chart-card);
+        border: 1px solid var(--consumer-chart-border);
+        box-shadow: var(--consumer-chart-shadow);
+    }
+
+    .consumer-breakdown-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+    }
+
+    .consumer-breakdown-total {
+        margin-top: 14px;
+        padding: 16px 18px;
+        border-radius: 16px;
+        background: color-mix(in srgb, var(--brand) 12%, var(--consumer-chart-card));
+        border: 1px solid color-mix(in srgb, var(--brand) 24%, var(--consumer-chart-border));
+    }
+
+    .consumer-unpaid-list {
+        display: grid;
+        gap: 12px;
+    }
+
+    .consumer-unpaid-item strong {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+    }
+
+    .consumer-unpaid-status {
+        margin-top: 8px;
+        font-size: 13px;
+        color: var(--consumer-chart-muted);
+    }
+
+    .consumer-warning-card {
+        border-color: rgba(220, 38, 38, 0.22);
+        background:
+            linear-gradient(135deg, rgba(220, 38, 38, 0.08), rgba(245, 158, 11, 0.1)),
+            var(--consumer-chart-card);
+    }
+
+    .consumer-warning-card p:last-child {
+        margin-bottom: 0;
+    }
+
+    @media (max-width: 980px) {
+        .consumer-balance-layout {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @media (max-width: 640px) {
+        .consumer-balance-meta,
+        .consumer-breakdown-grid {
+            grid-template-columns: 1fr;
+        }
+    }
 </style>
 {% endblock %}
 {% block content %}
@@ -272,15 +413,6 @@
 </section>
 
 {% if consumer %}
-<section class="page-wrap">
-    <div class="card">
-        <h3>Current Balance</h3>
-        <p class="muted">Total outstanding amount to be paid</p>
-        <p style="font-size: 32px; font-weight: 700; color: var(--brand-dark); margin: 12px 0;" id="consumer-total-balance">PHP 0.00</p>
-        <p class="muted" id="balance-months-count">0 months pending</p>
-    </div>
-</section>
-
 <section class="page-wrap">
     <div class="form-card">
         <h3>Submit Payment</h3>
@@ -296,7 +428,7 @@
                     </div>
                 {% endif %}
                 <p>
-                    <label for="{{ payment_form.covered_month.id_for_label }}">Payment month</label>
+                    <label for="{{ payment_form.covered_month.id_for_label }}">Reference month</label>
                     {{ payment_form.covered_month }}
                     <span class="muted">{{ payment_form.covered_month.help_text }}</span>
                     {% for error in payment_form.covered_month.errors %}
@@ -309,9 +441,17 @@
                     {{ payment_form.payment_option }}
                     <p class="muted" style="margin-bottom: 0;">
                         Current balance: <strong id="consumer-current-balance">PHP 0.00</strong>.
-                        Partial payment is 75% of the current balance.
+                        Full payment settles all unpaid months. Partial payment uses only the months you select below and requires approval.
                     </p>
                     {% for error in payment_form.payment_option.errors %}
+                        <span class="field-error">{{ error }}</span>
+                    {% endfor %}
+                </div>
+                <div class="comparison-card" style="margin-bottom: 14px;">
+                    <h4 style="margin: 0 0 8px;">Selective Billing Months</h4>
+                    {{ payment_form.selected_billings }}
+                    <p class="muted" style="margin-bottom: 0;">Choose the specific billing months you want to settle if you are requesting a selective payment arrangement.</p>
+                    {% for error in payment_form.selected_billings.errors %}
                         <span class="field-error">{{ error }}</span>
                     {% endfor %}
                 </div>
@@ -319,6 +459,13 @@
                     <label for="{{ payment_form.amount_paid.id_for_label }}">Amount paid</label>
                     {{ payment_form.amount_paid }}
                     {% for error in payment_form.amount_paid.errors %}
+                        <span class="field-error">{{ error }}</span>
+                    {% endfor %}
+                </p>
+                <p>
+                    <label for="{{ payment_form.arrangement_note.id_for_label }}">Arrangement note</label>
+                    {{ payment_form.arrangement_note }}
+                    {% for error in payment_form.arrangement_note.errors %}
                         <span class="field-error">{{ error }}</span>
                     {% endfor %}
                 </p>
@@ -332,10 +479,10 @@
                     </p>
                 {% endif %}
                 <p class="muted" id="online-payment-note">
-                    Your payment is processed through PayMongo. After you continue, choose GCash or Maya in the wallet prompt and you will be redirected to the secure checkout page.
+                    Full bulk payments continue directly to PayMongo. Selective month payments create an approval request first unless the arrangement has already been approved.
                 </p>
                 <div class="btn-row">
-                    <button type="submit" class="btn" id="payment-submit-button">Continue to PayMongo</button>
+                    <button type="submit" class="btn" id="payment-submit-button">Submit Payment or Arrangement Request</button>
                 </div>
             </form>
         {% else %}
@@ -388,8 +535,12 @@
             <button type="button" class="btn secondary" id="wallet-cancel-button">Cancel</button>
             <button type="button" class="btn" id="wallet-continue-button">Continue to PayMongo</button>
         </div>
-    </div>
 </div>
+</div>
+
+<section class="page-wrap" id="consumer-usage-charts">
+    {% include 'billing/includes/consumer_usage_charts.html' %}
+</section>
 
 <section class="page-wrap" id="consumer-billing-comparison">
     {% include 'billing/includes/consumer_billing_comparison.html' %}
@@ -411,7 +562,7 @@
         <h3>Billing Records</h3>
         <div class="table-shell table-shell-wide" data-stack-on-mobile="true">
             <table>
-                <thead><tr><th>Month</th><th>Previous</th><th>Current</th><th>Total</th><th>Paid</th><th>Status</th></tr></thead>
+                <thead><tr><th>Month</th><th>Previous</th><th>Current</th><th>Usage</th><th>Arrears</th><th>Current Bill</th><th>Outstanding</th><th>Paid</th><th>Due Date</th><th>Status</th></tr></thead>
                 <tbody id="consumer-billing-rows">
                     {% include 'billing/includes/consumer_billing_rows.html' %}
                 </tbody>
@@ -456,6 +607,7 @@
 
 {% block extra_js %}
 {{ billing_balance_data|json_script:"consumer-billing-balance-data" }}
+{{ approved_arrangement_billing_ids|json_script:"consumer-approved-arrangement-billings" }}
 <script>
     (function () {
         const feedback = document.getElementById('consumer-live-feedback');
@@ -466,6 +618,10 @@
         const billingRows = document.getElementById('consumer-billing-rows');
         const readingRows = document.getElementById('consumer-reading-rows');
         const paymentRows = document.getElementById('consumer-payment-rows');
+        const balanceDataElement = document.getElementById('consumer-billing-balance-data');
+        const approvedArrangementElement = document.getElementById('consumer-approved-arrangement-billings');
+        let balanceData = balanceDataElement ? JSON.parse(balanceDataElement.textContent || '[]') : [];
+        const approvedArrangementBillingIds = approvedArrangementElement ? JSON.parse(approvedArrangementElement.textContent || '[]') : [];
 
         function showFeedback(message, isError) {
             if (!feedback || !message) return;
@@ -593,38 +749,43 @@
                 if (payload.billing_rows_html && billingRows) billingRows.innerHTML = payload.billing_rows_html;
                 if (payload.reading_rows_html && readingRows) readingRows.innerHTML = payload.reading_rows_html;
                 if (payload.payment_rows_html && paymentRows) paymentRows.innerHTML = payload.payment_rows_html;
+                if (payload.billing_balance_data) {
+                    balanceData = payload.billing_balance_data;
+                    if (balanceDataElement) balanceDataElement.textContent = JSON.stringify(payload.billing_balance_data);
+                    updateBalanceCard();
+                    syncBalanceAmount && syncBalanceAmount();
+                }
             } catch (error) {
                 console.error(error);
             }
         }
 
         function updateBalanceCard() {
-            const balanceDataElement = document.getElementById('consumer-billing-balance-data');
             const totalBalanceElement = document.getElementById('consumer-total-balance');
             const monthsCountElement = document.getElementById('balance-months-count');
             
-            if (!balanceDataElement || !totalBalanceElement || !monthsCountElement) return;
-            
-            const balanceData = JSON.parse(balanceDataElement.textContent || '[]');
+            if (!totalBalanceElement || !monthsCountElement) return;
+
             const totalBalance = balanceData.reduce((sum, item) => sum + Number(item.balance || 0), 0);
             const pendingMonths = balanceData.filter(item => Number(item.balance || 0) > 0).length;
             
             totalBalanceElement.textContent = `PHP ${totalBalance.toFixed(2)}`;
-            monthsCountElement.textContent = `${pendingMonths} month${pendingMonths !== 1 ? 's' : ''} pending`;
+            monthsCountElement.textContent = `${pendingMonths} month${pendingMonths !== 1 ? 's' : ''} unpaid`;
         }
+
+        let syncBalanceAmount = null;
 
         function initPaymentMode() {
             const form = document.getElementById('consumer-payment-form');
             if (!form) return;
 
-            const button = document.getElementById('payment-submit-button');
             const walletField = document.getElementById('id_online_wallet');
             const monthField = document.getElementById('id_covered_month');
+            const selectedBillingFields = Array.from(form.querySelectorAll('input[name="selected_billings"]'));
             const amountField = document.getElementById('id_amount_paid');
             const balanceLabel = document.getElementById('consumer-current-balance');
             const walletBalanceLabel = document.getElementById('wallet-current-balance');
-            const balanceDataElement = document.getElementById('consumer-billing-balance-data');
-            const balanceData = balanceDataElement ? JSON.parse(balanceDataElement.textContent) : [];
+            const submitButton = document.getElementById('payment-submit-button');
             const modal = document.getElementById('payment-wallet-modal');
             const cancelButton = document.getElementById('wallet-cancel-button');
             const continueButton = document.getElementById('wallet-continue-button');
@@ -642,15 +803,40 @@
             }
 
             function syncAmount() {
-                if (!monthField || !amountField) return;
+                if (!amountField) return;
+                const option = selectedPaymentOption();
+                const totalOutstanding = balanceData.reduce(function (sum, item) {
+                    return sum + Number(item.balance || 0);
+                }, 0);
+                const selectedIds = selectedBillingFields
+                    .filter(function (field) { return field.checked; })
+                    .map(function (field) { return String(field.value); });
+                const selectedAmount = balanceData.reduce(function (sum, item) {
+                    return selectedIds.includes(String(item.id)) ? sum + Number(item.balance || 0) : sum;
+                }, 0);
                 const selected = balanceData.find(function (item) {
-                    return item.month === monthField.value;
+                    return monthField && item.month === monthField.value;
                 });
-                const balance = selected ? Number(selected.balance) : 0;
-                const amount = selectedPaymentOption() === 'partial' ? balance * 0.75 : balance;
+                const balance = option === 'partial'
+                    ? selectedAmount
+                    : (selected ? totalOutstanding || Number(selected.statement_balance || selected.balance || 0) : totalOutstanding);
+                const buttonLabel = option === 'partial'
+                    ? 'Submit Arrangement Request'
+                    : 'Continue to PayMongo';
                 amountField.value = amount.toFixed(2);
                 if (balanceLabel) balanceLabel.textContent = `PHP ${balance.toFixed(2)}`;
                 if (walletBalanceLabel) walletBalanceLabel.textContent = `PHP ${balance.toFixed(2)}`;
+                if (submitButton) submitButton.textContent = buttonLabel;
+            }
+            syncBalanceAmount = syncAmount;
+
+            function selectionMatchesApprovedArrangement() {
+                const selectedIds = selectedBillingFields
+                    .filter(function (field) { return field.checked; })
+                    .map(function (field) { return String(field.value); })
+                    .sort();
+                const approvedIds = approvedArrangementBillingIds.slice().sort();
+                return selectedIds.length > 0 && selectedIds.join(',') === approvedIds.join(',');
             }
 
             function openWalletModal() {
@@ -672,6 +858,9 @@
             if (monthField) {
                 monthField.addEventListener('change', syncAmount);
             }
+            selectedBillingFields.forEach(function (field) {
+                field.addEventListener('change', syncAmount);
+            });
 
             document.querySelectorAll('.wallet-option').forEach(function (option) {
                 option.addEventListener('click', function () {
@@ -701,6 +890,10 @@
 
             form.addEventListener('submit', function (event) {
                 syncAmount();
+                if (selectedPaymentOption() === 'partial' && !selectionMatchesApprovedArrangement()) {
+                    allowDirectSubmit = false;
+                    return;
+                }
                 if (!allowDirectSubmit) {
                     event.preventDefault();
                     event.stopImmediatePropagation();

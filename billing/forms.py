@@ -17,17 +17,26 @@ from .models import (
     MeterReading,
     MINIMUM_BILLABLE_USAGE_M3,
     Payment,
+    PaymentArrangement,
     SMSBlast,
     SystemSettings,
 )
 from .services import (
+    build_unpaid_billing_choices,
     build_consumer_payment_month_choices,
+    create_payment_arrangement,
+    get_consumer_outstanding_balance,
     get_existing_billing_for_month,
+    get_matching_approved_arrangement,
     get_preferred_billing_records,
+    get_previous_arrears_balance,
     get_previous_reading_for_month,
+    get_selected_billings_for_consumer,
+    get_unpaid_billing_records,
     is_e164_phone_number,
     is_valid_email_address,
     normalize_phone_number,
+    rebuild_consumer_payment_allocations,
 )
 
 
@@ -377,6 +386,8 @@ class BillingRecordForm(forms.ModelForm):
             'previous_reading',
             'current_reading',
             'rate_per_m3',
+            'service_charge',
+            'penalty_amount',
             'amount_paid',
             'status',
             'billing_date',
@@ -415,6 +426,14 @@ class BillingRecordForm(forms.ModelForm):
 
         return cleaned_data
 
+    def save(self, commit=True):
+        billing = super().save(commit=False)
+        if billing.consumer_id and billing.billing_month:
+            billing.previous_arrears = get_previous_arrears_balance(billing.consumer, billing.billing_month)
+        if commit:
+            billing.save()
+        return billing
+
 
 class AdminPaymentForm(forms.ModelForm):
     online_channel = forms.ChoiceField(
@@ -423,6 +442,16 @@ class AdminPaymentForm(forms.ModelForm):
             (Payment.Methods.PAYMAYA, 'Maya'),
         ],
         required=False,
+    )
+    selected_billings = forms.MultipleChoiceField(
+        label='Selected billing months',
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+    )
+    arrangement_note = forms.CharField(
+        label='Arrangement note',
+        required=False,
+        widget=forms.Textarea(attrs={'rows': 3}),
     )
 
     class Meta:
@@ -445,6 +474,7 @@ class AdminPaymentForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         consumer_id = None
+        self.unpaid_billing_choices = []
         if self.is_bound:
             consumer_id = self.data.get(self.add_prefix('consumer')) or self.data.get('consumer')
         else:
@@ -459,6 +489,22 @@ class AdminPaymentForm(forms.ModelForm):
             '-billing_month',
             '-created_at',
         )
+        if consumer_id:
+            try:
+                consumer = Consumer.objects.get(pk=consumer_id)
+            except (Consumer.DoesNotExist, ValueError, TypeError):
+                consumer = None
+            self.unpaid_billing_choices = build_unpaid_billing_choices(consumer)
+        else:
+            self.unpaid_billing_choices = [
+                (
+                    str(billing.id),
+                    f'{billing.consumer.full_name} - {billing.billing_month:%B %Y} - PHP {billing.amount_due:,.2f}',
+                )
+                for billing in get_preferred_billing_records(BillingRecord.objects.select_related('consumer'))
+                if billing.amount_due > 0
+            ]
+        self.fields['selected_billings'].choices = self.unpaid_billing_choices
         self.fields['payment_method'].choices = [
             (Payment.Methods.CASH, Payment.Methods.CASH.label),
             (Payment.Methods.ONLINE, Payment.Methods.ONLINE.label),
@@ -475,22 +521,44 @@ class AdminPaymentForm(forms.ModelForm):
         self.fields['online_channel'].initial = Payment.normalize_online_channel(
             self.data.get(self.add_prefix('online_channel')) if self.is_bound else self.instance.gateway
         )
+        self.fields['billing'].required = False
 
     def clean_amount_paid(self):
         return self.cleaned_data.get('amount_paid') or Decimal('0')
 
     def clean(self):
         cleaned_data = super().clean()
+        consumer = cleaned_data.get('consumer')
         billing = cleaned_data.get('billing')
         payment_option = cleaned_data.get('payment_option') or Payment.PaymentOptions.FULL
         payment_method = cleaned_data.get('payment_method')
-        if billing:
-            balance = billing.amount_due
-            cleaned_data['amount_paid'] = (
-                balance
-                if payment_option == Payment.PaymentOptions.FULL
-                else (balance * Decimal('0.75')).quantize(Decimal('0.01'))
-            )
+        selected_ids = cleaned_data.get('selected_billings') or []
+        selected_billings = get_selected_billings_for_consumer(consumer, selected_ids) if consumer else []
+
+        if payment_option == Payment.PaymentOptions.PARTIAL and not selected_billings and billing and billing.amount_due > 0:
+            selected_billings = [billing]
+            cleaned_data['selected_billings'] = [str(billing.id)]
+
+        if payment_option == Payment.PaymentOptions.FULL:
+            selected_billings = get_unpaid_billing_records(consumer) if consumer else []
+            cleaned_data['settlement_scope'] = Payment.SettlementScopes.BULK
+            if selected_billings:
+                cleaned_data['amount_paid'] = get_consumer_outstanding_balance(consumer)
+                cleaned_data['billing'] = selected_billings[-1]
+                cleaned_data['covered_month'] = selected_billings[-1].billing_month
+            elif billing:
+                cleaned_data['amount_paid'] = billing.amount_due or billing.total_amount
+                cleaned_data['covered_month'] = billing.billing_month
+        else:
+            cleaned_data['settlement_scope'] = Payment.SettlementScopes.SELECTIVE
+            if not selected_billings:
+                self.add_error('selected_billings', 'Choose at least one unpaid billing month for a selective settlement.')
+            else:
+                cleaned_data['amount_paid'] = sum((selected.amount_due for selected in selected_billings), Decimal('0'))
+                cleaned_data['billing'] = selected_billings[-1]
+                cleaned_data['covered_month'] = selected_billings[-1].billing_month
+        cleaned_data['selected_billing_records'] = selected_billings
+
         if payment_method == Payment.Methods.CASH:
             cleaned_data['reference_number'] = ''
             cleaned_data['online_channel'] = ''
@@ -506,8 +574,12 @@ class AdminPaymentForm(forms.ModelForm):
     def save(self, commit=True):
         payment = super().save(commit=False)
         payment.gateway = self.cleaned_data.get('online_channel', '') if payment.payment_method == Payment.Methods.ONLINE else ''
+        payment.billing = self.cleaned_data.get('billing')
+        payment.covered_month = self.cleaned_data.get('covered_month')
+        payment.settlement_scope = self.cleaned_data.get('settlement_scope', Payment.SettlementScopes.BULK)
+        payment.arrangement_note = self.cleaned_data.get('arrangement_note', '')
         if commit:
-            payment.save()
+            payment.save(rebalance_consumer=False)
         return payment
 
 
@@ -522,6 +594,11 @@ def build_payment_method_choices(system_settings):
 
 class ConsumerPaymentForm(forms.ModelForm):
     covered_month = forms.ChoiceField(label='Payment month')
+    selected_billings = forms.MultipleChoiceField(
+        label='Selected unpaid months',
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+    )
     payment_method = forms.ChoiceField(
         choices=[(Payment.Methods.ONLINE, Payment.Methods.ONLINE.label)],
         initial=Payment.Methods.ONLINE,
@@ -541,6 +618,11 @@ class ConsumerPaymentForm(forms.ModelForm):
         required=False,
         widget=forms.HiddenInput(),
     )
+    arrangement_note = forms.CharField(
+        label='Arrangement note',
+        required=False,
+        widget=forms.Textarea(attrs={'rows': 3}),
+    )
 
     class Meta:
         model = Payment
@@ -551,14 +633,18 @@ class ConsumerPaymentForm(forms.ModelForm):
         self.consumer = consumer
         self.system_settings = system_settings or SystemSettings.load()
         self.available_months = []
+        self.unpaid_billings = get_unpaid_billing_records(consumer) if consumer else []
+        self.arrangement_request_required = False
+        self.approved_arrangement = None
         self.fields['payment_method'].choices = [(Payment.Methods.ONLINE, Payment.Methods.ONLINE.label)]
         self.fields['payment_method'].initial = Payment.Methods.ONLINE
         self.fields['reference_number'].required = False
         self.fields['reference_number'].widget = forms.HiddenInput()
         self.fields['amount_paid'].required = False
         self.fields['amount_paid'].widget.attrs.update({'readonly': 'readonly'})
-        self.fields['covered_month'].help_text = 'Select the next due month or make an advance payment for an upcoming month.'
+        self.fields['covered_month'].help_text = 'Bulk payment automatically uses your full outstanding balance.'
         self.fields['covered_month'].choices = []
+        self.fields['selected_billings'].choices = build_unpaid_billing_choices(consumer)
 
         if consumer:
             self.available_months = build_consumer_payment_month_choices(consumer)
@@ -577,6 +663,9 @@ class ConsumerPaymentForm(forms.ModelForm):
     def clean(self):
         cleaned_data = super().clean()
         covered_month = cleaned_data.get('covered_month')
+        payment_option = cleaned_data.get('payment_option') or Payment.PaymentOptions.FULL
+        selected_ids = cleaned_data.get('selected_billings') or []
+        selected_billings = get_selected_billings_for_consumer(self.consumer, selected_ids) if self.consumer else []
 
         if covered_month and self.consumer:
             cleaned_data['billing'] = get_existing_billing_for_month(self.consumer, covered_month)
@@ -586,17 +675,38 @@ class ConsumerPaymentForm(forms.ModelForm):
         if self.consumer and not self.available_months:
             raise forms.ValidationError('No payment months are available right now. Please contact the administrator.')
         cleaned_data['payment_method'] = Payment.Methods.ONLINE
-        if cleaned_data.get('online_wallet') not in {
+        billing = cleaned_data.get('billing')
+        if payment_option == Payment.PaymentOptions.FULL:
+            cleaned_data['settlement_scope'] = Payment.SettlementScopes.BULK
+            if self.unpaid_billings:
+                cleaned_data['selected_billing_records'] = self.unpaid_billings
+                cleaned_data['billing'] = self.unpaid_billings[-1]
+                cleaned_data['covered_month'] = self.unpaid_billings[-1].billing_month
+                cleaned_data['amount_paid'] = get_consumer_outstanding_balance(self.consumer)
+            elif billing:
+                cleaned_data['selected_billing_records'] = [billing]
+                cleaned_data['amount_paid'] = billing.amount_due or billing.total_amount
+            else:
+                self.add_error('covered_month', 'No outstanding billing month is available for payment.')
+        else:
+            cleaned_data['settlement_scope'] = Payment.SettlementScopes.SELECTIVE
+            if not selected_billings and billing and billing.amount_due > 0:
+                selected_billings = [billing]
+                cleaned_data['selected_billings'] = [str(billing.id)]
+            if not selected_billings:
+                self.add_error('selected_billings', 'Choose at least one unpaid billing month to request selective settlement.')
+            else:
+                cleaned_data['selected_billing_records'] = selected_billings
+                cleaned_data['billing'] = selected_billings[-1]
+                cleaned_data['covered_month'] = selected_billings[-1].billing_month
+                cleaned_data['amount_paid'] = sum((selected.amount_due for selected in selected_billings), Decimal('0'))
+                self.approved_arrangement = get_matching_approved_arrangement(self.consumer, selected_billings)
+                self.arrangement_request_required = self.approved_arrangement is None
+        if not self.arrangement_request_required and cleaned_data.get('online_wallet') not in {
             'gcash',
             'paymaya',
         }:
             self.add_error('online_wallet', 'Choose GCash or Maya before continuing to PayMongo.')
-
-        billing = cleaned_data.get('billing')
-        payment_option = cleaned_data.get('payment_option') or Payment.PaymentOptions.FULL
-        if billing:
-            balance = billing.amount_due
-            cleaned_data['amount_paid'] = balance if payment_option == Payment.PaymentOptions.FULL else (balance * Decimal('0.75')).quantize(Decimal('0.01'))
         cleaned_data['reference_number'] = ''
         if (cleaned_data.get('amount_paid') or Decimal('0')) <= 0:
             self.add_error('amount_paid', 'Amount paid must be greater than zero.')
@@ -605,6 +715,17 @@ class ConsumerPaymentForm(forms.ModelForm):
 
     def clean_amount_paid(self):
         return self.cleaned_data.get('amount_paid') or Decimal('0')
+
+    def save_arrangement_request(self, requested_by):
+        return create_payment_arrangement(
+            self.consumer,
+            self.cleaned_data.get('selected_billing_records') or [],
+            requested_by=requested_by,
+            requested_amount=self.cleaned_data.get('amount_paid') or Decimal('0'),
+            outstanding_balance=get_consumer_outstanding_balance(self.consumer),
+            notes=self.cleaned_data.get('arrangement_note', ''),
+            status=PaymentArrangement.Statuses.PENDING,
+        )
 
     def save(self, commit=True):
         payment = super().save(commit=False)
@@ -617,8 +738,15 @@ class ConsumerPaymentForm(forms.ModelForm):
         payment.status = Payment.Statuses.PENDING
         payment.gateway = self.cleaned_data.get('online_wallet', '')
         payment.reference_number = ''
+        payment.settlement_scope = self.cleaned_data.get('settlement_scope', Payment.SettlementScopes.BULK)
+        payment.arrangement_note = self.cleaned_data.get('arrangement_note', '')
         if commit:
-            payment.save()
+            payment.save(rebalance_consumer=False)
+            if self.approved_arrangement is not None:
+                self.approved_arrangement.payment = payment
+                self.approved_arrangement.status = PaymentArrangement.Statuses.APPROVED
+                self.approved_arrangement.save(update_fields=['payment', 'status', 'updated_at'])
+            rebuild_consumer_payment_allocations(self.consumer)
         return payment
 
 

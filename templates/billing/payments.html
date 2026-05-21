@@ -564,6 +564,14 @@
                     <label for="{{ form.billing.id_for_label }}">Billing record</label>
                     {{ form.billing }}
                 </p>
+                <div class="comparison-card" style="margin-bottom: 14px;">
+                    <h4 style="margin: 0 0 8px;">Selective Billing Months</h4>
+                    {{ form.selected_billings }}
+                    <p class="muted" style="margin-bottom: 0;">Choose the exact unpaid months only when recording an approved selective settlement.</p>
+                    {% for error in form.selected_billings.errors %}
+                        <span class="field-error">{{ error }}</span>
+                    {% endfor %}
+                </div>
                 <p>
                     <label for="{{ form.payment_method.id_for_label }}">Payment method</label>
                     {{ form.payment_method }}
@@ -585,7 +593,7 @@
                     {{ form.payment_option }}
                     <p class="muted" style="margin-bottom: 0;">
                         Current balance: <strong id="admin-current-balance">PHP 0.00</strong>.
-                        Partial payment is 75% of the current balance.
+                        Full payment settles the entire outstanding balance. Partial payment uses only the months selected above and must be approved by the acting cashier or admin.
                     </p>
                 </div>
                 <p>
@@ -595,6 +603,10 @@
                 <p>
                     <label for="{{ form.discount_amount.id_for_label }}">Discount applied</label>
                     {{ form.discount_amount }}
+                </p>
+                <p>
+                    <label for="{{ form.arrangement_note.id_for_label }}">Arrangement note</label>
+                    {{ form.arrangement_note }}
                 </p>
                 <p>
                     <label for="{{ form.payment_date.id_for_label }}">Payment date</label>
@@ -622,6 +634,43 @@
         {% endif %}
     </div>
     <div class="table-card">
+        {% if pending_arrangements %}
+            <div class="comparison-card" style="margin-bottom: 18px;">
+                <h3 style="margin-top: 0;">Pending Selective Payment Requests</h3>
+                <div class="table-shell table-shell-wide" data-stack-on-mobile="true">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Consumer</th>
+                                <th>Requested Amount</th>
+                                <th>Requested By</th>
+                                <th>Months</th>
+                                <th>Status</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for arrangement in pending_arrangements %}
+                                <tr>
+                                    <td data-label="Consumer">{{ arrangement.consumer.full_name }}</td>
+                                    <td data-label="Requested Amount">PHP {{ arrangement.requested_amount }}</td>
+                                    <td data-label="Requested By">{% if arrangement.requested_by %}{{ arrangement.requested_by.username }}{% else %}System{% endif %}</td>
+                                    <td data-label="Months">{{ arrangement.selected_billings|length }} selected</td>
+                                    <td data-label="Status">{{ arrangement.get_status_display }}</td>
+                                    <td data-label="Action">
+                                        <form method="post" action="{% url 'update_payment_arrangement_status' arrangement.id %}" style="display: inline-flex; gap: 8px; flex-wrap: wrap;">
+                                            {% csrf_token %}
+                                            <button type="submit" name="status" value="approved" class="btn secondary">Approve</button>
+                                            <button type="submit" name="status" value="rejected" class="btn secondary">Reject</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        {% endif %}
         <h2 class="page-title">Payment History</h2>
         <p class="muted">Status changes save immediately, recalculate the linked bill, and send payment updates through the configured email and SMS services.</p>
         <div class="status-feedback" data-payment-status-feedback hidden></div>
@@ -879,7 +928,15 @@
                 const billingField = document.getElementById('id_billing');
                 const selectedConsumerId = consumerField ? consumerField.value : '';
                 
-                if (!billingField || !selectedConsumerId) return;
+                if (!billingField) return;
+
+                if (!selectedConsumerId) {
+                    form.querySelectorAll('input[name="selected_billings"]').forEach(function (checkbox) {
+                        const row = checkbox.closest('label') || checkbox.closest('li') || checkbox.parentElement;
+                        if (row) row.style.display = '';
+                    });
+                    return;
+                }
                 
                 // Filter billing options based on selected consumer
                 const billingOptions = billingField.querySelectorAll('option');
@@ -908,16 +965,38 @@
                         syncAmount();
                     }
                 }
+
+                form.querySelectorAll('input[name="selected_billings"]').forEach(function (checkbox) {
+                    const balance = balances.find(function (item) {
+                        return String(item.id) === String(checkbox.value);
+                    });
+                    const row = checkbox.closest('label') || checkbox.closest('li') || checkbox.parentElement;
+                    const isVisible = Boolean(balance) && String(balance.consumer_id) === String(selectedConsumerId);
+                    if (row) {
+                        row.style.display = isVisible ? '' : 'none';
+                    }
+                    if (!isVisible) {
+                        checkbox.checked = false;
+                    }
+                });
             }
 
             function syncAmount() {
+                const selectedBillingIds = Array.from(form.querySelectorAll('input[name="selected_billings"]:checked')).map(function (field) {
+                    return String(field.value);
+                });
                 const selected = balances.find(function (item) {
                     return String(item.id) === String(billingField ? billingField.value : '');
                 });
-                const balance = selected ? Number(selected.balance) : 0;
-                const amount = selectedPaymentOption() === 'partial' ? balance * 0.75 : balance;
+                const fullBalance = selected ? Number(selected.balance || 0) : 0;
+                const selectiveBalance = balances.reduce(function (sum, item) {
+                    return selectedBillingIds.includes(String(item.id))
+                        ? sum + Number(item.amount_due || item.balance || 0)
+                        : sum;
+                }, 0);
+                const amount = selectedPaymentOption() === 'partial' ? selectiveBalance : fullBalance;
                 if (amountField) amountField.value = amount.toFixed(2);
-                if (balanceLabel) balanceLabel.textContent = `PHP ${balance.toFixed(2)}`;
+                if (balanceLabel) balanceLabel.textContent = `PHP ${amount.toFixed(2)}`;
             }
 
             function syncPaymentMode() {
@@ -1373,6 +1452,9 @@
                 });
             }
             form.querySelectorAll('input[name="payment_option"]').forEach(function (option) {
+                option.addEventListener('change', syncAmount);
+            });
+            form.querySelectorAll('input[name="selected_billings"]').forEach(function (option) {
                 option.addEventListener('change', syncAmount);
             });
                         window.addEventListener('keydown', function (event) {

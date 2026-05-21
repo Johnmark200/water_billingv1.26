@@ -13,11 +13,25 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.mail import EmailMultiAlternatives, send_mail
 from django.core.validators import validate_email
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from django.utils.html import escape
 
-from .models import AuditLog, BillingRecord, Consumer, ConsumerProfile, MeterReading, Notification, Payment, SMSBlast, SystemSettings
+from .models import (
+    AuditLog,
+    BillingRecord,
+    Consumer,
+    ConsumerProfile,
+    DisconnectionRecord,
+    MeterReading,
+    Notification,
+    Payment,
+    PaymentAllocation,
+    PaymentArrangement,
+    SMSBlast,
+    SystemSettings,
+)
 
 
 User = get_user_model()
@@ -1543,6 +1557,96 @@ def get_consumer_billing_comparison(consumer):
     return current_billing, previous_billing
 
 
+def get_previous_arrears_balance(consumer, billing_month):
+    target_month = month_start(billing_month)
+    if consumer is None or target_month is None:
+        return Decimal('0')
+
+    arrears = Decimal('0')
+    for billing in get_consumer_monthly_billings(consumer):
+        billing_month_value = month_start(billing.billing_month)
+        if billing_month_value and billing_month_value < target_month:
+            arrears += billing.amount_due
+    return arrears
+
+
+def get_consumer_outstanding_balance(consumer, through_month=None):
+    target_month = month_start(through_month) if through_month else None
+    if consumer is None:
+        return Decimal('0')
+
+    outstanding = Decimal('0')
+    for billing in get_consumer_monthly_billings(consumer):
+        billing_month_value = month_start(billing.billing_month)
+        if target_month and billing_month_value and billing_month_value > target_month:
+            continue
+        outstanding += billing.amount_due
+    return outstanding
+
+
+def get_unpaid_billing_records(consumer):
+    if consumer is None:
+        return []
+
+    unpaid_billings = [billing for billing in get_consumer_monthly_billings(consumer) if billing.amount_due > 0]
+    return sorted(
+        unpaid_billings,
+        key=lambda billing: (month_start(billing.billing_month) or date.max, billing.created_at, billing.id),
+    )
+
+
+def build_unpaid_billing_choices(consumer):
+    return [
+        (
+            str(billing.id),
+            f'{billing.billing_month:%B %Y} - PHP {billing.amount_due:,.2f}',
+        )
+        for billing in get_unpaid_billing_records(consumer)
+    ]
+
+
+def get_selected_billings_for_consumer(consumer, selected_ids):
+    if consumer is None:
+        return []
+
+    unpaid_billings = {
+        str(billing.id): billing
+        for billing in get_unpaid_billing_records(consumer)
+    }
+    return [unpaid_billings[billing_id] for billing_id in selected_ids if billing_id in unpaid_billings]
+
+
+def get_consumer_last_completed_payment(consumer):
+    if consumer is None:
+        return None
+
+    return (
+        Payment.objects.filter(consumer=consumer, status=Payment.Statuses.COMPLETED)
+        .order_by('-payment_date', '-created_at', '-id')
+        .first()
+    )
+
+
+def get_latest_approved_arrangement(consumer):
+    if consumer is None:
+        return None
+
+    return (
+        PaymentArrangement.objects.filter(
+            consumer=consumer,
+            status=PaymentArrangement.Statuses.APPROVED,
+        )
+        .order_by('-approved_at', '-created_at', '-id')
+        .first()
+    )
+
+
+def get_statement_total_for_billing(billing):
+    if billing is None:
+        return Decimal('0')
+    return (billing.previous_arrears or Decimal('0')) + (billing.total_amount or Decimal('0'))
+
+
 def _payment_totals_by_month(consumer):
     totals = {}
     if consumer is None:
@@ -1563,20 +1667,17 @@ def get_next_payment_month(consumer):
     if consumer is None:
         return current_month
 
-    payment_totals = _payment_totals_by_month(consumer)
     monthly_billings = list(reversed(get_consumer_monthly_billings(consumer)))
+    unsettled_billings = [billing for billing in monthly_billings if billing.amount_due > 0]
+    if unsettled_billings:
+        return month_start(unsettled_billings[-1].billing_month)
 
-    for billing in monthly_billings:
-        billing_month = month_start(billing.billing_month)
-        credited_amount = payment_totals.get(billing_month, Decimal('0'))
-        if credited_amount < (billing.total_amount or Decimal('0')):
-            return billing_month
-
+    payment_totals = _payment_totals_by_month(consumer)
     covered_months = set(payment_totals.keys())
     covered_months.update(
         month_start(billing.billing_month)
         for billing in monthly_billings
-        if billing.status == BillingRecord.Statuses.PAID
+        if billing.amount_due <= 0
     )
     covered_months = {item for item in covered_months if item is not None}
 
@@ -1594,16 +1695,323 @@ def build_consumer_payment_month_choices(consumer, advance_months=6):
         return []
 
     next_month = get_next_payment_month(consumer)
+    has_outstanding_balance = get_consumer_outstanding_balance(consumer) > 0
     choices = []
     for offset in range(advance_months + 1):
         candidate = add_months(next_month, offset)
         label = candidate.strftime('%B %Y')
-        if offset == 0:
+        if offset == 0 and has_outstanding_balance:
+            label = f'{label} (Outstanding balance)'
+        elif offset == 0:
             label = f'{label} (Next due)'
         elif offset > 0:
             label = f'{label} (Advance)'
         choices.append((candidate.strftime('%Y-%m'), label))
     return choices
+
+
+def _billings_snapshot_payload(billings):
+    return [
+        {
+            'billing_id': billing.id,
+            'billing_month': billing.billing_month.isoformat() if billing.billing_month else '',
+            'amount_due': str(billing.amount_due),
+        }
+        for billing in billings
+    ]
+
+
+def get_matching_approved_arrangement(consumer, selected_billings):
+    snapshot = _billings_snapshot_payload(selected_billings)
+    for arrangement in PaymentArrangement.objects.filter(
+        consumer=consumer,
+        status=PaymentArrangement.Statuses.APPROVED,
+    ).order_by('-approved_at', '-created_at', '-id'):
+        if arrangement.selected_billings == snapshot:
+            return arrangement
+    return None
+
+
+def create_payment_arrangement(
+    consumer,
+    selected_billings,
+    requested_by=None,
+    requested_amount=None,
+    outstanding_balance=None,
+    notes='',
+    status=PaymentArrangement.Statuses.PENDING,
+    approved_by=None,
+    payment=None,
+):
+    requested_amount = requested_amount if requested_amount is not None else sum(
+        (billing.amount_due for billing in selected_billings),
+        Decimal('0'),
+    )
+    outstanding_balance = outstanding_balance if outstanding_balance is not None else get_consumer_outstanding_balance(consumer)
+    remaining_balance = outstanding_balance - requested_amount
+    if remaining_balance < 0:
+        remaining_balance = Decimal('0')
+
+    arrangement = PaymentArrangement.objects.create(
+        consumer=consumer,
+        payment=payment,
+        requested_by=requested_by if getattr(requested_by, 'is_authenticated', False) else None,
+        approved_by=approved_by if getattr(approved_by, 'is_authenticated', False) else None,
+        arrangement_type=PaymentArrangement.ArrangementTypes.SELECTIVE,
+        status=status,
+        selected_billings=_billings_snapshot_payload(selected_billings),
+        requested_amount=requested_amount,
+        outstanding_balance_snapshot=outstanding_balance,
+        remaining_balance_snapshot=remaining_balance,
+        notes=notes or '',
+        approved_at=timezone.now() if status in {PaymentArrangement.Statuses.APPROVED, PaymentArrangement.Statuses.COMPLETED} else None,
+    )
+    return arrangement
+
+
+def build_consumer_account_overview(consumer, refresh_status=False):
+    if consumer is None:
+        return {
+            'unpaid_billings': [],
+            'unpaid_cycles_count': 0,
+            'outstanding_balance': Decimal('0'),
+            'has_partial_balance': False,
+            'approved_arrangement': None,
+            'latest_arrangement': None,
+            'warning_active': False,
+            'warning_issued_at': None,
+            'scheduled_disconnection_date': None,
+            'days_until_disconnection': None,
+            'last_payment': None,
+            'monitoring_record': None,
+            'countdown_active': False,
+            'is_for_disconnection': False,
+        }
+
+    if refresh_status:
+        refresh_consumer_account_status(consumer, send_notifications=False)
+        consumer.refresh_from_db()
+
+    unpaid_billings = get_unpaid_billing_records(consumer)
+    latest_arrangement = consumer.payment_arrangements.order_by('-created_at').first()
+    approved_arrangement = get_latest_approved_arrangement(consumer)
+    monitoring_record = consumer.disconnection_records.exclude(
+        status=DisconnectionRecord.Statuses.CANCELLED
+    ).order_by('-created_at').first()
+    last_payment = get_consumer_last_completed_payment(consumer)
+    scheduled_date = consumer.disconnection_scheduled_for
+    days_until_disconnection = None
+    if scheduled_date:
+        days_until_disconnection = (scheduled_date - timezone.localdate()).days
+
+    return {
+        'unpaid_billings': unpaid_billings,
+        'unpaid_cycles_count': len(unpaid_billings),
+        'outstanding_balance': sum((billing.amount_due for billing in unpaid_billings), Decimal('0')),
+        'has_partial_balance': any(billing.amount_paid > 0 and billing.amount_due > 0 for billing in unpaid_billings),
+        'approved_arrangement': approved_arrangement,
+        'latest_arrangement': latest_arrangement,
+        'warning_active': len(unpaid_billings) >= 3 and consumer.warning_issued_at is not None,
+        'warning_issued_at': consumer.warning_issued_at,
+        'scheduled_disconnection_date': scheduled_date,
+        'days_until_disconnection': days_until_disconnection,
+        'last_payment': last_payment,
+        'monitoring_record': monitoring_record,
+        'countdown_active': scheduled_date is not None and days_until_disconnection is not None and days_until_disconnection >= 0,
+        'is_for_disconnection': consumer.account_status == Consumer.AccountStatuses.FOR_DISCONNECTION,
+    }
+
+
+def _warning_notice_message(consumer, unpaid_cycles_count, scheduled_date):
+    return (
+        f'Warning notice for {consumer.full_name}: your account has reached {unpaid_cycles_count} unpaid billing cycles. '
+        f'Possible disconnection is scheduled within 15 days, on or after {scheduled_date:%B %d, %Y}, unless payment or an approved arrangement is recorded.'
+    )
+
+
+def _admin_disconnection_message(consumer, outstanding_balance, unpaid_cycles_count, last_payment_date, scheduled_date):
+    account_number = f'ACC-{consumer.id:05d}'
+    payment_label = last_payment_date.strftime('%B %d, %Y') if last_payment_date else 'No recorded payment'
+    return (
+        f'Consumer Name: {consumer.full_name}\n'
+        f'Account Number: {account_number}\n'
+        f'Outstanding Balance: PHP {outstanding_balance:,.2f}\n'
+        f'Total Unpaid Months: {unpaid_cycles_count}\n'
+        f'Last Payment Date: {payment_label}\n'
+        f'Scheduled Disconnection Date: {scheduled_date:%B %d, %Y}'
+    )
+
+
+def refresh_consumer_account_status(consumer, send_notifications=True):
+    if consumer is None:
+        return None
+
+    today = timezone.localdate()
+    now = timezone.now()
+    overview = build_consumer_account_overview(consumer, refresh_status=False)
+    unpaid_billings = overview['unpaid_billings']
+    unpaid_cycles_count = overview['unpaid_cycles_count']
+    outstanding_balance = overview['outstanding_balance']
+    has_partial_balance = overview['has_partial_balance']
+    approved_arrangement = overview['approved_arrangement']
+    last_payment = overview['last_payment']
+    last_payment_date = last_payment.payment_date if last_payment else None
+    latest_record = overview['monitoring_record']
+
+    target_status = Consumer.AccountStatuses.ACTIVE
+    warning_issued_at = consumer.warning_issued_at
+    scheduled_date = consumer.disconnection_scheduled_for
+    should_send_warning = False
+    should_escalate = False
+
+    if consumer.account_status == Consumer.AccountStatuses.DISCONNECTED and consumer.status == Consumer.Statuses.INACTIVE:
+        target_status = Consumer.AccountStatuses.DISCONNECTED
+    elif outstanding_balance <= 0:
+        target_status = Consumer.AccountStatuses.ACTIVE
+        warning_issued_at = None
+        scheduled_date = None
+    else:
+        if unpaid_cycles_count >= 3:
+            if warning_issued_at is None:
+                warning_issued_at = now
+                should_send_warning = True
+            if scheduled_date is None:
+                scheduled_date = today + timedelta(days=15)
+
+            target_status = Consumer.AccountStatuses.DELINQUENT
+            has_recent_payment_after_warning = (
+                last_payment_date is not None
+                and warning_issued_at is not None
+                and last_payment_date >= warning_issued_at.date()
+            )
+            if scheduled_date and today >= scheduled_date and approved_arrangement is None and not has_recent_payment_after_warning:
+                target_status = Consumer.AccountStatuses.FOR_DISCONNECTION
+                should_escalate = True
+        elif approved_arrangement is not None or has_partial_balance:
+            target_status = Consumer.AccountStatuses.PARTIALLY_PAID
+        else:
+            target_status = Consumer.AccountStatuses.PENDING
+
+    update_fields = []
+    if consumer.account_status != target_status:
+        consumer.account_status = target_status
+        update_fields.append('account_status')
+    if consumer.warning_issued_at != warning_issued_at:
+        consumer.warning_issued_at = warning_issued_at
+        update_fields.append('warning_issued_at')
+    if consumer.disconnection_scheduled_for != scheduled_date:
+        consumer.disconnection_scheduled_for = scheduled_date
+        update_fields.append('disconnection_scheduled_for')
+    if last_payment and consumer.last_payment_activity_at != last_payment.created_at:
+        consumer.last_payment_activity_at = last_payment.created_at
+        update_fields.append('last_payment_activity_at')
+    if update_fields:
+        consumer.save(update_fields=update_fields)
+
+    active_statuses = {
+        DisconnectionRecord.Statuses.MONITORING,
+        DisconnectionRecord.Statuses.FOR_DISCONNECTION,
+    }
+    if unpaid_cycles_count >= 3 and outstanding_balance > 0:
+        record_status = (
+            DisconnectionRecord.Statuses.FOR_DISCONNECTION
+            if target_status == Consumer.AccountStatuses.FOR_DISCONNECTION
+            else DisconnectionRecord.Statuses.MONITORING
+        )
+        if latest_record is None or latest_record.status not in active_statuses:
+            latest_record = DisconnectionRecord.objects.create(
+                consumer=consumer,
+                arrangement=approved_arrangement,
+                status=record_status,
+                outstanding_balance=outstanding_balance,
+                unpaid_months_count=unpaid_cycles_count,
+                warning_sent_at=warning_issued_at,
+                scheduled_disconnection_date=scheduled_date,
+                last_payment_date=last_payment_date,
+                escalated_at=now if record_status == DisconnectionRecord.Statuses.FOR_DISCONNECTION else None,
+            )
+        else:
+            record_updates = []
+            if latest_record.arrangement_id != getattr(approved_arrangement, 'id', None):
+                latest_record.arrangement = approved_arrangement
+                record_updates.append('arrangement')
+            if latest_record.status != record_status:
+                latest_record.status = record_status
+                record_updates.append('status')
+            if latest_record.outstanding_balance != outstanding_balance:
+                latest_record.outstanding_balance = outstanding_balance
+                record_updates.append('outstanding_balance')
+            if latest_record.unpaid_months_count != unpaid_cycles_count:
+                latest_record.unpaid_months_count = unpaid_cycles_count
+                record_updates.append('unpaid_months_count')
+            if latest_record.warning_sent_at != warning_issued_at:
+                latest_record.warning_sent_at = warning_issued_at
+                record_updates.append('warning_sent_at')
+            if latest_record.scheduled_disconnection_date != scheduled_date:
+                latest_record.scheduled_disconnection_date = scheduled_date
+                record_updates.append('scheduled_disconnection_date')
+            if latest_record.last_payment_date != last_payment_date:
+                latest_record.last_payment_date = last_payment_date
+                record_updates.append('last_payment_date')
+            if should_escalate and latest_record.escalated_at is None:
+                latest_record.escalated_at = now
+                record_updates.append('escalated_at')
+            if record_updates:
+                latest_record.save(update_fields=record_updates)
+    elif latest_record is not None and latest_record.status in active_statuses:
+        latest_record.status = DisconnectionRecord.Statuses.CANCELLED
+        latest_record.notes = 'Monitoring cleared after the consumer balance was reduced below the warning threshold.'
+        latest_record.save(update_fields=['status', 'notes', 'updated_at'])
+
+    if send_notifications and should_send_warning and scheduled_date:
+        system_settings = SystemSettings.load()
+        warning_message = _warning_notice_message(consumer, unpaid_cycles_count, scheduled_date)
+        warning_email = (
+            '<p><strong>Warning Notice</strong></p>'
+            f'<p>Your account has reached <strong>{unpaid_cycles_count} unpaid billing cycles</strong>.</p>'
+            f'<p>Possible disconnection may begin on or after <strong>{scheduled_date:%B %d, %Y}</strong> if no payment or approved arrangement is recorded.</p>'
+            '<p>Please contact the water office immediately.</p>'
+        )
+        notify_consumer(
+            consumer,
+            'Overdue account warning notice',
+            warning_message,
+            Notification.Types.ADMIN,
+            send_email=system_settings.notify_by_email,
+            send_sms=system_settings.notify_by_sms,
+            email_html_message=warning_email,
+            sms_message=warning_message,
+        )
+        log_audit_action(
+            None,
+            'Issued overdue warning notice',
+            target=consumer.full_name,
+            details=warning_message,
+        )
+
+    if send_notifications and should_escalate and scheduled_date:
+        message = _admin_disconnection_message(
+            consumer,
+            outstanding_balance,
+            unpaid_cycles_count,
+            last_payment_date,
+            scheduled_date,
+        )
+        notify_roles(
+            {ConsumerProfile.Roles.ADMIN},
+            'Disconnection monitoring list update',
+            message,
+            Notification.Types.ADMIN,
+            consumer=consumer,
+        )
+        log_audit_action(
+            None,
+            'Escalated account for disconnection monitoring',
+            target=consumer.full_name,
+            details=message,
+        )
+
+    return consumer
 
 
 def get_payments_received_for_month(selected_month, consumer=None, statuses=None):
@@ -1640,6 +2048,7 @@ def build_consumer_chart_data(consumer, months=6):
     status_counts = {
         BillingRecord.Statuses.PAID: 0,
         BillingRecord.Statuses.PENDING: 0,
+        BillingRecord.Statuses.PARTIALLY_PAID: 0,
         BillingRecord.Statuses.OVERDUE: 0,
     }
 
@@ -1656,7 +2065,9 @@ def build_consumer_chart_data(consumer, months=6):
             {
                 'label': billing.billing_month.strftime('%b %Y'),
                 'usage': str(billing.usage_m3),
-                'bill': str(billing.total_amount),
+                'bill': str(get_statement_total_for_billing(billing)),
+                'current_bill': str(billing.total_amount),
+                'arrears': str(billing.previous_arrears),
                 'paid': str(billing.amount_paid),
                 'balance': str(billing.amount_due),
                 'status': billing.status,
@@ -1667,6 +2078,7 @@ def build_consumer_chart_data(consumer, months=6):
         'status_counts': {
             'paid': status_counts.get(BillingRecord.Statuses.PAID, 0),
             'pending': status_counts.get(BillingRecord.Statuses.PENDING, 0),
+            'partially_paid': status_counts.get(BillingRecord.Statuses.PARTIALLY_PAID, 0),
             'overdue': status_counts.get(BillingRecord.Statuses.OVERDUE, 0),
         },
         'summary': {
@@ -1730,9 +2142,10 @@ def build_system_monitoring_data(selected_month=None, months=6):
         snapshot['balance'] += billing.amount_due or Decimal('0')
         snapshot['accounts'] += 1
 
-        if billing.status == BillingRecord.Statuses.PAID:
+        panel_status = resolve_billing_status(billing)
+        if panel_status == BillingRecord.Statuses.PAID:
             snapshot['paid_accounts'] += 1
-        elif billing.status == BillingRecord.Statuses.OVERDUE:
+        elif panel_status == BillingRecord.Statuses.OVERDUE:
             snapshot['overdue_accounts'] += 1
         else:
             snapshot['pending_accounts'] += 1
@@ -1936,18 +2349,92 @@ def get_previous_reading_for_month(consumer, billing_month):
     return get_previous_reading_details(consumer, billing_month)['value']
 
 
-def _sync_advance_payments_to_billing(billing):
+@transaction.atomic
+def rebuild_consumer_payment_allocations(consumer):
+    if consumer is None:
+        return []
+
+    payments = list(
+        Payment.objects.filter(consumer=consumer, status=Payment.Statuses.COMPLETED)
+        .select_related('billing')
+        .order_by('payment_date', 'created_at', 'id')
+    )
+    billings = sorted(
+        get_consumer_monthly_billings(consumer),
+        key=lambda billing: (month_start(billing.billing_month) or date.max, billing.created_at, billing.id),
+    )
+
+    if payments:
+        PaymentAllocation.objects.filter(payment__in=payments).delete()
+
+    arrangements_by_payment_id = {
+        arrangement.payment_id: arrangement
+        for arrangement in PaymentArrangement.objects.filter(payment__in=payments)
+        if arrangement.payment_id
+    }
+
+    for billing in billings:
+        billing.amount_paid = Decimal('0')
+
+    allocations = []
+    for payment in payments:
+        remaining_credit = payment.amount_credited
+        arrangement = arrangements_by_payment_id.get(payment.id)
+        if arrangement and arrangement.selected_billings:
+            selected_ids = [str(item.get('billing_id')) for item in arrangement.selected_billings if item.get('billing_id')]
+            candidate_billings = [billing for billing in billings if str(billing.id) in selected_ids]
+            candidate_billings.sort(
+                key=lambda billing: selected_ids.index(str(billing.id)) if str(billing.id) in selected_ids else len(selected_ids)
+            )
+        else:
+            covered_month = month_start(payment.display_covered_month)
+            candidate_billings = [
+                billing
+                for billing in billings
+                if covered_month is None or (month_start(billing.billing_month) and month_start(billing.billing_month) <= covered_month)
+            ]
+
+        for billing in candidate_billings:
+            if remaining_credit <= 0:
+                break
+
+            balance = billing.amount_due
+            if balance <= 0:
+                continue
+
+            applied = remaining_credit if remaining_credit <= balance else balance
+            billing.amount_paid += applied
+            remaining_credit -= applied
+            allocations.append(PaymentAllocation(payment=payment, billing=billing, amount_applied=applied))
+
+    if allocations:
+        PaymentAllocation.objects.bulk_create(allocations)
+
+    for billing in billings:
+        billing.save(update_fields=['amount_paid', 'status'])
+
+    refresh_consumer_account_status(consumer)
+
+    return billings
+
+
+def _sync_advance_payments_to_billing(billing, force_pending_status=False):
     Payment.objects.filter(
         consumer=billing.consumer,
         billing__isnull=True,
         covered_month=month_start(billing.billing_month),
     ).update(billing=billing)
 
-    billing.amount_paid = sum(
-        payment.amount_credited
-        for payment in billing.payments.filter(status=Payment.Statuses.COMPLETED).only('amount_paid', 'discount_amount')
-    )
-    billing.save(update_fields=['amount_paid', 'status'])
+    rebuild_consumer_payment_allocations(billing.consumer)
+    billing.refresh_from_db()
+
+    if force_pending_status:
+        BillingRecord.objects.filter(pk=billing.pk).update(
+            status=BillingRecord.Statuses.PENDING,
+        )
+        billing.status = BillingRecord.Statuses.PENDING
+        return billing
+
     return billing
 
 
@@ -1964,10 +2451,13 @@ def create_or_update_billing_from_reading(reading, system_settings=None):
     billing.previous_reading = reading.previous_reading
     billing.current_reading = reading.current_reading
     billing.rate_per_m3 = system_settings.rate_per_m3
+    billing.previous_arrears = get_previous_arrears_balance(reading.consumer, reading.billing_month)
     billing.billing_date = reading.reading_date
     billing.due_date = reading.reading_date + timedelta(days=system_settings.billing_due_days)
     billing.save()
-    return _sync_advance_payments_to_billing(billing)
+    billing = _sync_advance_payments_to_billing(billing, force_pending_status=True)
+    refresh_consumer_account_status(reading.consumer)
+    return billing
 
 
 def sync_existing_billings_with_settings(system_settings=None):
@@ -1988,10 +2478,12 @@ def sync_existing_billings_with_settings(system_settings=None):
             continue
 
         billing.rate_per_m3 = system_settings.rate_per_m3
+        billing.previous_arrears = get_previous_arrears_balance(billing.consumer, billing.billing_month)
         if expected_due_date:
             billing.due_date = expected_due_date
         billing.save()
         _sync_advance_payments_to_billing(billing)
+        refresh_consumer_account_status(billing.consumer)
         updated_records += 1
 
     return updated_records
@@ -2029,15 +2521,19 @@ def handle_meter_reading_submission(form, submitted_by):
             ('Previous Reading', f'{reading.previous_reading} m3'),
             ('Current Reading', f'{reading.current_reading} m3'),
             ('Usage', f'{reading.usage_m3} m3'),
+            ('Current Bill', f'PHP {billing.current_bill_amount}'),
+            ('Previous Arrears', f'PHP {billing.previous_arrears}'),
+            ('Total Outstanding', f'PHP {billing.statement_total_snapshot}'),
             ('Due Date', f'{billing.due_date:%B %d, %Y}'),
         ],
         total_label='TOTAL DUE',
-        total_value=f'PHP {billing.total_amount}',
+        total_value=f'PHP {billing.statement_total_snapshot}',
         footer_note='Please settle your bill on or before the due date to avoid penalties.',
     )
     consumer_sms_message = (
         f'Tabuan Water Billing: Reading posted for {reading.billing_month:%b %Y}. '
-        f'Usage {reading.usage_m3} m3. Amount due PHP {billing.total_amount}. '
+        f'Current bill PHP {billing.current_bill_amount}. Arrears PHP {billing.previous_arrears}. '
+        f'Total outstanding PHP {billing.statement_total_snapshot}. '
         f'Due {billing.due_date:%b %d, %Y}.'
     )
 
@@ -2077,16 +2573,21 @@ def send_billing_due_notification(billing, system_settings=None):
             ('Current Reading', f'{billing.current_reading} m3'),
             ('Consumption', f'{billing.usage_m3} m3'),
             ('Rate', f'PHP {billing.rate_per_m3} per m3'),
-            ('Amount Paid', f'PHP {billing.amount_paid}'),
+            ('Current Bill', f'PHP {billing.current_bill_amount}'),
+            ('Previous Arrears', f'PHP {billing.previous_arrears}'),
+            ('Service Charges', f'PHP {billing.service_charge}'),
+            ('Penalties', f'PHP {billing.penalty_amount}'),
+            ('Outstanding Balance', f'PHP {billing.statement_total_snapshot}'),
             ('Due Date', f'{billing.due_date:%B %d, %Y}'),
         ],
-        total_label='AMOUNT DUE',
-        total_value=f'PHP {billing.amount_due}',
+        total_label='TOTAL OUTSTANDING',
+        total_value=f'PHP {billing.statement_total_snapshot}',
         footer_note='Payment is due on or before the due date shown above.',
     )
     sms_message = (
         f'Tabuan Water Billing: SOA for {billing.billing_month:%b %Y}. '
-        f'Amount due PHP {billing.amount_due}. Due {billing.due_date:%b %d, %Y}.'
+        f'Current bill PHP {billing.current_bill_amount}. Arrears PHP {billing.previous_arrears}. '
+        f'Total outstanding PHP {billing.statement_total_snapshot}. Due {billing.due_date:%b %d, %Y}.'
     )
     return notify_consumer(
         billing.consumer,
@@ -2149,20 +2650,41 @@ def update_payment_status(payment, new_status, system_settings=None):
         payment.status = new_status
         payment.save(update_fields=['status'])
 
+    arrangement = getattr(payment, 'arrangement', None)
+    if arrangement is not None:
+        arrangement_status = arrangement.status
+        if new_status == Payment.Statuses.COMPLETED:
+            arrangement_status = PaymentArrangement.Statuses.COMPLETED
+        elif new_status == Payment.Statuses.FAILED and arrangement.status == PaymentArrangement.Statuses.COMPLETED:
+            arrangement_status = PaymentArrangement.Statuses.APPROVED
+        if arrangement.status != arrangement_status:
+            arrangement.status = arrangement_status
+            arrangement.save(update_fields=['status', 'updated_at'])
+
     if payment.billing_id:
         payment.billing.refresh_from_db()
+
+    refresh_consumer_account_status(payment.consumer)
 
     notifications = send_payment_notification(payment, system_settings=system_settings)
     return previous_status, notifications
 
 
 def get_audience_consumers(audience):
-    queryset = Consumer.objects.filter(status=Consumer.Statuses.ACTIVE).order_by('full_name')
+    consumers = list(Consumer.objects.filter(status=Consumer.Statuses.ACTIVE).order_by('full_name'))
     if audience == SMSBlast.Audiences.OVERDUE:
-        queryset = queryset.filter(billings__status=BillingRecord.Statuses.OVERDUE).distinct()
-    elif audience == SMSBlast.Audiences.PENDING:
-        queryset = queryset.filter(billings__status=BillingRecord.Statuses.PENDING).distinct()
-    return queryset
+        return [
+            consumer
+            for consumer in consumers
+            if any(resolve_billing_status(billing) == BillingRecord.Statuses.OVERDUE for billing in get_consumer_monthly_billings(consumer))
+        ]
+    if audience == SMSBlast.Audiences.PENDING:
+        return [
+            consumer
+            for consumer in consumers
+            if get_consumer_outstanding_balance(consumer) > 0
+        ]
+    return consumers
 
 
 def send_sms_blast(sent_by, audience, message):
