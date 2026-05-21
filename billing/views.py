@@ -1248,6 +1248,10 @@ def _build_consumer_panel_context(request, payment_form=None):
     if consumer:
         refresh_consumer_account_status(consumer, send_notifications=False)
         consumer.refresh_from_db()
+    notification_queryset = Notification.objects.filter(
+        recipient=request.user,
+        channel=Notification.Channels.IN_APP,
+    )
     current_billing, previous_billing = get_consumer_billing_comparison(consumer)
     paymongo_ready = system_settings.enable_online_payments and is_paymongo_configured()
     billing_records = get_consumer_monthly_billings(consumer, limit=10) if consumer else []
@@ -1269,6 +1273,7 @@ def _build_consumer_panel_context(request, payment_form=None):
     current_bill_amount = current_billing.total_amount if current_billing else Decimal('0')
     current_bill_penalty = current_billing.penalty_amount if current_billing else Decimal('0')
     current_billing_month = month_start(current_billing.billing_month) if current_billing else None
+    latest_meter_reading = consumer.meter_readings.order_by('-reading_date', '-created_at').first() if consumer else None
     current_bill_arrears = sum(
         (
             billing.amount_due
@@ -1289,16 +1294,18 @@ def _build_consumer_panel_context(request, payment_form=None):
             if consumer
             else Payment.objects.none()
         ),
+        'payment_tracking': (
+            consumer.payments.select_related('billing')[:12]
+            if consumer
+            else Payment.objects.none()
+        ),
         'receipts': (
             consumer.payments.filter(status=Payment.Statuses.COMPLETED).select_related('billing')[:10]
             if consumer
             else Payment.objects.none()
         ),
         'meter_readings': consumer.meter_readings.all()[:10] if consumer else MeterReading.objects.none(),
-        'notification_feed': Notification.objects.filter(
-            recipient=request.user,
-            channel=Notification.Channels.IN_APP,
-        )[:10],
+        'notification_feed': notification_queryset[:10],
         'current_billing': current_billing,
         'previous_billing': previous_billing,
         'unpaid_billing_records': unpaid_billing_records,
@@ -1329,6 +1336,18 @@ def _build_consumer_panel_context(request, payment_form=None):
             for item in ((account_overview['approved_arrangement'].selected_billings) if account_overview['approved_arrangement'] else [])
             if item.get('billing_id')
         ],
+        'consumer_billing_notification_count': notification_queryset.filter(notification_type=Notification.Types.BILL_DUE).count(),
+        'consumer_payment_update_count': notification_queryset.filter(notification_type=Notification.Types.PAYMENT).count(),
+        'consumer_warning_alert_count': notification_queryset.filter(
+            Q(title__icontains='warning') | Q(message__icontains='warning')
+        ).count() + (1 if account_overview['warning_active'] or consumer_is_delinquent else 0),
+        'consumer_current_usage_m3': (
+            current_billing.usage_m3
+            if current_billing
+            else (latest_meter_reading.usage_m3 if latest_meter_reading else Decimal('0'))
+        ),
+        'consumer_monthly_consumption_m3': latest_meter_reading.usage_m3 if latest_meter_reading else Decimal('0'),
+        'consumer_latest_meter_reading': latest_meter_reading,
     }
 
     if consumer and context['payment_form'] is None and paymongo_ready:
@@ -1368,7 +1387,81 @@ def _paymongo_home_url_for_request(request):
     role = get_user_role(request.user, create=True)
     if role in PAYMENT_MANAGER_ROLES:
         return reverse('payments')
-    return reverse('consumer_panel')
+    return reverse('consumer_payment')
+
+
+def _handle_consumer_payment_submission(request, consumer, system_settings, redirect_route):
+    payment_form = ConsumerPaymentForm(request.POST, request.FILES, consumer=consumer, system_settings=system_settings)
+    if not payment_form.is_valid():
+        return payment_form, None
+
+    if payment_form.arrangement_request_required:
+        arrangement = payment_form.save_arrangement_request(request.user)
+        notify_roles(
+            {ConsumerProfile.Roles.ADMIN, ConsumerProfile.Roles.TREASURER},
+            'Selective payment arrangement request',
+            (
+                f'{consumer.full_name} requested approval to settle selected billing months only. '
+                f'Arrangement #{arrangement.id} totals PHP {arrangement.requested_amount}.'
+            ),
+            Notification.Types.PAYMENT,
+            consumer=consumer,
+        )
+        messages.success(
+            request,
+            'Selective payment request submitted. Wait for admin or cashier approval before paying selected months.',
+        )
+        return None, redirect(redirect_route)
+
+    payment = payment_form.save()
+    payment_channel = payment_form.cleaned_data.get('payment_channel')
+
+    if payment.payment_method == Payment.Methods.ONLINE:
+        try:
+            ewallet_payment = create_paymongo_ewallet_payment(
+                payment,
+                request.build_absolute_uri(reverse('paymongo_success', args=[payment.id])),
+                request.build_absolute_uri(reverse('paymongo_cancel', args=[payment.id])),
+                payment_form.cleaned_data.get('online_wallet'),
+            )
+            _store_paymongo_gateway_start(payment, ewallet_payment)
+        except Exception as exc:
+            update_payment_status(
+                payment,
+                Payment.Statuses.FAILED,
+                system_settings=system_settings,
+            )
+            messages.error(request, f'Online payment could not be started: {exc}')
+            return None, redirect(redirect_route)
+
+        notify_roles(
+            {ConsumerProfile.Roles.ADMIN, ConsumerProfile.Roles.SECRETARY, ConsumerProfile.Roles.TREASURER},
+            'New online payment started by consumer',
+            (
+                f'{consumer.full_name} started a {payment.display_payment_method} PayMongo payment of '
+                f'PHP {payment.amount_paid}.'
+            ),
+            Notification.Types.PAYMENT,
+            consumer=consumer,
+            payment=payment,
+            billing=payment.billing,
+        )
+        return None, redirect(payment.gateway_redirect_url or ewallet_payment['redirect_url'])
+
+    notify_roles(
+        {ConsumerProfile.Roles.ADMIN, ConsumerProfile.Roles.SECRETARY, ConsumerProfile.Roles.TREASURER},
+        'Consumer payment submitted for verification',
+        (
+            f'{consumer.full_name} submitted a {payment_channel} payment record for verification. '
+            f'Amount: PHP {payment.amount_paid}.'
+        ),
+        Notification.Types.PAYMENT,
+        consumer=consumer,
+        payment=payment,
+        billing=payment.billing,
+    )
+    messages.success(request, 'Payment submitted successfully. It is now waiting for billing office verification.')
+    return None, redirect(redirect_route)
 
 
 def _render_profile_response_payload(request, context):
@@ -1891,73 +1984,30 @@ def reader_panel(request):
 
 @role_required(ConsumerProfile.Roles.CONSUMER)
 def consumer_panel(request):
+    context = _build_consumer_panel_context(request)
+    context['hide_header'] = True
+    return render(request, 'billing/consumer_dashboard.html', context)
+
+
+@role_required(ConsumerProfile.Roles.CONSUMER)
+def consumer_payment(request):
     consumer = get_linked_consumer(request.user)
     system_settings = SystemSettings.load()
-    payment_form = None
-    paymongo_ready = system_settings.enable_online_payments and is_paymongo_configured()
+    payment_form = ConsumerPaymentForm(consumer=consumer, system_settings=system_settings) if consumer else None
 
-    if consumer:
-        if request.method == 'POST':
-            if not paymongo_ready:
-                messages.error(request, 'Online payments are currently unavailable. Please contact the billing office.')
-                return redirect('consumer_panel')
-            payment_form = ConsumerPaymentForm(request.POST, consumer=consumer, system_settings=system_settings)
-            if payment_form.is_valid():
-                if payment_form.arrangement_request_required:
-                    arrangement = payment_form.save_arrangement_request(request.user)
-                    notify_roles(
-                        {ConsumerProfile.Roles.ADMIN, ConsumerProfile.Roles.TREASURER},
-                        'Selective payment arrangement request',
-                        (
-                            f'{consumer.full_name} requested approval to settle selected billing months only. '
-                            f'Arrangement #{arrangement.id} totals PHP {arrangement.requested_amount}.'
-                        ),
-                        Notification.Types.PAYMENT,
-                        consumer=consumer,
-                    )
-                    messages.success(
-                        request,
-                        'Selective payment request submitted. Wait for admin or cashier approval before paying selected months.',
-                    )
-                    return redirect('consumer_panel')
-                payment = payment_form.save()
-                try:
-                    ewallet_payment = create_paymongo_ewallet_payment(
-                        payment,
-                        request.build_absolute_uri(reverse('paymongo_success', args=[payment.id])),
-                        request.build_absolute_uri(reverse('paymongo_cancel', args=[payment.id])),
-                        payment_form.cleaned_data.get('online_wallet'),
-                    )
-                    _store_paymongo_gateway_start(payment, ewallet_payment)
-                except Exception as exc:
-                    update_payment_status(
-                        payment,
-                        Payment.Statuses.FAILED,
-                        system_settings=system_settings,
-                    )
-                    messages.error(request, f'Online payment could not be started: {exc}')
-                    return redirect('consumer_panel')
-
-                notify_roles(
-                    {ConsumerProfile.Roles.ADMIN, ConsumerProfile.Roles.SECRETARY, ConsumerProfile.Roles.TREASURER},
-                    'New online payment started by consumer',
-                    (
-                        f'{consumer.full_name} started a {payment.display_payment_method} PayMongo payment of '
-                        f'PHP {payment.amount_paid}.'
-                    ),
-                    Notification.Types.PAYMENT,
-                    consumer=consumer,
-                    payment=payment,
-                    billing=payment.billing,
-                )
-                return redirect(payment.gateway_redirect_url or ewallet_payment['redirect_url'])
-        else:
-            if paymongo_ready:
-                payment_form = ConsumerPaymentForm(consumer=consumer, system_settings=system_settings)
+    if consumer and request.method == 'POST':
+        payment_form, redirect_response = _handle_consumer_payment_submission(
+            request,
+            consumer,
+            system_settings,
+            'consumer_payment',
+        )
+        if redirect_response is not None:
+            return redirect_response
 
     context = _build_consumer_panel_context(request, payment_form=payment_form)
     context['hide_header'] = True
-    return render(request, 'billing/consumer_dashboard.html', context)
+    return render(request, 'billing/consumer_payment.html', context)
 
 
 @role_required(ConsumerProfile.Roles.CONSUMER)

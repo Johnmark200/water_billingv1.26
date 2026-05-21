@@ -1,30 +1,18 @@
-<div class="consumer-balance-layout">
+<div class="consumer-balance-layout" id="consumer-billing-history">
     <div class="consumer-balance-stack">
         <div class="consumer-balance-card">
             <span class="status-chip">Current Balance Card</span>
-            <h3>{{ consumer.full_name }}</h3>
-            <p class="muted">Transparent balance summary for your active water billing account.</p>
+            <h3>Total Outstanding Balance</h3>
+            <p class="muted">Live balance monitoring for your consumer billing account.</p>
             <p class="consumer-balance-amount" id="consumer-total-balance">PHP {{ consumer_running_balance|floatformat:2 }}</p>
             <div class="consumer-balance-meta">
-                <div>
-                    <span>Account Number</span>
-                    <strong>{{ consumer_account_number }}</strong>
-                </div>
-                <div>
-                    <span>Billing Status</span>
-                    <strong>{{ consumer_billing_status }}</strong>
-                </div>
-                <div>
-                    <span>Account Status</span>
-                    <strong>{% if consumer %}{{ consumer.get_account_status_display }}{% else %}{{ consumer_billing_status }}{% endif %}</strong>
-                </div>
                 <div>
                     <span>Due Date</span>
                     <strong>{% if consumer_balance_due_date %}{{ consumer_balance_due_date|date:'F d, Y' }}{% else %}No due date available{% endif %}</strong>
                 </div>
                 <div>
-                    <span>Pending Cycles</span>
-                    <strong id="balance-months-count">{{ unpaid_cycles_count }} month{{ unpaid_cycles_count|pluralize }} unpaid</strong>
+                    <span>Billing Status</span>
+                    <strong>{{ consumer_billing_status }}</strong>
                 </div>
             </div>
         </div>
@@ -33,7 +21,7 @@
             <div class="toolbar" style="justify-content: space-between; margin-bottom: 16px;">
                 <div>
                     <h3>Billing Breakdown</h3>
-                    <p class="muted">Previous arrears and the current month bill are shown separately before the running total.</p>
+                    <p class="muted">Previous arrears, current bill, penalties, and the running total are tracked separately.</p>
                 </div>
                 {% if current_billing %}
                     <span class="status-chip">{{ current_billing.billing_month|date:'F Y' }}</span>
@@ -42,94 +30,94 @@
             <div class="consumer-breakdown-grid">
                 <div class="consumer-breakdown-row">
                     <span>Previous Arrears</span>
-                    <strong>PHP {{ consumer_previous_arrears }}</strong>
+                    <strong>PHP {{ consumer_previous_arrears|floatformat:2 }}</strong>
                 </div>
                 <div class="consumer-breakdown-row">
-                    <span>Current Month Bill</span>
-                    <strong>PHP {{ consumer_current_bill_amount }}</strong>
+                    <span>Current Bill</span>
+                    <strong>PHP {{ consumer_current_bill_amount|floatformat:2 }}</strong>
                 </div>
                 <div class="consumer-breakdown-row">
                     <span>Penalties</span>
-                    <strong>PHP {{ consumer_current_bill_penalty }}</strong>
+                    <strong>PHP {{ consumer_current_bill_penalty|floatformat:2 }}</strong>
                 </div>
                 <div class="consumer-breakdown-row">
-                    <span>Latest Billing Status</span>
-                    <strong>{% if current_billing %}{{ current_billing.get_status_display }}{% else %}No billing yet{% endif %}</strong>
+                    <span>Total Balance</span>
+                    <strong>PHP {{ consumer_running_total_balance|floatformat:2 }}</strong>
                 </div>
-            </div>
-            <div class="consumer-breakdown-total">
-                <span>Total Balance</span>
-                <strong style="display: block; margin-top: 6px; font-size: 24px; color: var(--consumer-chart-ink);">PHP {{ consumer_running_total_balance|floatformat:2 }}</strong>
             </div>
         </div>
     </div>
 
     <div class="consumer-balance-side">
         <div class="consumer-unpaid-card">
-            <h3>Unpaid Billing Months</h3>
-            <p class="muted">Each unpaid billing cycle remains visible for audit and payment monitoring.</p>
-            {% if consumer_latest_arrangement %}
-                <div class="consumer-unpaid-item" style="border-style: dashed;">
-                    <span>Payment Arrangement</span>
-                    <strong>{{ consumer_latest_arrangement.get_status_display }}</strong>
-                    <div class="consumer-unpaid-status">
-                        Requested PHP {{ consumer_latest_arrangement.requested_amount }}{% if consumer_latest_arrangement.approved_by %} | Approved by {{ consumer_latest_arrangement.approved_by.username }}{% endif %}
-                    </div>
-                </div>
-            {% endif %}
+            <h3>Unpaid Bills Card</h3>
+            <p class="muted">Outstanding billing cycles remain visible until they are fully settled.</p>
             <div class="consumer-unpaid-list">
                 {% for bill in unpaid_billing_records %}
                     <div class="consumer-unpaid-item">
-                        <span>Billing Month</span>
+                        <span>Unpaid Month</span>
                         <strong>
                             <span style="display: inline; color: inherit; font-size: inherit; text-transform: none; letter-spacing: 0;">{{ bill.billing_month|date:'F Y' }}</span>
-                            <span style="display: inline; color: inherit; font-size: inherit; text-transform: none; letter-spacing: 0;">PHP {{ bill.amount_due }}</span>
+                            <span style="display: inline; color: inherit; font-size: inherit; text-transform: none; letter-spacing: 0;">PHP {{ bill.amount_due|floatformat:2 }}</span>
                         </strong>
-                        <div class="consumer-unpaid-status">Status: {{ bill.get_status_display }} | Remaining Balance: PHP {{ bill.amount_due }}</div>
+                        <div class="consumer-unpaid-status">Status: {{ bill.get_status_display }} | Due Date: {{ bill.due_date|date:'F d, Y' }}</div>
                     </div>
                 {% empty %}
                     <div class="consumer-unpaid-item">
-                        <span>Billing Month</span>
+                        <span>Unpaid Month</span>
                         <strong>All balances are settled</strong>
-                        <div class="consumer-unpaid-status">Status: Paid</div>
+                        <div class="consumer-unpaid-status">Pending Count: 0</div>
                     </div>
                 {% endfor %}
             </div>
             <div class="consumer-breakdown-total" style="margin-top: 16px;">
-                <span>Total Pending Bills</span>
+                <span>Pending Count</span>
                 <strong style="display: block; margin-top: 6px; font-size: 22px; color: var(--consumer-chart-ink);">{{ unpaid_cycles_count }}</strong>
             </div>
         </div>
 
-        {% if consumer_is_delinquent %}
-            <div class="consumer-warning-card">
-                <span class="status-chip" style="background: rgba(220, 38, 38, 0.14); color: #991b1b;">Warning Notice</span>
-                <h3>Delinquent Account</h3>
-                <p>Your account has reached <strong>{{ unpaid_cycles_count }} unpaid billing cycles</strong>.</p>
-                {% if consumer_scheduled_disconnection_date %}
-                    <p>Possible disconnection is scheduled on or after <strong>{{ consumer_scheduled_disconnection_date|date:'F d, Y' }}</strong>.</p>
-                {% endif %}
-                {% if consumer_countdown_active and consumer_days_until_disconnection is not None %}
-                    <p><strong>{{ consumer_days_until_disconnection }}</strong> day{{ consumer_days_until_disconnection|pluralize }} remaining before disconnection review.</p>
-                {% endif %}
-                <p>Please settle your balance immediately to avoid service interruption, collection prioritization, or disconnection notice preparation.</p>
+        <div class="consumer-unpaid-card">
+            <h3>Notifications Card</h3>
+            <p class="muted">Recent alert totals help you monitor billing notices and payment updates quickly.</p>
+            <div class="consumer-unpaid-list">
+                <div class="consumer-unpaid-item">
+                    <span>Billing Notifications</span>
+                    <strong>{{ consumer_billing_notification_count }}</strong>
+                    <div class="consumer-unpaid-status">Bill due reminders and balance notices.</div>
+                </div>
+                <div class="consumer-unpaid-item">
+                    <span>Payment Updates</span>
+                    <strong>{{ consumer_payment_update_count }}</strong>
+                    <div class="consumer-unpaid-status">Verification and payment-related updates.</div>
+                </div>
+                <div class="consumer-unpaid-item">
+                    <span>Warning Alerts</span>
+                    <strong>{{ consumer_warning_alert_count }}</strong>
+                    <div class="consumer-unpaid-status">Delinquency and disconnection-related warnings.</div>
+                </div>
             </div>
-        {% endif %}
+        </div>
 
-        {% if consumer_warning_active %}
-            <div class="consumer-warning-card" style="background: linear-gradient(135deg, rgba(255, 244, 229, 0.96), rgba(255, 230, 230, 0.96)); border-color: rgba(220, 38, 38, 0.2);">
-                <span class="status-chip" style="background: rgba(220, 38, 38, 0.14); color: #991b1b;">Overdue Warning Banner</span>
-                <h3>Disconnection Monitoring</h3>
-                <p>Your account is currently under overdue monitoring because it has <strong>{{ unpaid_cycles_count }} unpaid billing cycles</strong>.</p>
-                {% if consumer_scheduled_disconnection_date %}
-                    <p>Scheduled disconnection date: <strong>{{ consumer_scheduled_disconnection_date|date:'F d, Y' }}</strong></p>
-                {% endif %}
-                {% if consumer_approved_arrangement %}
-                    <p>Approved arrangement status: <strong>{{ consumer_approved_arrangement.get_status_display }}</strong>{% if consumer_approved_arrangement.approved_by %} by {{ consumer_approved_arrangement.approved_by.username }}{% endif %}.</p>
+        <div class="consumer-warning-card">
+            <span class="status-chip" style="background: rgba(220, 38, 38, 0.14); color: #991b1b;">Warning Card</span>
+            <h3>Account Warning Status</h3>
+            <p><strong>Delinquent Status:</strong> {% if consumer_is_delinquent %}Delinquent{% else %}Normal{% endif %}</p>
+            <p>
+                <strong>Disconnection Warning:</strong>
+                {% if consumer_warning_active or consumer_is_delinquent %}
+                    Active{% if consumer_scheduled_disconnection_date %} until {{ consumer_scheduled_disconnection_date|date:'F d, Y' }}{% endif %}
                 {% else %}
-                    <p>No approved arrangement is currently attached to the overdue balance.</p>
+                    No current warning
                 {% endif %}
-            </div>
-        {% endif %}
+            </p>
+            <p>
+                <strong>Countdown Before Disconnection:</strong>
+                {% if consumer_countdown_active and consumer_days_until_disconnection is not None %}
+                    {{ consumer_days_until_disconnection }} day{{ consumer_days_until_disconnection|pluralize }} remaining
+                {% else %}
+                    No countdown in progress
+                {% endif %}
+            </p>
+        </div>
     </div>
 </div>

@@ -267,6 +267,7 @@ class Payment(models.Model):
     approved_at = models.DateTimeField(null=True, blank=True)
     arrangement_note = models.TextField(blank=True)
     reference_number = models.CharField(max_length=100, blank=True)
+    proof_of_payment = models.FileField(upload_to='payment_proofs/', blank=True, null=True)
     gateway = models.CharField(max_length=30, blank=True)
     gateway_reference = models.CharField(max_length=120, blank=True)
     gateway_payment_id = models.CharField(max_length=120, blank=True)

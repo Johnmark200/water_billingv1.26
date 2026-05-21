@@ -140,8 +140,14 @@ def build_navigation_items(role):
         )
 
     if role == ConsumerProfile.Roles.CONSUMER:
-        items.append({'label': 'Account Center', 'url_name': 'account_center', 'icon': 'bi-person-badge'})
-        items.append({'label': 'Notifications', 'url_name': 'notifications', 'icon': 'bi-bell'})
+        items.extend(
+            [
+                {'label': 'Billing History', 'url_name': 'consumer_panel', 'icon': 'bi-receipt', 'fragment': 'consumer-billing-history'},
+                {'label': 'Water Consumption', 'url_name': 'consumer_panel', 'icon': 'bi-droplet', 'fragment': 'consumer-water-consumption'},
+                {'label': 'Notifications', 'url_name': 'notifications', 'icon': 'bi-bell'},
+                {'label': 'Payment', 'url_name': 'consumer_payment', 'icon': 'bi-wallet2'},
+            ]
+        )
 
     items.append({'label': 'Profile', 'url_name': 'profile', 'icon': 'bi-person-circle'})
     return items

@@ -482,7 +482,7 @@ class SelectiveArrangementWorkflowTests(TestCase):
         self.client.force_login(self.user)
 
         response = self.client.post(
-            reverse('consumer_panel'),
+            reverse('consumer_payment'),
             data={
                 'covered_month': '2026-05',
                 'payment_option': Payment.PaymentOptions.PARTIAL,
@@ -1107,9 +1107,10 @@ class StaffPanelPendingMonitoringTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context['pending_accounts_count'], 1)
         self.assertEqual(response.context['overdue_accounts_count'], 1)
-        self.assertContains(response, 'Accounts Needing Settlement')
+        self.assertContains(response, 'Billing Monitoring')
         self.assertContains(response, 'Pending Consumer')
         self.assertContains(response, 'Overdue Consumer')
+        self.assertNotContains(response, 'Meeting Minutes')
 
     def test_secretary_live_payload_reports_pending_and_overdue_counts(self):
         self.client.force_login(self.secretary)
@@ -1713,13 +1714,16 @@ class DashboardPanelRegressionTests(TestCase):
         self.assertEqual(live_response.status_code, 200)
         self.assertIn('rows_html', live_response.json())
 
-    def test_consumer_dashboard_uses_performance_trend_layout(self):
+    def test_consumer_dashboard_uses_monitoring_only_layout(self):
         self.client.force_login(self.consumer_user)
 
         response = self.client.get(reverse('consumer_panel'))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Performance Trend')
-        self.assertNotContains(response, 'Billing Status Snapshot')
+        self.assertContains(response, 'Current Balance Card')
+        self.assertContains(response, 'Notifications Card')
+        self.assertContains(response, 'Consumption Information')
+        self.assertNotContains(response, 'Performance Trend')
+        self.assertNotContains(response, 'Submit Payment')
 
 
 class AuthAndBrandingRegressionTests(TestCase):
@@ -2013,10 +2017,10 @@ class ReceiptActionRegressionTests(TestCase):
             reference_number='pi_123456789',
         )
 
-    def test_consumer_dashboard_receipts_offer_view_and_print_links(self):
+    def test_consumer_payment_page_receipts_offer_view_and_print_links(self):
         self.client.force_login(self.user)
 
-        response = self.client.get(reverse('consumer_panel'))
+        response = self.client.get(reverse('consumer_payment'))
         receipt_url = reverse('payment_receipt', args=[self.payment.id])
 
         self.assertEqual(response.status_code, 200)
@@ -2137,29 +2141,29 @@ class ConsumerDashboardMonitoringTests(TestCase):
             reference_number='pi_pending',
         )
 
-    def test_consumer_dashboard_uses_wallet_checkout_flow_without_method_selector(self):
+    def test_consumer_payment_page_shows_dedicated_payment_methods(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('consumer_payment'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Payment Method Selection')
+        self.assertContains(response, 'GCash')
+        self.assertContains(response, 'Bank')
+        self.assertContains(response, 'Cash')
+
+    def test_consumer_dashboard_and_payment_page_are_separated(self):
         self.client.force_login(self.user)
 
         response = self.client.get(reverse('consumer_panel'))
+        payment_response = self.client.get(reverse('consumer_payment'))
 
         self.assertEqual(response.status_code, 200)
-        self.assertNotContains(response, '<label for="id_payment_method">Payment method</label>', html=True)
-        self.assertContains(response, 'Continue to PayMongo')
-        self.assertContains(response, 'Choose E-Wallet')
-
-    def test_consumer_dashboard_splits_receipts_from_payment_monitoring(self):
-        self.client.force_login(self.user)
-
-        response = self.client.get(reverse('consumer_panel'))
-        receipt_url = reverse('payment_receipt', args=[self.completed_payment.id])
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Payment Monitoring')
-        self.assertContains(response, 'Continue Checkout')
-        self.assertContains(response, 'https://checkout.paymongo.com/test-session')
-        self.assertContains(response, receipt_url)
-        self.assertEqual(response.content.decode().count('pi_completed'), 1)
-        self.assertEqual(response.content.decode().count('pi_pending'), 1)
+        self.assertNotContains(response, 'Payment Status Tracking')
+        self.assertNotContains(response, 'Upload Proof of Payment')
+        self.assertContains(payment_response, 'Payment Status Tracking')
+        self.assertContains(payment_response, 'Upload Proof of Payment')
+        self.assertContains(payment_response, 'Pending Verification')
 
     def test_consumer_panel_data_only_returns_active_monitoring_rows(self):
         self.client.force_login(self.user)
@@ -2177,9 +2181,8 @@ class ConsumerDashboardMonitoringTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Current Balance Card')
-        self.assertContains(response, 'Account Number')
         self.assertContains(response, 'Billing Status')
-        self.assertContains(response, 'Unpaid Billing Months')
+        self.assertContains(response, 'Unpaid Bills Card')
 
 
 class ConsumerDashboardDelinquentWarningTests(TestCase):
@@ -2284,15 +2287,15 @@ class PaymentCheckoutGuideTests(TestCase):
         self.assertContains(response, 'Selected e-wallet')
         self.assertNotContains(response, '<label for="id_online_channel">', html=False)
 
-    def test_consumer_dashboard_contains_paymongo_wallet_steps(self):
+    def test_consumer_payment_page_contains_payment_workflow_sections(self):
         self.client.force_login(self.consumer_user)
 
-        response = self.client.get(reverse('consumer_panel'))
+        response = self.client.get(reverse('consumer_payment'))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'PayMongo Checkout Steps')
-        self.assertContains(response, 'Choose Wallet')
-        self.assertContains(response, 'After the wallet confirms the payment')
+        self.assertContains(response, 'Outstanding Balance')
+        self.assertContains(response, 'Upload Proof of Payment')
+        self.assertContains(response, 'Payment Status Tracking')
 
 
 class StaffPaymongoCheckoutTests(TestCase):

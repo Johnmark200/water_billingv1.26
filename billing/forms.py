@@ -594,6 +594,17 @@ def build_payment_method_choices(system_settings):
 
 class ConsumerPaymentForm(forms.ModelForm):
     covered_month = forms.ChoiceField(label='Payment month')
+    payment_channel = forms.ChoiceField(
+        label='Payment method',
+        choices=[
+            ('gcash', 'GCash'),
+            ('bank', 'Bank'),
+            ('cash', 'Cash'),
+        ],
+        initial='gcash',
+        required=False,
+        widget=forms.RadioSelect,
+    )
     selected_billings = forms.MultipleChoiceField(
         label='Selected unpaid months',
         required=False,
@@ -623,10 +634,14 @@ class ConsumerPaymentForm(forms.ModelForm):
         required=False,
         widget=forms.Textarea(attrs={'rows': 3}),
     )
+    proof_of_payment = forms.FileField(
+        label='Proof of payment',
+        required=False,
+    )
 
     class Meta:
         model = Payment
-        fields = ['payment_method', 'payment_option', 'amount_paid', 'reference_number', 'online_wallet']
+        fields = ['payment_method', 'payment_option', 'amount_paid', 'reference_number', 'online_wallet', 'proof_of_payment']
 
     def __init__(self, *args, consumer=None, system_settings=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -638,8 +653,13 @@ class ConsumerPaymentForm(forms.ModelForm):
         self.approved_arrangement = None
         self.fields['payment_method'].choices = [(Payment.Methods.ONLINE, Payment.Methods.ONLINE.label)]
         self.fields['payment_method'].initial = Payment.Methods.ONLINE
+        self.fields['payment_method'].widget = forms.HiddenInput()
         self.fields['reference_number'].required = False
-        self.fields['reference_number'].widget = forms.HiddenInput()
+        self.fields['reference_number'].widget.attrs.update(
+            {
+                'placeholder': 'Enter bank reference number or office receipt number',
+            }
+        )
         self.fields['amount_paid'].required = False
         self.fields['amount_paid'].widget.attrs.update({'readonly': 'readonly'})
         self.fields['covered_month'].help_text = 'Bulk payment automatically uses your full outstanding balance.'
@@ -663,6 +683,7 @@ class ConsumerPaymentForm(forms.ModelForm):
     def clean(self):
         cleaned_data = super().clean()
         covered_month = cleaned_data.get('covered_month')
+        payment_channel = (cleaned_data.get('payment_channel') or 'gcash').strip().lower()
         payment_option = cleaned_data.get('payment_option') or Payment.PaymentOptions.FULL
         selected_ids = cleaned_data.get('selected_billings') or []
         selected_billings = get_selected_billings_for_consumer(self.consumer, selected_ids) if self.consumer else []
@@ -670,11 +691,10 @@ class ConsumerPaymentForm(forms.ModelForm):
         if covered_month and self.consumer:
             cleaned_data['billing'] = get_existing_billing_for_month(self.consumer, covered_month)
 
-        if not self.system_settings.enable_online_payments:
+        if payment_channel == 'gcash' and not self.system_settings.enable_online_payments:
             raise forms.ValidationError('Online payments are not enabled yet. Please contact the administrator.')
         if self.consumer and not self.available_months:
             raise forms.ValidationError('No payment months are available right now. Please contact the administrator.')
-        cleaned_data['payment_method'] = Payment.Methods.ONLINE
         billing = cleaned_data.get('billing')
         if payment_option == Payment.PaymentOptions.FULL:
             cleaned_data['settlement_scope'] = Payment.SettlementScopes.BULK
@@ -702,12 +722,20 @@ class ConsumerPaymentForm(forms.ModelForm):
                 cleaned_data['amount_paid'] = sum((selected.amount_due for selected in selected_billings), Decimal('0'))
                 self.approved_arrangement = get_matching_approved_arrangement(self.consumer, selected_billings)
                 self.arrangement_request_required = self.approved_arrangement is None
-        if not self.arrangement_request_required and cleaned_data.get('online_wallet') not in {
-            'gcash',
-            'paymaya',
-        }:
-            self.add_error('online_wallet', 'Choose GCash or Maya before continuing to PayMongo.')
-        cleaned_data['reference_number'] = ''
+
+        if payment_channel == 'gcash':
+            cleaned_data['payment_method'] = Payment.Methods.ONLINE
+            cleaned_data['online_wallet'] = 'gcash'
+            if not self.arrangement_request_required and cleaned_data.get('online_wallet') not in {'gcash', 'paymaya'}:
+                self.add_error('payment_channel', 'Choose a supported e-wallet before continuing to PayMongo.')
+            cleaned_data['reference_number'] = ''
+        elif payment_channel == 'bank':
+            cleaned_data['payment_method'] = Payment.Methods.BANK
+            cleaned_data['online_wallet'] = ''
+        else:
+            cleaned_data['payment_method'] = Payment.Methods.CASH
+            cleaned_data['online_wallet'] = ''
+
         if (cleaned_data.get('amount_paid') or Decimal('0')) <= 0:
             self.add_error('amount_paid', 'Amount paid must be greater than zero.')
 
@@ -734,10 +762,11 @@ class ConsumerPaymentForm(forms.ModelForm):
         payment.covered_month = self.cleaned_data.get('covered_month')
         payment.discount_amount = Decimal('0')
         payment.payment_date = timezone.localdate()
-        payment.payment_method = Payment.Methods.ONLINE
+        payment.payment_method = self.cleaned_data.get('payment_method', Payment.Methods.ONLINE)
         payment.status = Payment.Statuses.PENDING
-        payment.gateway = self.cleaned_data.get('online_wallet', '')
-        payment.reference_number = ''
+        payment.gateway = self.cleaned_data.get('online_wallet', '') if payment.payment_method == Payment.Methods.ONLINE else ''
+        payment.reference_number = '' if payment.payment_method == Payment.Methods.ONLINE else (self.cleaned_data.get('reference_number', '') or '')
+        payment.proof_of_payment = self.cleaned_data.get('proof_of_payment')
         payment.settlement_scope = self.cleaned_data.get('settlement_scope', Payment.SettlementScopes.BULK)
         payment.arrangement_note = self.cleaned_data.get('arrangement_note', '')
         if commit:

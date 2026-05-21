@@ -60,7 +60,7 @@ def database_config_from_url(url):
 load_env_file(BASE_DIR / '.env')
 
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'change-me-in-production')
-DEBUG = env_bool('DEBUG', False)
+DEBUG = env_bool('DEBUG', True)
 
 allowed_hosts = env_list('ALLOWED_HOSTS', 'localhost,127.0.0.1')
 render_hostname = os.getenv('RENDER_EXTERNAL_HOSTNAME', '').strip()

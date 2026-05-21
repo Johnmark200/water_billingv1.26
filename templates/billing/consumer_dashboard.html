@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Consumer Portal{% endblock %}
+{% block title %}Consumer Dashboard{% endblock %}
 {% block extra_css %}
 <style>
     :root {
@@ -8,15 +8,6 @@
         --consumer-chart-shadow: 0 18px 34px rgba(24, 54, 66, 0.08);
         --consumer-chart-ink: #183642;
         --consumer-chart-muted: #5c7985;
-        --consumer-chart-chip-bg: rgba(15, 118, 110, 0.1);
-        --consumer-chart-chip-ink: #115e59;
-        --consumer-chart-grid: rgba(92, 121, 133, 0.18);
-        --consumer-chart-track: rgba(92, 121, 133, 0.12);
-        --consumer-chart-hole: #ffffff;
-        --consumer-usage-color: #3ea0ff;
-        --consumer-bill-color: #ff905f;
-        --consumer-paid-color: #22c55e;
-        --consumer-overdue-color: #ef4444;
     }
 
     html[data-theme="dark"] {
@@ -25,244 +16,6 @@
         --consumer-chart-shadow: 0 22px 40px rgba(2, 6, 23, 0.42);
         --consumer-chart-ink: #f8fafc;
         --consumer-chart-muted: #b8bfdb;
-        --consumer-chart-chip-bg: rgba(148, 163, 184, 0.14);
-        --consumer-chart-chip-ink: #d8ddf5;
-        --consumer-chart-grid: rgba(184, 191, 219, 0.14);
-        --consumer-chart-track: rgba(148, 163, 184, 0.14);
-        --consumer-chart-hole: #1a2238;
-    }
-
-    .payment-wallet-modal {
-        position: fixed;
-        inset: 0;
-        z-index: 80;
-        display: none;
-        align-items: center;
-        justify-content: center;
-        padding: 20px;
-        background: var(--overlay);
-    }
-
-    .payment-wallet-modal.visible {
-        display: flex;
-    }
-
-    .wallet-dialog {
-        width: min(520px, 100%);
-        background: var(--panel-elevated);
-        border: 1px solid var(--panel-border);
-        border-radius: 8px;
-        box-shadow: var(--shadow-strong);
-        overflow: hidden;
-    }
-
-    .wallet-dialog-header {
-        padding: 18px 22px;
-        border-top: 8px solid var(--brand);
-        border-bottom: 1px solid var(--line);
-    }
-
-    .wallet-dialog-header h3 {
-        margin: 0 0 6px;
-    }
-
-    .wallet-dialog-body {
-        padding: 22px;
-    }
-
-    .wallet-options {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 12px;
-    }
-
-    .wallet-option {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        min-height: 86px;
-        padding: 14px;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: var(--panel);
-        cursor: pointer;
-        transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
-    }
-
-    .wallet-option:hover,
-    .wallet-option.selected {
-        border-color: var(--brand);
-        box-shadow: 0 12px 24px rgba(15, 118, 110, 0.12);
-        transform: translateY(-2px);
-    }
-
-    .wallet-mark {
-        display: grid;
-        place-items: center;
-        width: 46px;
-        height: 46px;
-        border-radius: 8px;
-        color: #fff;
-        font-weight: 800;
-        flex: 0 0 auto;
-    }
-
-    .wallet-mark.gcash { background: #1769ff; }
-    .wallet-mark.maya { background: #16a34a; }
-
-    .wallet-copy strong {
-        display: block;
-        margin-bottom: 4px;
-    }
-
-    .wallet-dialog-actions {
-        display: flex;
-        justify-content: flex-end;
-        gap: 10px;
-        padding: 18px 22px;
-        border-top: 1px solid var(--line);
-        background: color-mix(in srgb, var(--panel) 82%, var(--bg));
-    }
-
-    @media (max-width: 560px) {
-        .wallet-options {
-            grid-template-columns: 1fr;
-        }
-    }
-
-    .consumer-performance-card {
-        padding: 0;
-        border-radius: 20px;
-        background: var(--consumer-chart-card);
-        border: 1px solid var(--consumer-chart-border);
-        box-shadow: var(--consumer-chart-shadow);
-        overflow: hidden;
-    }
-
-    .consumer-performance-header {
-        display: flex;
-        justify-content: space-between;
-        gap: 16px;
-        align-items: flex-start;
-        padding: 18px 22px;
-        border-bottom: 1px solid var(--line);
-        background: color-mix(in srgb, var(--consumer-chart-card) 88%, var(--bg));
-    }
-
-    .consumer-performance-title {
-        display: flex;
-        align-items: flex-start;
-        gap: 12px;
-    }
-
-    .consumer-performance-icon {
-        position: relative;
-        width: 28px;
-        height: 28px;
-        border-radius: 8px;
-        background: color-mix(in srgb, var(--consumer-usage-color) 12%, transparent);
-        border: 1px solid color-mix(in srgb, var(--consumer-usage-color) 24%, transparent);
-        flex: 0 0 auto;
-        margin-top: 2px;
-    }
-
-    .consumer-performance-icon::before,
-    .consumer-performance-icon::after {
-        content: "";
-        position: absolute;
-        left: 6px;
-        right: 6px;
-        border-top: 2px solid var(--consumer-usage-color);
-        border-radius: 999px;
-    }
-
-    .consumer-performance-icon::before {
-        top: 16px;
-        transform: rotate(-18deg);
-    }
-
-    .consumer-performance-icon::after {
-        top: 11px;
-        transform: rotate(14deg);
-    }
-
-    .consumer-performance-title h3 {
-        margin: 0 0 4px;
-        color: var(--consumer-chart-ink);
-    }
-
-    .consumer-performance-title p {
-        margin: 0;
-        color: var(--consumer-chart-muted);
-    }
-
-    .consumer-performance-chips {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-        justify-content: flex-end;
-    }
-
-    .consumer-performance-chip {
-        display: inline-flex;
-        align-items: center;
-        padding: 7px 10px;
-        border-radius: 999px;
-        background: var(--consumer-chart-chip-bg);
-        color: var(--consumer-chart-chip-ink);
-        font-size: 12px;
-        font-weight: 600;
-        white-space: nowrap;
-    }
-
-    #consumer-performance-trend-chart {
-        width: 100%;
-        display: block;
-        padding: 16px 18px 6px;
-    }
-
-    .consumer-performance-footer {
-        display: grid;
-        grid-template-columns: repeat(5, minmax(0, 1fr));
-        gap: 16px;
-        padding: 0 22px 20px;
-    }
-
-    .consumer-performance-metric {
-        display: grid;
-        gap: 6px;
-        padding-top: 14px;
-        border-top: 1px solid var(--line);
-    }
-
-    .consumer-performance-metric span {
-        color: var(--consumer-chart-muted);
-        font-size: 13px;
-    }
-
-    .consumer-performance-metric strong {
-        color: var(--consumer-chart-ink);
-        font-size: 20px;
-    }
-
-    @media (max-width: 980px) {
-        .consumer-performance-header {
-            flex-direction: column;
-        }
-
-        .consumer-performance-chips {
-            justify-content: flex-start;
-        }
-
-        .consumer-performance-footer {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-    }
-
-    @media (max-width: 640px) {
-        .consumer-performance-footer {
-            grid-template-columns: 1fr;
-        }
     }
 
     .consumer-balance-layout {
@@ -273,7 +26,8 @@
     }
 
     .consumer-balance-stack,
-    .consumer-balance-side {
+    .consumer-balance-side,
+    .consumer-consumption-grid {
         display: grid;
         gap: 18px;
     }
@@ -292,7 +46,8 @@
     .consumer-balance-card h3,
     .consumer-breakdown-card h3,
     .consumer-unpaid-card h3,
-    .consumer-warning-card h3 {
+    .consumer-warning-card h3,
+    .consumer-consumption-card h3 {
         margin-top: 0;
         margin-bottom: 8px;
     }
@@ -314,7 +69,8 @@
 
     .consumer-balance-meta div,
     .consumer-unpaid-item,
-    .consumer-breakdown-row {
+    .consumer-breakdown-row,
+    .consumer-consumption-item {
         padding: 12px 14px;
         border-radius: 14px;
         background: color-mix(in srgb, var(--consumer-chart-card) 84%, var(--bg));
@@ -323,7 +79,8 @@
 
     .consumer-balance-meta span,
     .consumer-unpaid-item span,
-    .consumer-breakdown-row span {
+    .consumer-breakdown-row span,
+    .consumer-consumption-item span {
         display: block;
         color: var(--consumer-chart-muted);
         font-size: 12px;
@@ -333,7 +90,8 @@
 
     .consumer-balance-meta strong,
     .consumer-unpaid-item strong,
-    .consumer-breakdown-row strong {
+    .consumer-breakdown-row strong,
+    .consumer-consumption-item strong {
         display: block;
         margin-top: 6px;
         font-size: 16px;
@@ -342,7 +100,8 @@
 
     .consumer-breakdown-card,
     .consumer-unpaid-card,
-    .consumer-warning-card {
+    .consumer-warning-card,
+    .consumer-consumption-card {
         padding: 22px 24px;
         border-radius: 22px;
         background: var(--consumer-chart-card);
@@ -350,10 +109,9 @@
         box-shadow: var(--consumer-chart-shadow);
     }
 
-    .consumer-breakdown-grid {
-        display: grid;
+    .consumer-breakdown-grid,
+    .consumer-consumption-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 12px;
     }
 
     .consumer-breakdown-total {
@@ -389,10 +147,6 @@
             var(--consumer-chart-card);
     }
 
-    .consumer-warning-card p:last-child {
-        margin-bottom: 0;
-    }
-
     @media (max-width: 980px) {
         .consumer-balance-layout {
             grid-template-columns: 1fr;
@@ -401,197 +155,55 @@
 
     @media (max-width: 640px) {
         .consumer-balance-meta,
-        .consumer-breakdown-grid {
+        .consumer-breakdown-grid,
+        .consumer-consumption-grid {
             grid-template-columns: 1fr;
         }
     }
 </style>
 {% endblock %}
 {% block content %}
-<section class="page-wrap">
-    <div class="status-feedback" id="consumer-live-feedback" hidden></div>
-</section>
-
 {% if consumer %}
-<section class="page-wrap">
-    <div class="form-card">
-        <h3>Submit Payment</h3>
-        <p class="muted">Choose the next due month, then continue through the PayMongo e-wallet checkout.</p>
-        {% if payment_form %}
-            <form method="post" id="consumer-payment-form" data-transaction-form>
-                {% csrf_token %}
-                {% if payment_form.non_field_errors %}
-                    <div class="status-feedback error">
-                        {% for error in payment_form.non_field_errors %}
-                            <div>{{ error }}</div>
-                        {% endfor %}
-                    </div>
-                {% endif %}
-                <p>
-                    <label for="{{ payment_form.covered_month.id_for_label }}">Reference month</label>
-                    {{ payment_form.covered_month }}
-                    <span class="muted">{{ payment_form.covered_month.help_text }}</span>
-                    {% for error in payment_form.covered_month.errors %}
-                        <span class="field-error">{{ error }}</span>
-                    {% endfor %}
-                </p>
-                {{ payment_form.payment_method }}
-                <div class="comparison-card" style="margin-bottom: 14px;">
-                    <h4 style="margin: 0 0 8px;">Payment Option</h4>
-                    {{ payment_form.payment_option }}
-                    <p class="muted" style="margin-bottom: 0;">
-                        Current balance: <strong id="consumer-current-balance">PHP 0.00</strong>.
-                        Full payment settles all unpaid months. Partial payment uses only the months you select below and requires approval.
-                    </p>
-                    {% for error in payment_form.payment_option.errors %}
-                        <span class="field-error">{{ error }}</span>
-                    {% endfor %}
-                </div>
-                <div class="comparison-card" style="margin-bottom: 14px;">
-                    <h4 style="margin: 0 0 8px;">Selective Billing Months</h4>
-                    {{ payment_form.selected_billings }}
-                    <p class="muted" style="margin-bottom: 0;">Choose the specific billing months you want to settle if you are requesting a selective payment arrangement.</p>
-                    {% for error in payment_form.selected_billings.errors %}
-                        <span class="field-error">{{ error }}</span>
-                    {% endfor %}
-                </div>
-                <p>
-                    <label for="{{ payment_form.amount_paid.id_for_label }}">Amount paid</label>
-                    {{ payment_form.amount_paid }}
-                    {% for error in payment_form.amount_paid.errors %}
-                        <span class="field-error">{{ error }}</span>
-                    {% endfor %}
-                </p>
-                <p>
-                    <label for="{{ payment_form.arrangement_note.id_for_label }}">Arrangement note</label>
-                    {{ payment_form.arrangement_note }}
-                    {% for error in payment_form.arrangement_note.errors %}
-                        <span class="field-error">{{ error }}</span>
-                    {% endfor %}
-                </p>
-                {{ payment_form.reference_number }}
-                {{ payment_form.online_wallet }}
-                {% if payment_form.online_wallet.errors %}
-                    <p>
-                    {% for error in payment_form.online_wallet.errors %}
-                        <span class="field-error">{{ error }}</span>
-                    {% endfor %}
-                    </p>
-                {% endif %}
-                <p class="muted" id="online-payment-note">
-                    Full bulk payments continue directly to PayMongo. Selective month payments create an approval request first unless the arrangement has already been approved.
-                </p>
-                <div class="btn-row">
-                    <button type="submit" class="btn" id="payment-submit-button">Submit Payment or Arrangement Request</button>
-                </div>
-            </form>
-        {% else %}
-            <p class="empty-state">
-                {% if consumer_paymongo_ready %}
-                    No payment channels are currently available.
-                {% else %}
-                    Online payments are currently unavailable. Please contact the billing office.
-                {% endif %}
-            </p>
-        {% endif %}
-    </div>
-</section>
-
-<div class="payment-wallet-modal" id="payment-wallet-modal" aria-hidden="true">
-    <div class="wallet-dialog" role="dialog" aria-modal="true" aria-labelledby="wallet-dialog-title">
-        <div class="wallet-dialog-header">
-            <h3 id="wallet-dialog-title">Choose E-Wallet</h3>
-            <p class="muted">Select the wallet you want to use. After redirecting to PayMongo, open the E-wallets tab, choose the same provider, and complete the OTP or app PIN verification.</p>
-        </div>
-        <div class="wallet-dialog-body">
-            <p class="status-chip" style="margin-top: 0;">Current balance: <span id="wallet-current-balance" style="margin-left: 6px;">PHP 0.00</span></p>
-            <div class="wallet-options">
-                <button type="button" class="wallet-option" data-wallet="gcash">
-                    <span class="wallet-mark gcash">G</span>
-                    <span class="wallet-copy">
-                        <strong>GCash</strong>
-                        <span class="muted">Pay using your GCash wallet.</span>
-                    </span>
-                </button>
-                <button type="button" class="wallet-option" data-wallet="paymaya">
-                    <span class="wallet-mark maya">M</span>
-                    <span class="wallet-copy">
-                        <strong>Maya</strong>
-                        <span class="muted">Pay using your Maya wallet.</span>
-                    </span>
-                </button>
-            </div>
-            <div class="comparison-card" style="margin-top: 16px;">
-                <h4 style="margin: 0 0 8px;">PayMongo Checkout Steps</h4>
-                <p class="muted" style="margin-bottom: 0;">Select Payment Method: In the PayMongo checkout screen, select the E-wallets tab.</p>
-                <ol style="margin: 12px 0 0; padding-left: 18px; display: grid; gap: 8px;">
-                    <li><strong>Choose Wallet:</strong> Click your preferred wallet provider, such as GCash or Maya.</li>
-                    <li><strong>Authentication:</strong> Enter your mobile number and confirm the payment through OTP or app PIN.</li>
-                    <li><strong>Return:</strong> After the wallet confirms the payment, PayMongo sends you back to the billing system automatically.</li>
-                </ol>
-            </div>
-        </div>
-        <div class="wallet-dialog-actions">
-            <button type="button" class="btn secondary" id="wallet-cancel-button">Cancel</button>
-            <button type="button" class="btn" id="wallet-continue-button">Continue to PayMongo</button>
-        </div>
-</div>
-</div>
-
-<section class="page-wrap" id="consumer-usage-charts">
-    {% include 'billing/includes/consumer_usage_charts.html' %}
-</section>
-
-<section class="page-wrap" id="consumer-billing-comparison">
+<section class="page-wrap" id="consumer-dashboard">
     {% include 'billing/includes/consumer_billing_comparison.html' %}
 </section>
 
-<section class="page-wrap grid-2">
-    <div class="table-card">
-        <h3>Receipts</h3>
-        <div class="table-shell table-shell-wide" data-stack-on-mobile="true">
-            <table>
-                <thead><tr><th>Date</th><th>Month Covered</th><th>Method</th><th>Amount Paid</th><th>Discount</th><th>Total Credit</th><th>Reference</th><th>Receipt</th></tr></thead>
-                <tbody id="consumer-receipt-rows">
-                    {% include 'billing/includes/consumer_receipt_rows.html' %}
-                </tbody>
-            </table>
+<section class="page-wrap" id="consumer-water-consumption">
+    <div class="consumer-consumption-card">
+        <div class="toolbar" style="justify-content: space-between; margin-bottom: 16px;">
+            <div>
+                <h3>Consumption Information</h3>
+                <p class="muted">Current usage, monthly consumption, and the latest meter reading details are grouped here for quick review.</p>
+            </div>
+            {% if consumer_latest_meter_reading %}
+                <span class="status-chip">{{ consumer_latest_meter_reading.billing_month|date:'F Y' }}</span>
+            {% endif %}
         </div>
-    </div>
-    <div class="table-card">
-        <h3>Billing Records</h3>
-        <div class="table-shell table-shell-wide" data-stack-on-mobile="true">
-            <table>
-                <thead><tr><th>Month</th><th>Previous</th><th>Current</th><th>Usage</th><th>Arrears</th><th>Current Bill</th><th>Outstanding</th><th>Paid</th><th>Due Date</th><th>Status</th></tr></thead>
-                <tbody id="consumer-billing-rows">
-                    {% include 'billing/includes/consumer_billing_rows.html' %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-</section>
-
-<section class="page-wrap grid-2">
-    <div class="table-card">
-        <h3>Meter Readings</h3>
-        <div class="table-shell table-shell-wide" data-stack-on-mobile="true">
-            <table>
-                <thead><tr><th>Month</th><th>Previous</th><th>Current</th><th>Usage</th><th>Reading Date</th></tr></thead>
-                <tbody id="consumer-reading-rows">
-                    {% include 'billing/includes/consumer_reading_rows.html' %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-    <div class="table-card">
-        <h3>Payment Monitoring</h3>
-        <div class="table-shell table-shell-wide" data-stack-on-mobile="true">
-            <table>
-                <thead><tr><th>Date</th><th>Month Covered</th><th>Method</th><th>Option</th><th>Paid</th><th>Discount</th><th>Status</th><th>Reference</th><th>Action</th></tr></thead>
-                <tbody id="consumer-payment-rows">
-                    {% include 'billing/includes/consumer_payment_rows.html' %}
-                </tbody>
-            </table>
+        <div class="consumer-consumption-grid">
+            <div class="consumer-consumption-item">
+                <span>Current Cubic Meter Usage</span>
+                <strong>{{ consumer_current_usage_m3 }} m3</strong>
+            </div>
+            <div class="consumer-consumption-item">
+                <span>Monthly Water Consumption</span>
+                <strong>{{ consumer_monthly_consumption_m3 }} m3</strong>
+            </div>
+            <div class="consumer-consumption-item">
+                <span>Previous Reading</span>
+                <strong>{% if consumer_latest_meter_reading %}{{ consumer_latest_meter_reading.previous_reading }}{% else %}0{% endif %}</strong>
+            </div>
+            <div class="consumer-consumption-item">
+                <span>Current Reading</span>
+                <strong>{% if consumer_latest_meter_reading %}{{ consumer_latest_meter_reading.current_reading }}{% else %}0{% endif %}</strong>
+            </div>
+            <div class="consumer-consumption-item">
+                <span>Reading Date</span>
+                <strong>{% if consumer_latest_meter_reading %}{{ consumer_latest_meter_reading.reading_date|date:'F d, Y' }}{% else %}No reading available{% endif %}</strong>
+            </div>
+            <div class="consumer-consumption-item">
+                <span>Meter Reading Details</span>
+                <strong>{% if consumer_latest_meter_reading %}{{ consumer_latest_meter_reading.billing_month|date:'F Y' }} billing cycle{% else %}Waiting for first reading{% endif %}</strong>
+            </div>
         </div>
     </div>
 </section>
@@ -603,318 +215,4 @@
     </div>
 </section>
 {% endif %}
-{% endblock %}
-
-{% block extra_js %}
-{{ billing_balance_data|json_script:"consumer-billing-balance-data" }}
-{{ approved_arrangement_billing_ids|json_script:"consumer-approved-arrangement-billings" }}
-<script>
-    (function () {
-        const feedback = document.getElementById('consumer-live-feedback');
-        const summaryContainer = document.getElementById('consumer-profile-summary');
-        const chartsContainer = document.getElementById('consumer-usage-charts');
-        const comparisonContainer = document.getElementById('consumer-billing-comparison');
-        const receiptRows = document.getElementById('consumer-receipt-rows');
-        const billingRows = document.getElementById('consumer-billing-rows');
-        const readingRows = document.getElementById('consumer-reading-rows');
-        const paymentRows = document.getElementById('consumer-payment-rows');
-        const balanceDataElement = document.getElementById('consumer-billing-balance-data');
-        const approvedArrangementElement = document.getElementById('consumer-approved-arrangement-billings');
-        let balanceData = balanceDataElement ? JSON.parse(balanceDataElement.textContent || '[]') : [];
-        const approvedArrangementBillingIds = approvedArrangementElement ? JSON.parse(approvedArrangementElement.textContent || '[]') : [];
-
-        function showFeedback(message, isError) {
-            if (!feedback || !message) return;
-            feedback.hidden = false;
-            feedback.classList.toggle('error', Boolean(isError));
-            feedback.textContent = message;
-        }
-
-        function renderPerformanceTrendChart(svg, points) {
-            if (!svg) return;
-            const styles = getComputedStyle(document.documentElement);
-            const usageColor = styles.getPropertyValue('--consumer-usage-color').trim() || '#3ea0ff';
-            const billColor = styles.getPropertyValue('--consumer-bill-color').trim() || '#ff905f';
-            const paidColor = styles.getPropertyValue('--consumer-paid-color').trim() || '#22c55e';
-            const gridColor = styles.getPropertyValue('--consumer-chart-grid').trim() || 'rgba(92, 121, 133, 0.18)';
-            const textColor = styles.getPropertyValue('--consumer-chart-ink').trim() || '#183642';
-            const mutedColor = styles.getPropertyValue('--consumer-chart-muted').trim() || '#5c7985';
-            const surfaceColor = styles.getPropertyValue('--consumer-chart-card').trim() || '#ffffff';
-            if (!points.length) {
-                svg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="${mutedColor}" font-size="16">No billing history available yet.</text>`;
-                return;
-            }
-
-            const width = 980;
-            const height = 350;
-            const margin = { top: 24, right: 76, bottom: 88, left: 68 };
-            const chartWidth = width - margin.left - margin.right;
-            const chartHeight = height - margin.top - margin.bottom;
-            const usageValues = points.map((point) => Number(point.usage || 0));
-            const billValues = points.map((point) => Number(point.bill || 0));
-            const paidValues = points.map((point) => Number(point.paid || 0));
-            const usageMax = Math.max(...usageValues, 1);
-            const moneyMax = Math.max(...billValues, ...paidValues, 1);
-            const stepX = points.length > 1 ? chartWidth / (points.length - 1) : 0;
-            const gridLines = 4;
-
-            const usageY = function (value) {
-                return margin.top + chartHeight - (Number(value || 0) / usageMax) * chartHeight;
-            };
-
-            const billY = function (value) {
-                return margin.top + chartHeight - (Number(value || 0) / moneyMax) * chartHeight;
-            };
-
-            const xFor = function (index) {
-                return margin.left + (points.length > 1 ? stepX * index : chartWidth / 2);
-            };
-
-            const usagePolyline = points.map((point, index) => `${xFor(index)},${usageY(point.usage)}`).join(' ');
-            const billPolyline = points.map((point, index) => `${xFor(index)},${billY(point.bill)}`).join(' ');
-            const paidPolyline = points.map((point, index) => `${xFor(index)},${billY(point.paid)}`).join(' ');
-            const usageArea = `${margin.left},${margin.top + chartHeight} ${usagePolyline} ${margin.left + chartWidth},${margin.top + chartHeight}`;
-
-            const gridMarkup = Array.from({ length: gridLines + 1 }, function (_, index) {
-                const ratio = index / gridLines;
-                const y = margin.top + chartHeight * ratio;
-                const usageLabel = Math.round(usageMax * (1 - ratio));
-                const billLabel = Math.round(moneyMax * (1 - ratio));
-
-                return `
-                    <line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" stroke="${gridColor}" stroke-width="1"></line>
-                    <text x="${margin.left - 14}" y="${y + 4}" text-anchor="end" fill="${mutedColor}" font-size="12">${usageLabel}</text>
-                    <text x="${width - margin.right + 14}" y="${y + 4}" text-anchor="start" fill="${mutedColor}" font-size="12">${billLabel}</text>
-                `;
-            }).join('');
-
-            const labelMarkup = points.map(function (point, index) {
-                return `<text x="${xFor(index)}" y="${height - 20}" text-anchor="end" transform="rotate(-18 ${xFor(index)} ${height - 20})" fill="${mutedColor}" font-size="12">${point.label}</text>`;
-            }).join('');
-
-            const usageDots = points.map(function (point, index) {
-                return `<circle cx="${xFor(index)}" cy="${usageY(point.usage)}" r="4" fill="${surfaceColor}" stroke="${usageColor}" stroke-width="3"></circle>`;
-            }).join('');
-
-            const billDots = points.map(function (point, index) {
-                return `<circle cx="${xFor(index)}" cy="${billY(point.bill)}" r="4" fill="${surfaceColor}" stroke="${billColor}" stroke-width="3"></circle>`;
-            }).join('');
-
-            const paidDots = points.map(function (point, index) {
-                return `<circle cx="${xFor(index)}" cy="${billY(point.paid)}" r="4" fill="${surfaceColor}" stroke="${paidColor}" stroke-width="3"></circle>`;
-            }).join('');
-
-            svg.innerHTML = `
-                ${gridMarkup}
-                <polygon points="${usageArea}" fill="${usageColor}" opacity="0.12"></polygon>
-                <text x="${margin.left}" y="16" fill="${textColor}" font-size="12">Usage (m3)</text>
-                <text x="${width - margin.right}" y="16" text-anchor="end" fill="${textColor}" font-size="12">Bill (PHP)</text>
-                <polyline fill="none" stroke="${usageColor}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" points="${usagePolyline}"></polyline>
-                <polyline fill="none" stroke="${billColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="${billPolyline}"></polyline>
-                <polyline fill="none" stroke="${paidColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="${paidPolyline}"></polyline>
-                ${usageDots}
-                ${billDots}
-                ${paidDots}
-                ${labelMarkup}
-            `;
-        }
-
-        function renderConsumerCharts() {
-            const dataElement = document.getElementById('consumer-chart-data');
-            if (!dataElement) return;
-
-            const payload = JSON.parse(dataElement.textContent || '{}');
-            renderPerformanceTrendChart(
-                document.getElementById('consumer-performance-trend-chart'),
-                payload.points || []
-            );
-        }
-
-        async function refreshLivePanel() {
-            try {
-                const response = await fetch("{% url 'consumer_panel_data' %}", {
-                    headers: {
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }
-                });
-                if (!response.ok) return;
-                const payload = await response.json();
-                if (payload.summary_html && summaryContainer) summaryContainer.innerHTML = payload.summary_html;
-                if (payload.charts_html && chartsContainer) {
-                    chartsContainer.innerHTML = payload.charts_html;
-                    renderConsumerCharts();
-                }
-                if (payload.comparison_html && comparisonContainer) comparisonContainer.innerHTML = payload.comparison_html;
-                if (payload.receipt_rows_html && receiptRows) receiptRows.innerHTML = payload.receipt_rows_html;
-                if (payload.billing_rows_html && billingRows) billingRows.innerHTML = payload.billing_rows_html;
-                if (payload.reading_rows_html && readingRows) readingRows.innerHTML = payload.reading_rows_html;
-                if (payload.payment_rows_html && paymentRows) paymentRows.innerHTML = payload.payment_rows_html;
-                if (payload.billing_balance_data) {
-                    balanceData = payload.billing_balance_data;
-                    if (balanceDataElement) balanceDataElement.textContent = JSON.stringify(payload.billing_balance_data);
-                    updateBalanceCard();
-                    syncBalanceAmount && syncBalanceAmount();
-                }
-            } catch (error) {
-                console.error(error);
-            }
-        }
-
-        function updateBalanceCard() {
-            const totalBalanceElement = document.getElementById('consumer-total-balance');
-            const monthsCountElement = document.getElementById('balance-months-count');
-            
-            if (!totalBalanceElement || !monthsCountElement) return;
-
-            const totalBalance = balanceData.reduce((sum, item) => sum + Number(item.balance || 0), 0);
-            const pendingMonths = balanceData.filter(item => Number(item.balance || 0) > 0).length;
-            
-            totalBalanceElement.textContent = `PHP ${totalBalance.toFixed(2)}`;
-            monthsCountElement.textContent = `${pendingMonths} month${pendingMonths !== 1 ? 's' : ''} unpaid`;
-        }
-
-        let syncBalanceAmount = null;
-
-        function initPaymentMode() {
-            const form = document.getElementById('consumer-payment-form');
-            if (!form) return;
-
-            const walletField = document.getElementById('id_online_wallet');
-            const monthField = document.getElementById('id_covered_month');
-            const selectedBillingFields = Array.from(form.querySelectorAll('input[name="selected_billings"]'));
-            const amountField = document.getElementById('id_amount_paid');
-            const balanceLabel = document.getElementById('consumer-current-balance');
-            const walletBalanceLabel = document.getElementById('wallet-current-balance');
-            const submitButton = document.getElementById('payment-submit-button');
-            const modal = document.getElementById('payment-wallet-modal');
-            const cancelButton = document.getElementById('wallet-cancel-button');
-            const continueButton = document.getElementById('wallet-continue-button');
-            let allowDirectSubmit = false;
-
-            function syncWalletSelectionUi() {
-                document.querySelectorAll('.wallet-option').forEach(function (option) {
-                    option.classList.toggle('selected', Boolean(walletField && walletField.value === option.dataset.wallet));
-                });
-            }
-
-            function selectedPaymentOption() {
-                const selected = form.querySelector('input[name="payment_option"]:checked');
-                return selected ? selected.value : 'full';
-            }
-
-            function syncAmount() {
-                if (!amountField) return;
-                const option = selectedPaymentOption();
-                const totalOutstanding = balanceData.reduce(function (sum, item) {
-                    return sum + Number(item.balance || 0);
-                }, 0);
-                const selectedIds = selectedBillingFields
-                    .filter(function (field) { return field.checked; })
-                    .map(function (field) { return String(field.value); });
-                const selectedAmount = balanceData.reduce(function (sum, item) {
-                    return selectedIds.includes(String(item.id)) ? sum + Number(item.balance || 0) : sum;
-                }, 0);
-                const selected = balanceData.find(function (item) {
-                    return monthField && item.month === monthField.value;
-                });
-                const balance = option === 'partial'
-                    ? selectedAmount
-                    : (selected ? totalOutstanding || Number(selected.statement_balance || selected.balance || 0) : totalOutstanding);
-                const buttonLabel = option === 'partial'
-                    ? 'Submit Arrangement Request'
-                    : 'Continue to PayMongo';
-                amountField.value = amount.toFixed(2);
-                if (balanceLabel) balanceLabel.textContent = `PHP ${balance.toFixed(2)}`;
-                if (walletBalanceLabel) walletBalanceLabel.textContent = `PHP ${balance.toFixed(2)}`;
-                if (submitButton) submitButton.textContent = buttonLabel;
-            }
-            syncBalanceAmount = syncAmount;
-
-            function selectionMatchesApprovedArrangement() {
-                const selectedIds = selectedBillingFields
-                    .filter(function (field) { return field.checked; })
-                    .map(function (field) { return String(field.value); })
-                    .sort();
-                const approvedIds = approvedArrangementBillingIds.slice().sort();
-                return selectedIds.length > 0 && selectedIds.join(',') === approvedIds.join(',');
-            }
-
-            function openWalletModal() {
-                if (!modal) return;
-                syncWalletSelectionUi();
-                modal.classList.add('visible');
-                modal.setAttribute('aria-hidden', 'false');
-            }
-
-            function closeWalletModal() {
-                if (!modal) return;
-                modal.classList.remove('visible');
-                modal.setAttribute('aria-hidden', 'true');
-            }
-
-            document.querySelectorAll('input[name="payment_option"]').forEach(function (option) {
-                option.addEventListener('change', syncAmount);
-            });
-            if (monthField) {
-                monthField.addEventListener('change', syncAmount);
-            }
-            selectedBillingFields.forEach(function (field) {
-                field.addEventListener('change', syncAmount);
-            });
-
-            document.querySelectorAll('.wallet-option').forEach(function (option) {
-                option.addEventListener('click', function () {
-                    if (walletField) walletField.value = option.dataset.wallet;
-                    syncWalletSelectionUi();
-                });
-            });
-
-            if (cancelButton) {
-                cancelButton.addEventListener('click', function () {
-                    allowDirectSubmit = false;
-                    closeWalletModal();
-                });
-            }
-
-            if (continueButton) {
-                continueButton.addEventListener('click', function () {
-                    if (!walletField || !walletField.value) {
-                        showFeedback('Choose GCash or Maya before continuing.', true);
-                        return;
-                    }
-                    allowDirectSubmit = true;
-                    closeWalletModal();
-                    form.requestSubmit();
-                });
-            }
-
-            form.addEventListener('submit', function (event) {
-                syncAmount();
-                if (selectedPaymentOption() === 'partial' && !selectionMatchesApprovedArrangement()) {
-                    allowDirectSubmit = false;
-                    return;
-                }
-                if (!allowDirectSubmit) {
-                    event.preventDefault();
-                    event.stopImmediatePropagation();
-                    openWalletModal();
-                    return;
-                }
-                allowDirectSubmit = false;
-            }, true);
-
-            syncAmount();
-            syncWalletSelectionUi();
-        }
-
-        updateBalanceCard();
-        initPaymentMode();
-        renderConsumerCharts();
-        window.addEventListener('themechange', renderConsumerCharts);
-        {% if consumer %}
-        setInterval(refreshLivePanel, 15000);
-        setInterval(updateBalanceCard, 15000);
-        {% endif %}
-    })();
-</script>
 {% endblock %}

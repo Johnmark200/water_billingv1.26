@@ -1,0 +1,412 @@
+{% extends 'base.html' %}
+{% block title %}Consumer Payment{% endblock %}
+{% block extra_css %}
+<style>
+    .consumer-payment-layout,
+    .consumer-payment-summary,
+    .consumer-payment-grid {
+        display: grid;
+        gap: 18px;
+    }
+
+    .consumer-payment-summary {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+
+    .consumer-payment-grid {
+        grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+        align-items: start;
+    }
+
+    .consumer-payment-card,
+    .consumer-payment-form-card,
+    .consumer-payment-table-card {
+        padding: 22px 24px;
+        border-radius: 22px;
+        background: var(--panel);
+        border: 1px solid var(--panel-border);
+        box-shadow: var(--shadow);
+    }
+
+    .consumer-payment-card h3,
+    .consumer-payment-form-card h3,
+    .consumer-payment-table-card h3 {
+        margin-top: 0;
+        margin-bottom: 8px;
+    }
+
+    .consumer-payment-stat {
+        padding: 16px 18px;
+        border-radius: 16px;
+        border: 1px solid var(--line);
+        background: color-mix(in srgb, var(--panel) 88%, var(--bg));
+    }
+
+    .consumer-payment-stat span {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+    }
+
+    .consumer-payment-stat strong {
+        display: block;
+        margin-top: 8px;
+        font-size: 22px;
+    }
+
+    .consumer-payment-table-card table input[type="checkbox"] {
+        width: auto;
+        margin: 0;
+    }
+
+    .consumer-payment-choice-group ul {
+        margin: 10px 0 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 10px;
+    }
+
+    .consumer-payment-choice-group li {
+        padding: 12px 14px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: color-mix(in srgb, var(--panel) 88%, var(--bg));
+    }
+
+    .consumer-payment-choice-group label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .consumer-payment-choice-group input[type="radio"] {
+        width: auto;
+        margin: 0;
+    }
+
+    .consumer-payment-actions {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
+    .payment-proof-note {
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 13px;
+    }
+
+    @media (max-width: 1080px) {
+        .consumer-payment-summary {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .consumer-payment-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @media (max-width: 640px) {
+        .consumer-payment-summary {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+{% block content %}
+{% if consumer %}
+<section class="page-wrap">
+    <div class="consumer-payment-summary">
+        <div class="consumer-payment-stat">
+            <span>Total Outstanding Balance</span>
+            <strong>PHP {{ consumer_running_balance|floatformat:2 }}</strong>
+        </div>
+        <div class="consumer-payment-stat">
+            <span>Pending Bills</span>
+            <strong>{{ unpaid_cycles_count }}</strong>
+        </div>
+        <div class="consumer-payment-stat">
+            <span>Due Dates</span>
+            <strong>{% if consumer_balance_due_date %}{{ consumer_balance_due_date|date:'M d, Y' }}{% else %}None{% endif %}</strong>
+        </div>
+        <div class="consumer-payment-stat">
+            <span>Arrears</span>
+            <strong>PHP {{ consumer_previous_arrears|floatformat:2 }}</strong>
+        </div>
+        <div class="consumer-payment-stat">
+            <span>Remaining Balance</span>
+            <strong id="consumer-payment-remaining-balance">PHP {{ consumer_running_balance|floatformat:2 }}</strong>
+        </div>
+    </div>
+</section>
+
+<section class="page-wrap consumer-payment-grid">
+    <div class="consumer-payment-table-card">
+        <h3>Unpaid Billing Table</h3>
+        <p class="muted">Select the unpaid billing months you want to include when requesting a partial settlement.</p>
+        {% if payment_form and payment_form.non_field_errors %}
+            <div class="status-feedback error">
+                {% for error in payment_form.non_field_errors %}
+                    <div>{{ error }}</div>
+                {% endfor %}
+            </div>
+        {% endif %}
+        <div class="table-shell table-shell-wide" data-stack-on-mobile="true">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Select</th>
+                        <th>Billing Month</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Due Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% with selected_values=payment_form.selected_billings.value %}
+                        {% for bill in unpaid_billing_records %}
+                            <tr>
+                                <td data-label="Select">
+                                    <input
+                                        type="checkbox"
+                                        name="selected_billings"
+                                        value="{{ bill.id }}"
+                                        form="consumer-payment-form"
+                                        {% if selected_values and bill.id|stringformat:'s' in selected_values %}checked{% endif %}
+                                    >
+                                </td>
+                                <td data-label="Billing Month">{{ bill.billing_month|date:'F Y' }}</td>
+                                <td data-label="Amount">PHP {{ bill.amount_due|floatformat:2 }}</td>
+                                <td data-label="Status">{{ bill.get_status_display }}</td>
+                                <td data-label="Due Date">{{ bill.due_date|date:'F d, Y' }}</td>
+                            </tr>
+                        {% empty %}
+                            <tr><td colspan="5" class="empty-state">No unpaid billing records are waiting for payment.</td></tr>
+                        {% endfor %}
+                    {% endwith %}
+                </tbody>
+            </table>
+        </div>
+        {% if payment_form and payment_form.selected_billings.errors %}
+            {% for error in payment_form.selected_billings.errors %}
+                <span class="field-error">{{ error }}</span>
+            {% endfor %}
+        {% endif %}
+    </div>
+
+    <div class="consumer-payment-form-card">
+        <h3>Payment Options</h3>
+        <p class="muted">Full bulk payment settles the entire running balance. Partial payment creates or uses a billing arrangement for the selected unpaid months.</p>
+
+        {% if payment_form %}
+            <form method="post" enctype="multipart/form-data" id="consumer-payment-form" data-transaction-form>
+                {% csrf_token %}
+                <p>
+                    <label for="{{ payment_form.covered_month.id_for_label }}">Reference Billing Month</label>
+                    {{ payment_form.covered_month }}
+                    {% for error in payment_form.covered_month.errors %}
+                        <span class="field-error">{{ error }}</span>
+                    {% endfor %}
+                </p>
+
+                <div class="consumer-payment-choice-group">
+                    <label>Settlement Option</label>
+                    {{ payment_form.payment_option }}
+                    {% for error in payment_form.payment_option.errors %}
+                        <span class="field-error">{{ error }}</span>
+                    {% endfor %}
+                </div>
+
+                <div class="consumer-payment-choice-group">
+                    <label>Payment Method Selection</label>
+                    {{ payment_form.payment_channel }}
+                    {% for error in payment_form.payment_channel.errors %}
+                        <span class="field-error">{{ error }}</span>
+                    {% endfor %}
+                </div>
+
+                {{ payment_form.payment_method }}
+                {{ payment_form.online_wallet }}
+
+                <p>
+                    <label for="{{ payment_form.amount_paid.id_for_label }}">Amount</label>
+                    {{ payment_form.amount_paid }}
+                    {% for error in payment_form.amount_paid.errors %}
+                        <span class="field-error">{{ error }}</span>
+                    {% endfor %}
+                </p>
+
+                <p>
+                    <label for="{{ payment_form.reference_number.id_for_label }}">Reference Number</label>
+                    {{ payment_form.reference_number }}
+                    {% for error in payment_form.reference_number.errors %}
+                        <span class="field-error">{{ error }}</span>
+                    {% endfor %}
+                </p>
+
+                <p>
+                    <label for="{{ payment_form.proof_of_payment.id_for_label }}">Upload Proof of Payment</label>
+                    {{ payment_form.proof_of_payment }}
+                    <span class="payment-proof-note">Upload a screenshot, deposit slip, or receipt if you already paid through bank transfer or office cash handling.</span>
+                    {% for error in payment_form.proof_of_payment.errors %}
+                        <span class="field-error">{{ error }}</span>
+                    {% endfor %}
+                </p>
+
+                <p>
+                    <label for="{{ payment_form.arrangement_note.id_for_label }}">Arrangement / Notes</label>
+                    {{ payment_form.arrangement_note }}
+                    {% for error in payment_form.arrangement_note.errors %}
+                        <span class="field-error">{{ error }}</span>
+                    {% endfor %}
+                </p>
+
+                <div class="consumer-payment-actions">
+                    <button type="submit" class="btn" id="consumer-payment-submit-button">Submit Payment</button>
+                    <a href="{% url 'consumer_panel' %}" class="btn secondary">Back to Dashboard</a>
+                </div>
+            </form>
+        {% else %}
+            <p class="empty-state">No consumer record is linked to this account yet.</p>
+        {% endif %}
+    </div>
+</section>
+
+<section class="page-wrap">
+    <div class="consumer-payment-table-card">
+        <h3>Payment Status Tracking</h3>
+        <p class="muted">Track submitted transactions and follow their verification progress here.</p>
+        <div class="table-shell table-shell-wide" data-stack-on-mobile="true">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Billing Month</th>
+                        <th>Method</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Reference</th>
+                        <th>Proof</th>
+                        <th>Receipt</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for payment in payment_tracking %}
+                        <tr>
+                            <td data-label="Date">{{ payment.payment_date|date:'F d, Y' }}</td>
+                            <td data-label="Billing Month">{{ payment.display_covered_month|date:'F Y' }}</td>
+                            <td data-label="Method">{{ payment.display_payment_method }}</td>
+                            <td data-label="Amount">PHP {{ payment.amount_paid|floatformat:2 }}</td>
+                            <td data-label="Status">
+                                {% if payment.status == 'pending' %}
+                                    Pending Verification
+                                {% elif payment.status == 'failed' %}
+                                    Rejected
+                                {% elif payment.payment_option == 'partial' %}
+                                    Partially Paid
+                                {% else %}
+                                    Paid
+                                {% endif %}
+                            </td>
+                            <td data-label="Reference">{{ payment.display_reference_number }}</td>
+                            <td data-label="Proof">
+                                {% if payment.proof_of_payment %}
+                                    <a href="{{ payment.proof_of_payment.url }}" class="btn secondary" target="_blank" rel="noopener">View Proof</a>
+                                {% else %}
+                                    <span class="muted">No file</span>
+                                {% endif %}
+                            </td>
+                            <td data-label="Receipt">
+                                {% if payment.status == 'completed' %}
+                                    <a href="{% url 'payment_receipt' payment.id %}" class="btn secondary">View</a>
+                                    <a href="{% url 'payment_receipt' payment.id %}?print=1" class="btn secondary">Print</a>
+                                {% else %}
+                                    <span class="muted">Waiting</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="8" class="empty-state">No payment records are available yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% else %}
+<section class="page-wrap">
+    <div class="card">
+        <h3>No Consumer Record Linked</h3>
+        <p>Your account is authenticated, but no consumer record is linked yet. Please contact the administrator to connect your login to your billing account.</p>
+    </div>
+</section>
+{% endif %}
+{% endblock %}
+{% block extra_js %}
+{{ billing_balance_data|json_script:"consumer-billing-balance-data" }}
+<script>
+    (function () {
+        const form = document.getElementById('consumer-payment-form');
+        const amountField = document.getElementById('id_amount_paid');
+        const remainingBalance = document.getElementById('consumer-payment-remaining-balance');
+        const submitButton = document.getElementById('consumer-payment-submit-button');
+        const balanceDataElement = document.getElementById('consumer-billing-balance-data');
+        const balanceData = balanceDataElement ? JSON.parse(balanceDataElement.textContent || '[]') : [];
+
+        if (!form || !amountField) return;
+
+        function selectedPaymentOption() {
+            const selected = form.querySelector('input[name="payment_option"]:checked');
+            return selected ? selected.value : 'full';
+        }
+
+        function selectedPaymentMethod() {
+            const selected = form.querySelector('input[name="payment_channel"]:checked');
+            return selected ? selected.value : 'gcash';
+        }
+
+        function syncAmount() {
+            const selectedIds = Array.from(form.querySelectorAll('input[name="selected_billings"]:checked')).map(function (field) {
+                return String(field.value);
+            });
+            const totalOutstanding = balanceData.reduce(function (sum, item) {
+                return sum + Number(item.balance || 0);
+            }, 0);
+            const selectedOutstanding = balanceData.reduce(function (sum, item) {
+                return selectedIds.includes(String(item.id)) ? sum + Number(item.balance || 0) : sum;
+            }, 0);
+            const amount = selectedPaymentOption() === 'partial' ? selectedOutstanding : totalOutstanding;
+            amountField.value = amount.toFixed(2);
+            if (remainingBalance) remainingBalance.textContent = `PHP ${amount.toFixed(2)}`;
+
+            const method = selectedPaymentMethod();
+            if (selectedPaymentOption() === 'partial') {
+                submitButton.textContent = 'Submit Payment Arrangement';
+            } else if (method === 'gcash') {
+                submitButton.textContent = 'Continue to GCash Checkout';
+            } else {
+                submitButton.textContent = 'Submit Payment for Verification';
+            }
+        }
+
+        form.querySelectorAll('input[name="payment_option"]').forEach(function (field) {
+            field.addEventListener('change', syncAmount);
+        });
+        form.querySelectorAll('input[name="payment_channel"]').forEach(function (field) {
+            field.addEventListener('change', syncAmount);
+        });
+        form.querySelectorAll('input[name="selected_billings"]').forEach(function (field) {
+            field.addEventListener('change', syncAmount);
+        });
+        document.getElementById('id_covered_month')?.addEventListener('change', syncAmount);
+
+        syncAmount();
+    })();
+</script>
+{% endblock %}

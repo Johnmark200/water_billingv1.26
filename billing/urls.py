@@ -24,6 +24,7 @@ urlpatterns = [
     path('dashboard/reader/context/', views.reader_reading_context, name='reader_reading_context'),
     path('dashboard/reader/readings/<int:reading_id>/update/', views.update_reader_reading, name='update_reader_reading'),
     path('dashboard/consumer/', views.consumer_panel, name='consumer_panel'),
+    path('dashboard/consumer/payment/', views.consumer_payment, name='consumer_payment'),
     path('dashboard/consumer/data/', views.consumer_panel_data, name='consumer_panel_data'),
     path('dashboard/consumer/account/', views.account_center, name='account_center'),
     path('payments/paymongo/<int:payment_id>/success/', views.paymongo_success, name='paymongo_success'),
